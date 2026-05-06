@@ -1,0 +1,1751 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TokenCluster — v2</title>
+<style>
+* { box-sizing:border-box; margin:0; padding:0; }
+
+:root {
+  --tbar-bg:       rgba(201,198,192,0.97);
+  --tbar-border:   rgba(0,0,0,0.07);
+  --tbar-text:     rgba(0,0,0,0.52);
+  --toggle-bg:     rgba(219,216,209,0.97);
+  --toggle-border: rgba(0,0,0,0.20);
+  --toggle-color:  rgba(0,0,0,0.58);
+  --hero-bg:       #d8d4c9;
+  --hero-title:    #0f0f0f;
+  --hero-sub:      rgba(0,0,0,0.40);
+  --hero-meta:     rgba(0,0,0,0.28);
+  --cta-border:    #b5b2ac;
+  --cta-bg:        #c9c6c0;
+  --cta-color:     rgba(0,0,0,0.62);
+  --cta-hborder:   #a5a29c;
+  --cta-hbg:       #bdbab4;
+  --badge-color:   rgba(0,0,0,0.18);
+  --scrim-color:   206,201,188;
+}
+.night {
+  --tbar-bg:       rgba(44,44,44,0.97);
+  --tbar-border:   rgba(255,255,255,0.06);
+  --tbar-text:     rgba(255,255,255,0.52);
+  --toggle-bg:     rgba(30,30,30,0.94);
+  --toggle-border: rgba(255,255,255,0.18);
+  --toggle-color:  rgba(255,255,255,0.60);
+}
+
+html, body { width:100%; margin:0; padding:0; height:100%; overflow:hidden; background:var(--hero-bg); }
+
+.root {
+  font-family:-apple-system,'SF Pro Display','Helvetica Neue',sans-serif;
+}
+
+/* ── Topbar ── */
+.topbar {
+  position:fixed; top:0; left:0; right:0; height:34px; z-index:200;
+  background:var(--tbar-bg);
+  border-bottom:0.5px solid var(--tbar-border);
+  display:grid; grid-template-columns:1fr auto 1fr; align-items:center;
+  padding:0 14px;
+  backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
+  transition:background 0.3s, border-color 0.3s;
+}
+.tbar-left {
+  font-size:12px; color:var(--tbar-text);
+  letter-spacing:.04em; font-weight:500;
+}
+.tbar-center {
+  font-size:10px; font-family:monospace;
+  color:var(--tbar-text); letter-spacing:.10em; opacity:0.55;
+}
+.tbar-right { display:flex; align-items:center; gap:7px; justify-content:flex-end; }
+
+.toggle-btn {
+  padding:3px 11px; border-radius:20px;
+  border:0.5px solid var(--toggle-border);
+  background:var(--toggle-bg); color:var(--toggle-color);
+  font-size:10px; cursor:pointer; letter-spacing:.04em; font-family:inherit;
+  transition:background 0.2s, color 0.2s, border-color 0.2s;
+}
+
+/* ── Hero ── */
+.hero {
+  position:relative;
+  width:100%; height:100vh;
+  overflow:hidden;
+  background:var(--hero-bg);
+}
+
+#hero-canvas {
+  position:absolute; inset:0; display:block;
+  image-rendering:pixelated;
+  image-rendering:crisp-edges;
+  background:#000;  /* defensive — any unrendered sub-pixel strip blends with dark animation cells, never flashes white */
+  transition:transform 0.7s cubic-bezier(0.16,1,0.3,1);
+}
+#hero-canvas.zoomed { transform:scale(1.10); }
+
+/* canvas blur overlay — uses backdrop-filter to avoid edge bleed */
+#canvas-blur {
+  position:absolute; inset:0; z-index:1; pointer-events:none;
+  background:rgba(0,0,0,0.001);
+  backdrop-filter:blur(0px);
+  -webkit-backdrop-filter:blur(0px);
+  transition:backdrop-filter 0.5s ease, -webkit-backdrop-filter 0.5s ease;
+}
+#canvas-blur.active {
+  backdrop-filter:blur(30px);
+  -webkit-backdrop-filter:blur(30px);
+}
+
+/* warm scrim — bottom wash (text legibility) + top wash (atmosphere).
+   Both fade out together when intro reveal kicks in (.no-top-wash). */
+.hero-scrim {
+  position:absolute; inset:0; z-index:2; pointer-events:none;
+  background:linear-gradient(to top,
+    rgba(var(--scrim-color),0.92) 0%,
+    rgba(var(--scrim-color),0.42) 32%,
+    transparent 56%
+  );
+  opacity:1;
+  transition:opacity 1.5s ease;
+}
+/* top warm wash — separate layer for the upper-edge cream gradient */
+.hero-scrim::after {
+  content:''; position:absolute; inset:0; pointer-events:none;
+  background:linear-gradient(to bottom,
+    rgba(201,198,192,0.38) 0%,
+    transparent 15%
+  );
+}
+/* Single trigger fades both layers (parent opacity propagates to ::after). */
+.hero-scrim.no-top-wash { opacity:0; }
+.hero-scrim.instant-wash { transition:none; }
+
+.hero-overlay {
+  position:fixed; inset:0; z-index:501;
+  display:flex; flex-direction:column;
+  justify-content:flex-end;
+  padding:0 52px 56px;
+  pointer-events:none;
+}
+
+.hero-eyebrow {
+  font-size:9px; font-family:monospace;
+  letter-spacing:.20em; text-transform:uppercase;
+  color:var(--hero-meta);
+  margin-bottom:18px;
+}
+
+.hero-title {
+  font-family:'Times New Roman',Times,serif;
+  font-weight:400;
+  font-size:clamp(72px, 10.5vw, 140px);
+  color:var(--hero-title);
+  letter-spacing:-.01em;
+  line-height:0.90;
+  margin-bottom:22px;
+}
+
+.hero-byline {
+  font-family:monospace;
+  font-size:clamp(11px, 1.1vw, 15px);
+  font-weight:400;
+  letter-spacing:.08em;
+  color:var(--hero-meta);
+  vertical-align:baseline;
+  margin-left:0px;
+  text-decoration:none;
+  pointer-events:auto;
+}
+.hero-byline:hover { text-decoration:underline; }
+
+.hero-divider {
+  width:32px; height:0.5px;
+  background:rgba(0,0,0,0.16);
+  margin-bottom:18px;
+}
+
+.hero-sub {
+  font-size:11px; font-family:monospace;
+  letter-spacing:.08em;
+  color:var(--hero-sub);
+  margin-bottom:34px;
+}
+
+.hero-cta {
+  display:inline-flex; align-items:center;
+  padding:7px 20px; border-radius:20px;
+  border:0.5px solid var(--cta-border);
+  background:var(--cta-bg); color:var(--cta-color);
+  font-size:10px; letter-spacing:.12em; text-transform:uppercase;
+  text-decoration:none; font-family:monospace;
+  pointer-events:auto; width:fit-content;
+  transition:background 0.18s, border-color 0.18s;
+}
+.hero-cta:hover {
+  background:var(--cta-hbg);
+  border-color:var(--cta-hborder);
+}
+
+/* ── Page transition ── */
+#page-transition {
+  position:fixed; inset:0; z-index:2000;
+  background:#c9c6c0;
+  opacity:1; pointer-events:none;
+  transition:opacity 0.55s ease;
+}
+#page-transition.active { opacity:1; pointer-events:auto; }
+#page-transition.out    { opacity:0; }
+
+/* ── Intro overlay ── */
+#intro-canvas {
+  position:fixed; inset:0; z-index:500;
+  cursor:pointer;
+}
+
+/* ── Module windows ── */
+#windows-layer {
+  position:fixed; inset:0; z-index:600;
+  pointer-events:none;
+}
+
+@keyframes win-in {
+  0%   { opacity:0; transform:scale(0.88) translateY(12px); }
+  100% { opacity:1; transform:scale(1)    translateY(0);    }
+}
+@keyframes win-out {
+  to   { opacity:0; transform:scale(0.92) translateY(6px); }
+}
+
+.mod-wrapper {
+  position:absolute;
+  pointer-events:none;
+}
+
+@keyframes win-float {
+  0%, 100% { transform:translateY(0); }
+  50%       { transform:translateY(-4px); }
+}
+
+.mod-window {
+  background:#dbd8d1;
+  border-radius:10px;
+  box-shadow:0 24px 64px rgba(0,0,0,0.22), 0 2px 8px rgba(0,0,0,0.10);
+  overflow:hidden;
+  pointer-events:auto;
+  opacity:0;
+  animation:win-in 1.1s cubic-bezier(0.16,1,0.3,1) forwards;
+}
+
+.mod-titlebar {
+  height:30px;
+  background:#c9c6c0;
+  display:flex;
+  align-items:center;
+  padding:0 10px;
+  cursor:move;
+  gap:7px;
+  user-select:none;
+}
+
+.mod-close {
+  width:12px; height:12px; border-radius:50%;
+  background:#ff5f57; border:none; cursor:pointer; padding:0; flex-shrink:0;
+}
+.mod-close:hover { filter:brightness(0.85); }
+
+.mod-win-label {
+  font-size:10px; font-family:monospace;
+  letter-spacing:.10em; color:rgba(0,0,0,0.38);
+  flex:1; text-align:center; padding-right:19px;
+}
+
+.mod-content {
+  padding:20px 18px 24px 14px;
+  display:flex;
+  align-items:flex-end;
+  gap:14px;
+}
+.mod-label {
+  font-family:'Times New Roman',Times,serif;
+  font-size:38px;
+  font-weight:400;
+  color:rgba(0,0,0,0.72);
+  line-height:1;
+  flex-shrink:0;
+  text-decoration:none;
+  cursor:pointer;
+}
+.mod-label:hover { color:rgba(0,0,0,0.95); }
+.mod-desc {
+  font-family:monospace;
+  font-size:9px;
+  letter-spacing:.04em;
+  color:rgba(0,0,0,0.38);
+  line-height:1.6;
+  padding-bottom:3px;
+}
+
+/* DT mode indicator — very subtle, top-right */
+#mode-badge {
+  position:absolute; top:48px; right:18px; z-index:3;
+  font-size:8px; font-family:monospace;
+  letter-spacing:.14em; text-transform:uppercase;
+  color:var(--badge-color); pointer-events:none;
+  transition:color 0.3s;
+}
+
+
+</style>
+</head>
+<body>
+<div id="page-transition"></div>
+<div id="root" class="root">
+
+  <nav class="topbar">
+    <span class="tbar-left"></span>
+    <span class="tbar-center"></span>
+    <div class="tbar-right">
+    </div>
+  </nav>
+
+  <section class="hero">
+    <canvas id="hero-canvas"></canvas>
+    <div id="canvas-blur"></div>
+    <div class="hero-scrim"></div>
+    <div class="hero-overlay">
+      <h1 class="hero-title">MODULO<a class="hero-byline" href="https://x.com/unbearableKnife" target="_blank" rel="noopener">by ubk</a></h1>
+      <div class="hero-divider"></div>
+      <div class="hero-sub">a modular cellular automata collection · fully on-chain · Ethereum</div>
+      <a href="app/index.html" class="hero-cta">explore app →</a>
+    </div>
+    <div id="mode-badge">feedback</div>
+  </section>
+
+  <canvas id="intro-canvas"></canvas>
+</div>
+<script>
+// ── DT Cellular Automaton — standalone hero engine ───────────────────────────
+
+const PIXEL     = 10;
+const GRID_COLS = 420;   // covers up to 4200px wide
+const GRID_ROWS = 220;   // covers up to 2200px tall
+
+let grid = new Uint8Array(GRID_COLS * GRID_ROWS);
+let next = new Uint8Array(GRID_COLS * GRID_ROWS);
+
+// 12-color pool curated from app/index.html's COLS_DATA[0] (which has 18).
+// Subset chosen for visual balance: 1 light, 8 vivid colors, 3 darks. Used by
+// _genPalette() to build a fresh random palette on every click — different
+// COUNT (3-8 colors) and different selection each time, mirroring the on-chain
+// behavior where each modulo's palette emerges from however many tokens it has.
+const COLS12 = [
+  [191,188,206], // light grey
+  [ 99, 99,255], // blue
+  [160, 64,255], // purple
+  [255,  0, 58], // red
+  [255,140,  0], // orange
+  [255,189, 46], // yellow
+  [ 40,200, 64], // green
+  [255, 99,255], // pink
+  [ 17,  0,255], // deep blue
+  [ 99,255, 99], // lime
+  [ 42, 11, 24], // deep maroon
+  [  0,  0,  0], // black
+];
+
+// Build a fresh palette: random count (3-8), random unique picks from COLS12,
+// random order. Returns deep-copied arrays so the pool isn't mutated.
+function _genPalette() {
+  const N = 3 + Math.floor(Math.random() * 6);
+  const pool = COLS12.slice();
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool.slice(0, N).map(c => c.slice());
+}
+
+// Initial PAL — preserves the original beige/blue/purple page-load look.
+// Replaced by _genPalette() on first click via _randomTraits().
+let PAL   = [[210,206,198], [99,99,255], [160,64,255]];
+let _palT = _buildPalT(PAL);
+
+// BLOCKS_TUNING — copied from app/index.html (final user-tuned values).
+// Read by animBlocks each op. Only touched here if you want to retune blocks.
+const BLOCKS_TUNING = {
+  skipPct:       50,
+  feedbackMix:   73,
+  pBands:        87,
+  pPeaks:        13,
+  bandShortMaxW: 47,
+  bandMedMaxW:    1,
+  bandLongMaxW:   1,
+  bandMaxH:      16,
+  bandWaveAmp:    7,
+  peakMaxH:      17,
+  peakBaseW:      2,
+  erosionMaxW:   18,
+  erosionMaxH:   10,
+};
+
+// Bayer 2×2 ordered-dither matrix — used by animSector quantize burst.
+const _BAYER2 = [[0, 2], [3, 1]];
+
+let _sectorT = 0;
+let _blocksT = 0;
+
+// ── DX dither patterns (ported from app/index.html) ─────────────────────────
+// Pixel-level marks drawn INSIDE specific cells (where grid[i] === _ditherTarget),
+// in a different color (_ditherColorIdx), at sparse density (_ditherNoise filter).
+// Coords are pixel offsets within a PIXEL×PIXEL cell. Patterns designed for 6×6;
+// at homepage's PIXEL=10 they fit comfortably in the top-left of each cell.
+const DX_PATTERNS = {
+  x:    [[0,0],[0,5],[1,1],[1,4],[2,2],[2,3],[3,2],[3,3],[4,1],[4,4],[5,0],[5,5]],
+  plus: [[0,2],[0,3],[1,2],[1,3],[2,0],[2,1],[2,2],[2,3],[2,4],[2,5],[3,0],[3,1],[3,2],[3,3],[3,4],[3,5],[4,2],[4,3],[5,2],[5,3]],
+  h:    [[2,0],[2,1],[2,2],[2,3],[2,4],[2,5],[3,0],[3,1],[3,2],[3,3],[3,4],[3,5]],
+  sq:   [[0,0],[0,1],[0,2],[0,3],[0,4],[0,5],[5,0],[5,1],[5,2],[5,3],[5,4],[5,5],[1,0],[2,0],[3,0],[4,0],[1,5],[2,5],[3,5],[4,5]],
+  // Internal — used as components of the 'm' multi pattern (not exposed individually)
+  tri:     [[1,2],[1,3],[2,1],[2,2],[2,3],[2,4],[3,1],[3,2],[3,3],[3,4],[4,0],[4,1],[4,2],[4,3],[4,4],[4,5]],
+  circle:  [[0,1],[0,2],[0,3],[0,4],[1,0],[1,5],[2,0],[2,5],[3,0],[3,5],[4,0],[4,5],[5,1],[5,2],[5,3],[5,4]],
+  diamond: [[0,2],[0,3],[1,1],[1,4],[2,0],[2,5],[3,0],[3,5],[4,1],[4,4],[5,2],[5,3]],
+  checker: [[0,0],[0,1],[0,4],[0,5],[1,0],[1,1],[1,4],[1,5],[2,2],[2,3],[3,2],[3,3],[4,0],[4,1],[4,4],[4,5],[5,0],[5,1],[5,4],[5,5]],
+  // Internal — used by 'o' (Lego-stud hollow ring, 8 px centered in 6×6)
+  legoStud:[[1,2],[1,3],[2,1],[2,4],[3,1],[3,4],[4,2],[4,3]],
+};
+const DX_PATTERN_KEYS = ['x','plus','h','sq','m','o'];
+const _DX_MULTI = ['tri','circle','diamond','checker']; // shapes for the 'm' pattern
+const DITHER_DENSITY = 0.025; // ~2.5% of target cells get a mark
+const DITHER_CHURN   = 0.008; // ~0.8% of noise cells refreshed per frame (~2s lifetime per mark)
+let _activeDxPattern = null;  // null = no DX overlay
+let _ditherTarget    = 0;     // PAL index to dither over
+let _ditherColorIdx  = 1;     // PAL index of the dither marks
+// Per-cell noise — slowly churned each frame so marks appear/disappear with a
+// lifetime instead of being static. Also shifted alongside `grid` by applyRects
+// so the marks travel WITH the moving rect-shifts, not stuck to the canvas.
+const _ditherNoise = new Float32Array(GRID_COLS * GRID_ROWS);
+const _ditherNext  = new Float32Array(GRID_COLS * GRID_ROWS);
+for (let i = 0; i < _ditherNoise.length; i++) _ditherNoise[i] = Math.random();
+function _churnDither() {
+  const count = Math.ceil(_ditherNoise.length * DITHER_CHURN);
+  for (let i = 0; i < count; i++)
+    _ditherNoise[Math.floor(Math.random() * _ditherNoise.length)] = Math.random();
+}
+
+function _buildPalT(p) {
+  const N = p.length;
+  const w = p.map((_, k) => Math.pow(N - k, 1.5));
+  const s = w.reduce((a, b) => a + b, 0);
+  let acc = 0;
+  return w.map(wi => { acc += wi / s; return acc; });
+}
+
+function _pick() {
+  const r = Math.random();
+  for (let k = 0; k < _palT.length; k++) if (r < _palT[k]) return k;
+  return _palT.length - 1;
+}
+
+// Replace PAL entirely with a freshly-generated palette (different COUNT and
+// different colors than before). Must be followed by a grid re-seed because
+// any existing grid cells with index >= new PAL.length will fall back to PAL[0]
+// in the renderer. _randomTraits handles that re-seed step.
+function _randomPalette() {
+  PAL = _genPalette();
+  _palT = _buildPalT(PAL);
+}
+
+// Click handler: randomize ALL 6 trait dimensions. Picks from the same 8 modes
+// as app/index.html (incl. modulo/sector/blocks) and matches its trait names.
+// Persists the new state by replacing SEQ with the picked mode (so the cycle
+// re-tick just keeps the same mode active until the next click).
+let _lastMode = null;
+function _randomTraits() {
+  // 1) MODE — random from 8
+  const ALL_MODES = ['feedback','shift','noise','modulo','wave','jungle','sector','blocks'];
+  let newMode;
+  do { newMode = ALL_MODES[Math.floor(Math.random() * ALL_MODES.length)]; }
+  while (newMode === _lastMode && ALL_MODES.length > 1);
+  _lastMode = newMode;
+
+  // 2) SIZE — sm/md/lg (matches app/index.html SIZE_SCALES)
+  const SIZES = [0.4, 1.0, 2.0];
+  _sz = SIZES[Math.floor(Math.random() * SIZES.length)];
+
+  // 3) RS (rect shift size) — sm/md/lg/xl, picks the RS_PARAMS key directly
+  //    so makeRect functions read the same min/max ranges as app/index.html.
+  const RS_KEYS = ['sm', 'md', 'lg', 'xl'];
+  _rsKey = RS_KEYS[Math.floor(Math.random() * RS_KEYS.length)];
+
+  // 4) RD (rect shift density) — lo/md/hi/mx
+  const RD = [0.4, 1.0, 1.8, 3.0];
+  _rdScale = RD[Math.floor(Math.random() * RD.length)];
+
+  // 5) RV (rect shift variant) — pick 1 of 8 variants for this click cycle
+  _activeRectVariant = RV_KEYS[Math.floor(Math.random() * RV_KEYS.length)];
+
+  // Re-init the rects so RS+RD+RV take effect immediately
+  _rects.length = 0;
+  for (let i = 0; i < 8; i++) _rects.push(_mkRect());
+
+  // 5) PALETTE — generate fresh palette FIRST so DX target/color indices below
+  // are valid against the NEW PAL.length (otherwise they may be out-of-range).
+  _randomPalette();
+
+  // 6) DX — pixel-level dither pattern drawn INSIDE cells (matches app/index.html).
+  // Pick pattern + a target PAL idx (cells of that color get marked) + a distinct
+  // color idx for the marks themselves. null pattern = DX off.
+  const DX_OPTS = [null, 'x', 'plus', 'h', 'sq', 'num', 'numi', 'm', 'o'];
+  _activeDxPattern = DX_OPTS[Math.floor(Math.random() * DX_OPTS.length)];
+  if (_activeDxPattern && PAL.length >= 2) {
+    _ditherTarget = Math.floor(Math.random() * PAL.length);
+    do { _ditherColorIdx = Math.floor(Math.random() * PAL.length); }
+    while (_ditherColorIdx === _ditherTarget);
+  }
+
+  // 7) SEED — re-fill the grid so the pattern starts fresh with the new traits
+  for (let i = 0; i < grid.length; i++) grid[i] = _pick();
+
+  // Lock the cycle to this mode (1-element SEQ → no further auto-rotation)
+  SEQ = [newMode];
+  _modeIdx = 0;
+  _mode = newMode;
+  _cf = 0;
+  const b = document.getElementById('mode-badge');
+  if (b) b.textContent = _mode;
+}
+
+for (let i = 0; i < grid.length; i++) grid[i] = _pick();
+
+function idx(c, r) {
+  return ((r + GRID_ROWS) % GRID_ROWS) * GRID_COLS + ((c + GRID_COLS) % GRID_COLS);
+}
+
+let _sz = 1.0;
+function makeRect() {
+  return {
+    x: Math.floor(Math.random() * GRID_COLS),
+    y: Math.floor(Math.random() * GRID_ROWS),
+    w: 2 + Math.floor(Math.random() * Math.max(1, Math.round(12 * _sz))),
+    h: 2 + Math.floor(Math.random() * Math.max(1, Math.round(6  * _sz))),
+  };
+}
+
+// Shift hot zones
+const _ZR2 = Math.round(GRID_COLS * 0.12) ** 2;
+let _zones = [], _zTimer = 0;
+function _refreshZones() {
+  _zones = Array.from({ length: 3 + Math.floor(Math.random() * 2) }, () => ({
+    cx: Math.floor(Math.random() * GRID_COLS),
+    cy: Math.floor(Math.random() * GRID_ROWS),
+  }));
+}
+_refreshZones();
+
+// ── DT operations ────────────────────────────────────────────────────────────
+
+function animFeedback() {
+  const r = makeRect();
+  for (let dy = 0; dy < r.h; dy++) for (let dx = 0; dx < r.w; dx++) {
+    const cx = r.x + dx, cy = r.y + dy;
+    const nb = [
+      grid[idx(cx-1, cy)], grid[idx(cx+1, cy)],
+      grid[idx(cx, cy-1)], grid[idx(cx, cy+1)],
+    ];
+    const cnt = new Array(PAL.length).fill(0);
+    for (const n of nb) if (n < PAL.length) cnt[n]++;
+    let mx = 0, best = grid[idx(cx, cy)];
+    for (let v = 0; v < PAL.length; v++) if (cnt[v] > mx) { mx = cnt[v]; best = v; }
+    next[idx(cx, cy)] = best;
+  }
+}
+
+function animShift() {
+  const rx = Math.floor(Math.random() * GRID_COLS);
+  const ry = Math.floor(Math.random() * GRID_ROWS);
+  const inZ = _zones.some(z => { const a=rx-z.cx, b=ry-z.cy; return a*a+b*b < _ZR2; });
+  const sc  = inZ ? 2.0 : 0.4;
+  const r   = {
+    x: rx, y: ry,
+    w: 2 + Math.floor(Math.random() * Math.max(1, Math.round(12 * sc))),
+    h: 2 + Math.floor(Math.random() * Math.max(1, Math.round(6  * sc))),
+  };
+  const hz   = Math.random() < 0.5;
+  const dist = inZ ? (1 + Math.floor(Math.random() * (hz ? 2 : 3))) : 1;
+  const dir  = (Math.random() < 0.5 ? 1 : -1) * dist;
+  for (let dy = 0; dy < r.h; dy++) for (let dx = 0; dx < r.w; dx++)
+    next[idx(r.x+dx, r.y+dy)] = grid[hz ? idx(r.x+dx+dir, r.y+dy) : idx(r.x+dx, r.y+dy+dir)];
+  if (++_zTimer > 1200) { _zTimer = 0; _refreshZones(); }
+}
+
+function animNoise() {
+  const r = makeRect();
+  for (let dy = 0; dy < r.h; dy++) for (let dx = 0; dx < r.w; dx++)
+    next[idx(r.x+dx, r.y+dy)] = _pick();
+}
+
+function animJungle() {
+  const rx = Math.floor(Math.random() * GRID_COLS);
+  const ry = Math.floor(Math.random() * GRID_ROWS);
+  const inZ = _zones.some(z => { const a=rx-z.cx, b=ry-z.cy; return a*a+b*b < _ZR2; });
+  const sc  = inZ ? 2.0 : 0.4;
+  const r   = {
+    x: rx, y: ry,
+    w: 2 + Math.floor(Math.random() * Math.max(1, Math.round(12 * sc))),
+    h: 2 + Math.floor(Math.random() * Math.max(1, Math.round(6  * sc))),
+  };
+  const dH = (Math.random()<0.5?1:-1) * (1 + Math.floor(Math.random() * (inZ?3:2)));
+  const dV = (Math.random()<0.5?1:-1) * (1 + Math.floor(Math.random() * (inZ?4:2)));
+  for (let dy = 0; dy < r.h; dy++) for (let dx = 0; dx < r.w; dx++)
+    next[idx(r.x+dx, r.y+dy)] = grid[idx(r.x+dx+dH, r.y+dy+dV)];
+  if (++_zTimer > 1200) { _zTimer = 0; _refreshZones(); }
+}
+
+let _waveT = 0;
+function animWave() {
+  _waveT += 0.003;
+  const r  = makeRect();
+  const zA = Math.pow(Math.max(0,
+    Math.sin(r.x * 0.018 + _waveT * 0.4) *
+    Math.sin(r.y * 0.022 + _waveT * 0.25)
+  ), 1.5);
+  const amp = 1 + Math.round(11 * zA);
+  for (let dy = 0; dy < r.h; dy++) {
+    const cy  = r.y + dy;
+    const wcy = cy % GRID_ROWS;
+    const sm  = 1 + Math.sin(wcy * 0.03) * 0.5;
+    const off = Math.round(Math.sin(wcy * 0.08 + _waveT * sm) * amp);
+    for (let dx = 0; dx < r.w; dx++)
+      next[idx(r.x+dx, cy)] = grid[idx(r.x+dx-off, cy)];
+  }
+}
+
+// ── Modulo / Sector / Blocks modes — ported from app/index.html ──────────────
+// _sz is homepage's name for the size-scale (app/index.html calls it _sizeScale).
+
+function animModulo() {
+  if (PAL.length < 2) return;
+  const r = makeRect();
+  const stepN = 1 + Math.floor(Math.random() * (PAL.length - 1));
+  for (let dy = 0; dy < r.h; dy++) for (let dx = 0; dx < r.w; dx++) {
+    const i = idx(r.x + dx, r.y + dy);
+    if (Math.random() < 0.5) next[i] = (grid[i] + stepN) % PAL.length;
+  }
+}
+
+function animSector() {
+  if (Math.random() < 0.65) return; // throttle: heavy mode
+  _sectorT += 0.012;
+  const roll = Math.random();
+  if (roll < 0.60) {
+    const shape = Math.random();
+    const amp = 2 + Math.round(8 * _sz);
+    if (shape < 0.04) {
+      const x = Math.floor(Math.random() * GRID_COLS);
+      const y = Math.floor(Math.random() * GRID_ROWS);
+      const wRand = Math.pow(Math.random(), 1.6);
+      const w = 2 + Math.floor(wRand * Math.max(1, Math.round(19 * _sz)));
+      const h = 1 + (Math.random() < 0.4 ? 1 : 0);
+      const wcy = y % GRID_ROWS;
+      const off = Math.round(Math.sin(wcy * 0.11 + _sectorT * 1.4) * amp + (Math.random() - 0.5) * 4);
+      for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) next[idx(x + dx, y + dy)] = grid[idx(x + dx + off, y + dy)];
+    } else if (shape < 0.60) {
+      const y = Math.floor(Math.random() * GRID_ROWS);
+      const wcy = y % GRID_ROWS;
+      const segCount = 2 + Math.floor(Math.random() * 6);
+      for (let s = 0; s < segCount; s++) {
+        if (Math.random() < 0.35) continue;
+        const x = Math.floor(Math.random() * GRID_COLS);
+        const tier = Math.random();
+        let w;
+        if      (tier < 0.30) w = 1 + Math.floor(Math.random() * 1);
+        else if (tier < 0.75) w = 2 + Math.floor(Math.random() * Math.max(1, Math.round(4 * _sz)));
+        else                  w = 5 + Math.floor(Math.random() * Math.max(1, Math.round(14 * _sz)));
+        const off = Math.round(Math.sin(wcy * 0.11 + _sectorT * 1.4) * amp + (Math.random() - 0.5) * 6);
+        const h = 1 + Math.floor(Math.random() * 3);
+        for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) next[idx(x + dx, y + dy)] = grid[idx(x + dx + off, y + dy)];
+      }
+    } else {
+      const x = Math.floor(Math.random() * GRID_COLS);
+      const y = Math.floor(Math.random() * GRID_ROWS);
+      const square = Math.random() < 0.5;
+      const tier = Math.random();
+      let baseSz;
+      if      (tier < 0.25) baseSz = 1 + Math.floor(Math.random() * 2);
+      else if (tier < 0.65) baseSz = 3 + Math.floor(Math.random() * 4);
+      else if (tier < 0.92) baseSz = 7 + Math.floor(Math.random() * Math.max(1, Math.round(7 * _sz)));
+      else                  baseSz = 13 + Math.floor(Math.random() * Math.max(1, Math.round(13 * _sz)));
+      const w = square ? baseSz : baseSz + Math.floor(Math.random() * Math.max(2, baseSz));
+      const h = square ? baseSz : Math.max(2, Math.floor(baseSz * (0.3 + Math.random() * 0.9)));
+      const off = Math.round((Math.random() - 0.5) * 2 * amp);
+      for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) next[idx(x + dx, y + dy)] = grid[idx(x + dx + off, y + dy)];
+    }
+  } else if (roll < 0.85) {
+    const cx = Math.floor(Math.random() * GRID_COLS);
+    const halfW = 1 + Math.floor(Math.random() * Math.max(1, Math.round(2 * _sz)));
+    const yStart = Math.floor(Math.random() * GRID_ROWS);
+    const tier = Math.random();
+    let len;
+    if      (tier < 0.40) len = 2 + Math.floor(Math.random() * 4);
+    else if (tier < 0.85) len = 5 + Math.floor(Math.random() * 8);
+    else if (tier < 0.96) len = 12 + Math.floor(Math.random() * 13);
+    else                  len = 30 + Math.floor(Math.random() * Math.max(1, Math.round(20 * _sz)));
+    const srcY = (yStart + (Math.random() < 0.5 ? -20 : 20) + GRID_ROWS) % GRID_ROWS;
+    for (let h = 0; h < len; h++) {
+      const cy = (yStart + h) % GRID_ROWS;
+      for (let w = -halfW; w <= halfW; w++) next[idx(cx + w, cy)] = grid[idx(cx + w, srcY)];
+    }
+  } else {
+    if (PAL.length < 2) return;
+    const r = makeRect();
+    const N = PAL.length;
+    const last = N - 1;
+    for (let dy = 0; dy < r.h; dy++) for (let dx = 0; dx < r.w; dx++) {
+      const i = idx(r.x + dx, r.y + dy);
+      const v = grid[i];
+      const bayer = _BAYER2[dy & 1][dx & 1] / 4 - 0.375;
+      const norm  = v / last;
+      const jit   = (Math.random() - 0.5) * 0.25;
+      const q     = Math.max(0, Math.min(1, norm + bayer * (1 / N) + jit));
+      next[i]     = Math.round(q * last);
+    }
+  }
+}
+
+// blocks helpers — anchored feedback math + dispatcher matching MODE_PROBS.feedback (70/10/10/10)
+function _localFeedbackAt(ox, oy) {
+  const w = 2 + Math.floor(Math.random() * Math.max(1, Math.round(12 * _sz)));
+  const h = 2 + Math.floor(Math.random() * Math.max(1, Math.round(6 * _sz)));
+  const sx = ox - (w >> 1), sy = oy - (h >> 1);
+  for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) {
+    const cx = sx + dx, cy = sy + dy;
+    const nb = [grid[idx(cx-1,cy)], grid[idx(cx+1,cy)], grid[idx(cx,cy-1)], grid[idx(cx,cy+1)]];
+    const count = new Array(PAL.length).fill(0);
+    for (const n of nb) if (n < PAL.length) count[n]++;
+    let max = 0, best = grid[idx(cx,cy)];
+    for (let v = 0; v < PAL.length; v++) if (count[v] > max) { max = count[v]; best = v; }
+    next[idx(cx,cy)] = best;
+  }
+}
+function _runFeedbackModeOpAt(ox, oy) {
+  const r = Math.random();
+  if      (r < 0.70) _localFeedbackAt(ox, oy);
+  else if (r < 0.80) animShift();
+  else if (r < 0.90) animNoise();
+  else               animModulo();
+}
+
+function animBlocks() {
+  const T = BLOCKS_TUNING;
+  const ox = Math.floor(Math.random() * GRID_COLS);
+  const oy = Math.floor(Math.random() * GRID_ROWS);
+  if (T.feedbackMix > 0) {
+    const tBlend = (ox / GRID_COLS + oy / GRID_ROWS) / 2;
+    const v = Math.pow(T.feedbackMix / 100, 0.4);
+    const prob = v <= 0.5 ? (2 * v * tBlend) : (tBlend * (2 - 2 * v) + (2 * v - 1));
+    if (Math.random() < prob) {
+      _runFeedbackModeOpAt(ox, oy);
+      return;
+    }
+  }
+  if (Math.random() < T.skipPct / 100) return;
+  _blocksT += 0.008;
+  if (PAL.length < 2) return;
+  const last = PAL.length - 1;
+  const pB = T.pBands / 100;
+  const pP = T.pPeaks / 100;
+  const roll = Math.random();
+  const _pickLit = () => {
+    const N = PAL.length;
+    if (N <= 2) return last;
+    const r = 1 - Math.pow(1 - Math.random(), 2.2);
+    return 1 + Math.floor(r * last);
+  };
+  if (roll < pB) {
+    const cy = oy;
+    const tier = Math.random();
+    let h;
+    if      (tier < 0.60) h = 2 + Math.floor(Math.random() * Math.max(1, Math.round((T.bandMaxH * 0.25) * _sz)));
+    else if (tier < 0.93) h = Math.round(T.bandMaxH * 0.31) + Math.floor(Math.random() * Math.max(1, Math.round((T.bandMaxH * 0.31) * _sz)));
+    else                  h = Math.round(T.bandMaxH * 0.56) + Math.floor(Math.random() * Math.max(1, Math.round((T.bandMaxH * 0.44) * _sz)));
+    const bx = ox;
+    const wTier = Math.random();
+    let bw;
+    const isMd = _sz >= 0.99 && _sz <= 1.01;
+    if      (wTier < 0.55) bw = 4 + Math.floor(Math.random() * (isMd ? 17 : 12));
+    else if (wTier < 0.92) bw = (isMd ? 16 : 13) + Math.floor(Math.random() * (isMd ? 7 : 6));
+    else                   bw = (isMd ? 28 : 23) + Math.floor(Math.random() * (isMd ? 2 : 3));
+    const ampY = 1 + Math.floor(Math.random() * Math.max(1, T.bandWaveAmp));
+    const freq = 0.025 + Math.random() * 0.05;
+    const phase = _blocksT * 1.2 + Math.random() * 6.28;
+    const halfH = h / 2;
+    const v = _pickLit();
+    for (let dx = 0; dx < bw; dx++) {
+      const wave = Math.sin((bx + dx) * freq + phase) * ampY;
+      const top = Math.round(cy + wave - halfH);
+      for (let dy = 0; dy < h; dy++) next[idx(bx + dx, top + dy)] = v;
+    }
+  } else if (roll < pB + pP) {
+    const cx = ox, baseY = oy;
+    const tier = Math.random();
+    let height;
+    if      (tier < 0.55) height = 4 + Math.floor(Math.random() * Math.max(1, Math.round(T.peakMaxH * 0.16)));
+    else if (tier < 0.92) height = Math.round(T.peakMaxH * 0.26) + Math.floor(Math.random() * Math.max(1, Math.round(T.peakMaxH * 0.29)));
+    else                  height = Math.round(T.peakMaxH * 0.52) + Math.floor(Math.random() * Math.max(1, Math.round(T.peakMaxH * 0.48 * _sz)));
+    const baseHalfW = 1 + Math.floor(Math.random() * Math.max(1, T.peakBaseW));
+    const v = _pickLit();
+    for (let h = 0; h < height; h++) {
+      const taper = 1 - h / height;
+      const halfW = Math.max(0, Math.floor(baseHalfW * taper));
+      for (let w = -halfW; w <= halfW; w++) next[idx(cx + w, baseY - h)] = v;
+    }
+  } else {
+    const cx = ox, cy = oy;
+    const w = 2 + Math.floor(Math.random() * Math.max(1, Math.round(T.erosionMaxW * _sz)));
+    const h = 2 + Math.floor(Math.random() * Math.max(1, Math.round(T.erosionMaxH * _sz)));
+    for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) next[idx(cx + dx, cy + dy)] = 0;
+  }
+}
+
+// ── Mode cycling ─────────────────────────────────────────────────────────────
+
+// 8-element tuples — order: [feedback, shift, noise, modulo, wave, jungle, sector, blocks]
+const MODE_PROBS = {
+  feedback: [0.70, 0.10, 0.10, 0.10, 0.00, 0.00, 0.00, 0.00],
+  shift:    [0.00, 1.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00],
+  noise:    [0.10, 0.10, 0.70, 0.00, 0.10, 0.00, 0.00, 0.00],
+  modulo:   [0.30, 0.25, 0.20, 0.25, 0.00, 0.00, 0.00, 0.00],
+  wave:     [0.00, 0.00, 0.00, 0.00, 1.00, 0.00, 0.00, 0.00],
+  jungle:   [0.00, 0.00, 0.00, 0.00, 0.00, 1.00, 0.00, 0.00],
+  sector:   [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 1.00, 0.00],
+  blocks:   [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 1.00],
+};
+// Initial cycle — ONLY uses the original 5 modes (so the page-load animation
+// is identical to before). The new modes (modulo/sector/blocks) only appear
+// when the user clicks (see _randomTraits).
+let SEQ     = ['feedback','wave','shift','feedback','jungle','feedback'];
+const CYCLE = 300; // 5s at 60fps
+let _modeIdx = 0, _mode = SEQ[0], _cf = 0;
+
+function step(ops) {
+  next.set(grid);
+  const [p0,p1,p2,p3,p4,p5,p6,p7] = MODE_PROBS[_mode] || MODE_PROBS.feedback;
+  const c1=p0, c2=c1+p1, c3=c2+p2, c4=c3+p3, c5=c4+p4, c6=c5+p5, c7=c6+p6;
+  for (let i = 0; i < ops; i++) {
+    const r = Math.random();
+    if      (r < c1) animFeedback();
+    else if (r < c2) animShift();
+    else if (r < c3) animNoise();
+    else if (r < c4) animModulo();
+    else if (r < c5) animWave();
+    else if (r < c6) animJungle();
+    else if (r < c7) animSector();
+    else             animBlocks();
+  }
+  grid.set(next);
+  if (++_cf >= CYCLE) {
+    _cf = 0;
+    _modeIdx = (_modeIdx + 1) % SEQ.length;
+    _mode    = SEQ[_modeIdx];
+    const b  = document.getElementById('mode-badge');
+    if (b) b.textContent = _mode;
+  }
+}
+
+// ── Rect shifts ──────────────────────────────────────────────────────────────
+
+const DIRS = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1],[1,-1],[-1,1]];
+let _rects = [];
+
+// RS / RD trait scales — randomized in _randomTraits on click.
+// _rsKey selects size category (sm/md/lg/xl); _rdScale divides cooldown ms.
+let _rsKey   = 'md';
+let _rdScale = 1.0;
+
+// Size parameters per RS key — matches app/index.html RS_PARAMS exactly.
+// min/max are GRID-cell counts (one cell = 10px at homepage PIXEL=10).
+const RS_PARAMS = {
+  sm: { min: 4,  max: 20 },
+  md: { min: 10, max: 30 },
+  lg: { min: 20, max: 50 },
+  xl: { min: 40, max: 80 },
+};
+
+// ── 8 RV variants, ported verbatim from app/index.html (lines 4817-5099) ──
+// Each function returns a "rect" object that may carry a tiles[] array for
+// multi-tile variants (everything except 'core' uses tiles). applyRects below
+// dispatches on the presence of tiles. cd / active state added on top.
+let _activeRectVariant = 'core';
+
+function _rvCore() {
+  const p  = RS_PARAMS[_rsKey] || RS_PARAMS.md;
+  const cw = p.min + Math.floor(Math.random() * (p.max - p.min));
+  const ch = p.min + Math.floor(Math.random() * (p.max - p.min));
+  const cx = Math.floor(Math.random() * Math.max(1, GRID_COLS - cw));
+  const cy = Math.floor(Math.random() * Math.max(1, GRID_ROWS - ch));
+  const [ddx, ddy] = DIRS[Math.floor(Math.random() * DIRS.length)];
+  return { cx, cy, cw, ch, dx: ddx, dy: ddy, tiles: null };
+}
+function _rvMecha() {
+  const p  = RS_PARAMS[_rsKey] || RS_PARAMS.md;
+  const cw = Math.min(GRID_COLS, Math.round((p.min + Math.floor(Math.random() * (p.max - p.min))) * 1.3));
+  const ch = Math.min(GRID_ROWS, Math.round((p.min + Math.floor(Math.random() * (p.max - p.min))) * 1.3));
+  const cx = Math.floor(Math.random() * Math.max(1, GRID_COLS - cw));
+  const cy = Math.floor(Math.random() * Math.max(1, GRID_ROWS - ch));
+  const [ddx, ddy] = DIRS[Math.floor(Math.random() * DIRS.length)];
+  return { cx, cy, cw, ch, dx: ddx, dy: ddy, tiles: null, walkRate: 0.10 };
+}
+function _rvHysteria() {
+  const p  = RS_PARAMS[_rsKey] || RS_PARAMS.md;
+  const cw = Math.min(GRID_COLS, Math.round((p.min + Math.floor(Math.random() * (p.max - p.min))) * 1.4));
+  const ch = Math.min(GRID_ROWS, Math.round((p.min + Math.floor(Math.random() * (p.max - p.min))) * 1.4));
+  const cx = Math.floor(Math.random() * Math.max(1, GRID_COLS - cw));
+  const cy = Math.floor(Math.random() * Math.max(1, GRID_ROWS - ch));
+  const tw = Math.max(2, Math.round(cw * (0.35 + Math.random() * 0.15)));
+  const th = Math.max(2, Math.round(ch * (0.35 + Math.random() * 0.15)));
+  const stepX = Math.max(1, Math.floor((cw - tw) / 2));
+  const stepY = Math.max(1, Math.floor((ch - th) / 2));
+  const shape = Math.floor(Math.random() * 4);
+  let rects;
+  if (shape === 0)      rects = [{x:cx, y:cy, w:tw, h:th},{x:cx+stepX, y:cy+stepY, w:tw, h:th},{x:cx+stepX*2, y:cy+stepY*2, w:tw, h:th}];
+  else if (shape === 1) rects = [{x:cx, y:cy+stepY*2, w:tw, h:th},{x:cx+stepX, y:cy+stepY, w:tw, h:th},{x:cx+stepX*2, y:cy, w:tw, h:th}];
+  else if (shape === 2) rects = [{x:cx+stepX*2, y:cy, w:tw, h:th},{x:cx+stepX, y:cy+stepY, w:tw, h:th},{x:cx, y:cy+stepY*2, w:tw, h:th}];
+  else                  rects = [{x:cx+stepX*2, y:cy+stepY*2, w:tw, h:th},{x:cx+stepX, y:cy+stepY, w:tw, h:th},{x:cx, y:cy, w:tw, h:th}];
+  const phaseOffsets = [0, 3, 5];
+  const tiles = rects.map((r, i) => {
+    const ph = phaseOffsets[i];
+    const [pdx, pdy] = DIRS[ph];
+    return { x: r.x, y: r.y, w: r.w, h: r.h, dx: pdx, dy: pdy, phaseIdx: ph, phaseTimer: 0 };
+  });
+  return { cx, cy, cw, ch, dx: 1, dy: 0, tiles };
+}
+function _rvMetro() {
+  const p  = RS_PARAMS[_rsKey] || RS_PARAMS.md;
+  const cw = p.min + Math.floor(Math.random() * (p.max - p.min));
+  const ch = p.min + Math.floor(Math.random() * (p.max - p.min));
+  const cx = Math.floor(Math.random() * Math.max(1, GRID_COLS - cw));
+  const cy = Math.floor(Math.random() * Math.max(1, GRID_ROWS - ch));
+  const horiz = Math.random() < 0.5;
+  const sign  = Math.random() < 0.5 ? 1 : -1;
+  const tiles = [];
+  if (horiz) {
+    const nBands = Math.min(ch, 4 + Math.floor(Math.random() * 3));
+    const bandH  = Math.max(1, Math.floor(ch / nBands));
+    for (let k = 0; k < nBands; k++) {
+      const yk = cy + k * bandH;
+      const hk = (k === nBands - 1) ? (cy + ch - yk) : bandH;
+      const mag = 1 + Math.floor(k / 2);
+      tiles.push({ x: cx, y: yk, w: cw, h: hk, dx: sign * mag, dy: 0 });
+    }
+  } else {
+    const nBands = Math.min(cw, 4 + Math.floor(Math.random() * 3));
+    const bandW  = Math.max(1, Math.floor(cw / nBands));
+    for (let k = 0; k < nBands; k++) {
+      const xk = cx + k * bandW;
+      const wk = (k === nBands - 1) ? (cx + cw - xk) : bandW;
+      const mag = 1 + Math.floor(k / 2);
+      tiles.push({ x: xk, y: cy, w: wk, h: ch, dx: 0, dy: sign * mag });
+    }
+  }
+  return { cx, cy, cw, ch, dx: sign, dy: 0, tiles };
+}
+function _rvSideB() {
+  const p  = RS_PARAMS[_rsKey] || RS_PARAMS.md;
+  const cw = Math.min(GRID_COLS, Math.round((p.min + Math.floor(Math.random() * (p.max - p.min))) * 1.3));
+  const ch = Math.min(GRID_ROWS, Math.round((p.min + Math.floor(Math.random() * (p.max - p.min))) * 1.3));
+  const cx = Math.floor(Math.random() * Math.max(1, GRID_COLS - cw));
+  const cy = Math.floor(Math.random() * Math.max(1, GRID_ROWS - ch));
+  const nSubs = 3 + Math.floor(Math.random() * 2);
+  const tiles = [];
+  for (let i = 0; i < nSubs; i++) {
+    const tw = Math.max(2, Math.round(cw * (0.25 + Math.random() * 0.35)));
+    const th = Math.max(2, Math.round(ch * (0.25 + Math.random() * 0.35)));
+    const tx = cx + Math.floor(Math.random() * Math.max(1, cw - tw));
+    const ty = cy + Math.floor(Math.random() * Math.max(1, ch - th));
+    const [tdx, tdy] = DIRS[Math.floor(Math.random() * DIRS.length)];
+    tiles.push({ x: tx, y: ty, w: tw, h: th, dx: tdx, dy: tdy, resetIn: 40 + Math.floor(Math.random() * 41), _box: { cx, cy, cw, ch } });
+  }
+  return { cx, cy, cw, ch, dx: 1, dy: 0, tiles };
+}
+function _rvPickDirSet() {
+  const n = 1 + Math.floor(Math.random() * 3);
+  const pool = DIRS.slice();
+  const picks = [];
+  for (let i = 0; i < n && pool.length; i++) {
+    picks.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+  }
+  return picks;
+}
+function _rvEarthquake() {
+  const p  = RS_PARAMS[_rsKey] || RS_PARAMS.md;
+  const cw = Math.min(GRID_COLS, Math.round((p.min + Math.floor(Math.random() * (p.max - p.min))) * 1.4));
+  const ch = Math.min(GRID_ROWS, Math.round((p.min + Math.floor(Math.random() * (p.max - p.min))) * 1.4));
+  const cx = Math.floor(Math.random() * Math.max(1, GRID_COLS - cw));
+  const cy = Math.floor(Math.random() * Math.max(1, GRID_ROWS - ch));
+  const tw = Math.max(2, Math.round(cw * (0.35 + Math.random() * 0.15)));
+  const th = Math.max(2, Math.round(ch * (0.35 + Math.random() * 0.15)));
+  const stepX = Math.max(1, Math.floor((cw - tw) / 2));
+  const stepY = Math.max(1, Math.floor((ch - th) / 2));
+  const shape = Math.floor(Math.random() * 4);
+  let tiles;
+  if (shape === 0)      tiles = [{x:cx, y:cy, w:tw, h:th},{x:cx+stepX, y:cy+stepY, w:tw, h:th},{x:cx+stepX*2, y:cy+stepY*2, w:tw, h:th}];
+  else if (shape === 1) tiles = [{x:cx, y:cy+stepY*2, w:tw, h:th},{x:cx+stepX, y:cy+stepY, w:tw, h:th},{x:cx+stepX*2, y:cy, w:tw, h:th}];
+  else if (shape === 2) tiles = [{x:cx+stepX*2, y:cy, w:tw, h:th},{x:cx+stepX, y:cy+stepY, w:tw, h:th},{x:cx, y:cy+stepY*2, w:tw, h:th}];
+  else                  tiles = [{x:cx+stepX*2, y:cy+stepY*2, w:tw, h:th},{x:cx+stepX, y:cy+stepY, w:tw, h:th},{x:cx, y:cy, w:tw, h:th}];
+  const nTiles = 1 + Math.floor(Math.random() * 3);
+  tiles = tiles.slice(0, nTiles);
+  const rerollIn = 5 + Math.floor(Math.random() * 11);
+  return { cx, cy, cw, ch, dx: 1, dy: 0, tiles, rerollIn, dirs: _rvPickDirSet() };
+}
+function _rvRetro() {
+  const p  = RS_PARAMS[_rsKey] || RS_PARAMS.md;
+  const cw = p.min + Math.floor(Math.random() * (p.max - p.min));
+  const ch = p.min + Math.floor(Math.random() * (p.max - p.min));
+  const cx = Math.floor(Math.random() * Math.max(1, GRID_COLS - cw));
+  const cy = Math.floor(Math.random() * Math.max(1, GRID_ROWS - ch));
+  const CARDINAL = [[1,0],[-1,0],[0,1],[0,-1]];
+  const [wdx, wdy] = CARDINAL[Math.floor(Math.random() * 4)];
+  const tiles = []; const N_BANDS = 4;
+  if (wdx !== 0) {
+    const waveW = Math.max(2, Math.floor(cw * 0.4));
+    const impactW = Math.max(1, Math.floor(cw * 0.2));
+    const sprayW  = Math.max(2, cw - waveW - impactW);
+    let waveX, impactX, sprayX;
+    if (wdx > 0) { waveX = cx; impactX = cx + waveW; sprayX = cx + waveW + impactW; }
+    else         { sprayX = cx; impactX = cx + sprayW; waveX = cx + sprayW + impactW; }
+    tiles.push({ x: waveX,   y: cy, w: waveW,   h: ch, dx:  wdx, dy: 0 });
+    tiles.push({ x: impactX, y: cy, w: impactW, h: ch, dx: -wdx, dy: 0 });
+    const bandH = Math.max(1, Math.floor(ch / N_BANDS));
+    for (let k = 0; k < N_BANDS; k++) {
+      const yk = cy + k * bandH;
+      const hk = (k === N_BANDS - 1) ? (cy + ch - yk) : bandH;
+      tiles.push({ x: sprayX, y: yk, w: sprayW, h: hk, dx: 0, dy: (k % 2 === 0) ? 1 : -1 });
+    }
+  } else {
+    const waveH = Math.max(2, Math.floor(ch * 0.4));
+    const impactH = Math.max(1, Math.floor(ch * 0.2));
+    const sprayH  = Math.max(2, ch - waveH - impactH);
+    let waveY, impactY, sprayY;
+    if (wdy > 0) { waveY = cy; impactY = cy + waveH; sprayY = cy + waveH + impactH; }
+    else         { sprayY = cy; impactY = cy + sprayH; waveY = cy + sprayH + impactH; }
+    tiles.push({ x: cx, y: waveY,   w: cw, h: waveH,   dx: 0, dy:  wdy });
+    tiles.push({ x: cx, y: impactY, w: cw, h: impactH, dx: 0, dy: -wdy });
+    const bandW = Math.max(1, Math.floor(cw / N_BANDS));
+    for (let k = 0; k < N_BANDS; k++) {
+      const xk = cx + k * bandW;
+      const wk = (k === N_BANDS - 1) ? (cx + cw - xk) : bandW;
+      tiles.push({ x: xk, y: sprayY, w: wk, h: sprayH, dx: (k % 2 === 0) ? 1 : -1, dy: 0 });
+    }
+  }
+  return { cx, cy, cw, ch, dx: wdx, dy: wdy, tiles };
+}
+function _rvLadder() {
+  const p  = RS_PARAMS[_rsKey] || RS_PARAMS.md;
+  const bw = Math.min(GRID_COLS, Math.round((p.min + Math.floor(Math.random() * (p.max - p.min))) * 2.112));
+  const bh = Math.min(GRID_ROWS, Math.round((p.min + Math.floor(Math.random() * (p.max - p.min))) * 1.584));
+  const bx = Math.floor(Math.random() * Math.max(1, GRID_COLS - bw));
+  const by = Math.floor(Math.random() * Math.max(1, GRID_ROWS - bh));
+  const FREQ_PAIRS = [[2,3],[3,5],[2,5],[3,4],[4,7]];
+  const [f1, f2] = FREQ_PAIRS[Math.floor(Math.random() * FREQ_PAIRS.length)];
+  const ph1 = Math.random() * Math.PI * 2;
+  const ph2 = Math.random() * Math.PI * 2;
+  const ampBase = bh * (0.22 + Math.random() * 0.08);
+  const nTiles = 6 + Math.floor(Math.random() * 4);
+  const tw     = Math.max(3, Math.round(bw * (0.198 + Math.random() * 0.132)));
+  const thBase = Math.max(3, Math.round(bh * (0.242 + Math.random() * 0.132)));
+  const thMin  = Math.max(2, Math.round(thBase * 0.25));
+  const tiles  = [];
+  for (let i = 0; i < nTiles; i++) {
+    const t  = i / Math.max(1, nTiles - 1);
+    const w1 = Math.sin(t * f1 * Math.PI * 2 + ph1);
+    const w2 = Math.sin(t * f2 * Math.PI * 2 + ph2);
+    const compound = (w1 + w2) * 0.5;
+    const th = Math.round(thMin + (thBase - thMin) * Math.abs(compound));
+    const tx = bx + Math.round(t * (bw - tw));
+    const ty = by + Math.round(bh * 0.5 + compound * ampBase - th * 0.5);
+    const [tdx, tdy] = DIRS[Math.floor(Math.random() * DIRS.length)];
+    tiles.push({ x: Math.max(bx, Math.min(bx + bw - tw, tx)), y: Math.max(by, Math.min(by + bh - th, ty)), w: tw, h: th, dx: tdx, dy: tdy });
+  }
+  return { cx: bx, cy: by, cw: bw, ch: bh, dx: 1, dy: 0, tiles };
+}
+const RECT_SHIFT_VARIANTS = {
+  core: _rvCore, mecha: _rvMecha, hysteria: _rvHysteria, metro: _rvMetro,
+  'side-b': _rvSideB, earthquake: _rvEarthquake, retro: _rvRetro, ladder: _rvLadder,
+};
+const RV_KEYS = Object.keys(RECT_SHIFT_VARIANTS);
+
+// _mkRect dispatcher — invokes the active variant + adds active/cd state.
+function _mkRect() {
+  const variantFn = RECT_SHIFT_VARIANTS[_activeRectVariant] || _rvCore;
+  const r = variantFn();
+  r.active = false;
+  r.cd     = Math.max(20, Math.round((60 + Math.floor(Math.random() * 300)) / _rdScale));
+  return r;
+}
+for (let i = 0; i < 8; i++) _rects.push(_mkRect());
+
+// Pixel shifter — handles both whole-rect (tiles=null) and tiled variants.
+// For tiled variants, every tile shifts independently using its own dx/dy.
+// Earthquake samples ONE direction from rs.dirs per frame.
+function _shiftBox(x, y, w, h, dx, dy) {
+  for (let r = y; r < y + h; r++) {
+    for (let c = x; c < x + w; c++) {
+      const rr = ((r % GRID_ROWS) + GRID_ROWS) % GRID_ROWS;
+      const cc = ((c % GRID_COLS) + GRID_COLS) % GRID_COLS;
+      const sr = ((rr - dy) + GRID_ROWS) % GRID_ROWS;
+      const sc = ((cc - dx) + GRID_COLS) % GRID_COLS;
+      next[rr * GRID_COLS + cc]        = grid[sr * GRID_COLS + sc];
+      _ditherNext[rr * GRID_COLS + cc] = _ditherNoise[sr * GRID_COLS + sc];
+    }
+  }
+}
+
+function applyRects() {
+  _ditherNext.set(_ditherNoise);
+  for (const rs of _rects) {
+    if (!rs.active) continue;
+    if (rs.tiles && rs.tiles.length) {
+      // Earthquake samples a single dir set per frame (drives all tiles).
+      let qDx = null, qDy = null;
+      if (rs.dirs && rs.dirs.length) {
+        const [d0, d1] = rs.dirs[Math.floor(Math.random() * rs.dirs.length)];
+        qDx = d0; qDy = d1;
+      }
+      for (const t of rs.tiles) {
+        const tdx = (qDx !== null) ? qDx : (t.dx !== undefined ? t.dx : rs.dx);
+        const tdy = (qDy !== null) ? qDy : (t.dy !== undefined ? t.dy : rs.dy);
+        _shiftBox(t.x, t.y, t.w, t.h, tdx, tdy);
+      }
+    } else {
+      _shiftBox(rs.cx, rs.cy, rs.cw, rs.ch, rs.dx, rs.dy);
+    }
+  }
+  grid.set(next);
+  _ditherNoise.set(_ditherNext);
+}
+
+function tickRects() {
+  for (const rs of _rects) {
+    // Per-variant active-phase tick logic
+    if (rs.active) {
+      // Mecha: random walk on dx/dy
+      if (rs.walkRate && Math.random() < rs.walkRate) {
+        rs.dx = Math.max(-1, Math.min(1, rs.dx + (Math.random() < 0.5 ? -1 : 1)));
+        rs.dy = Math.max(-1, Math.min(1, rs.dy + (Math.random() < 0.5 ? -1 : 1)));
+        if (rs.dx === 0 && rs.dy === 0) rs.dy = (Math.random() < 0.5) ? -1 : 1;
+      }
+      // Earthquake: re-roll dirs every rerollIn frames
+      if (rs.rerollIn !== undefined) {
+        if (--rs.rerollIn <= 0) {
+          rs.dirs    = _rvPickDirSet();
+          rs.rerollIn = 5 + Math.floor(Math.random() * 11);
+        }
+      }
+      // Side-b: per-tile reset countdown — respawn at new random pos+dir
+      if (rs.tiles) {
+        for (const t of rs.tiles) {
+          if (t.resetIn !== undefined && --t.resetIn <= 0) {
+            const box = t._box;
+            const tw = t.w, th = t.h;
+            t.x = box.cx + Math.floor(Math.random() * Math.max(1, box.cw - tw));
+            t.y = box.cy + Math.floor(Math.random() * Math.max(1, box.ch - th));
+            const [ndx, ndy] = DIRS[Math.floor(Math.random() * DIRS.length)];
+            t.dx = ndx; t.dy = ndy;
+            t.resetIn = 40 + Math.floor(Math.random() * 41);
+          }
+        }
+      }
+    }
+    if (--rs.cd <= 0) {
+      rs.active = !rs.active;
+      if (rs.active) {
+        rs.cd = 90 + Math.floor(Math.random() * 300);
+      } else {
+        Object.assign(rs, _mkRect());
+        rs.active = false;
+        rs.cd = 60 + Math.floor(Math.random() * 300);
+      }
+    }
+  }
+}
+
+// ── Canvas + render ──────────────────────────────────────────────────────────
+
+const canvas = document.getElementById('hero-canvas');
+const ctx    = canvas.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+
+function resizeCanvas() {
+  // Round to PIXEL multiples so the render loop covers the full canvas with
+  // no transparent strip at the bottom/right edges. CSS `inset:0` stretches
+  // the slightly-larger buffer to fit the viewport — the imperceptible squash
+  // beats the visible white sliver from `floor(H/PIXEL) * PIXEL < H`.
+  canvas.width  = Math.ceil(window.innerWidth  / PIXEL) * PIXEL;
+  canvas.height = Math.ceil(window.innerHeight / PIXEL) * PIXEL;
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+// Apply DX dither pattern: pixel-level marks inside cells where grid value ===
+// _ditherTarget, drawn in PAL[_ditherColorIdx]. Sparse via _ditherNoise filter.
+// Same algorithm as app/index.html _applyDither.
+// Patterns are 6×6 px (designed for app/index.html's PIXEL=6); homepage uses
+// PIXEL=10, so we center each 6×6 pattern in its 10×10 cell with a 2px offset
+// on each side. _DX_PATTERN_PX is the pattern's own grid size, _DX_OFFSET is
+// the centering offset (computed once at startup).
+const _DX_PATTERN_PX = 6;
+const _DX_OFFSET = Math.max(0, Math.floor((PIXEL - _DX_PATTERN_PX) / 2));
+
+// num/numi digit patterns — each is a 12×12 bitmap (5×7 font centered in
+// a 2×2 block at PIXEL=6, so 12×12 raw px). For homepage PIXEL=10 a 2×2 block
+// is 20×20 px, so we center the 12×12 digit with a 4px offset on each side.
+// Patterns ported verbatim from app/index.html (lines 2199-2210 / 2212-2219).
+const DX_DIGIT_PATTERNS = [
+  [[2,4],[2,5],[2,6],[3,3],[3,7],[4,3],[4,7],[5,3],[5,7],[6,3],[6,7],[7,3],[7,7],[8,4],[8,5],[8,6]], // 0
+  [[2,5],[3,4],[3,5],[4,5],[5,5],[6,5],[7,5],[8,4],[8,5],[8,6]], // 1
+  [[2,4],[2,5],[2,6],[3,3],[3,7],[4,7],[5,6],[6,5],[7,4],[8,3],[8,4],[8,5],[8,6],[8,7]], // 2
+  [[2,4],[2,5],[2,6],[3,3],[3,7],[4,7],[5,5],[5,6],[6,7],[7,3],[7,7],[8,4],[8,5],[8,6]], // 3
+  [[2,6],[3,5],[3,6],[4,4],[4,6],[5,3],[5,6],[6,3],[6,4],[6,5],[6,6],[6,7],[7,6],[8,6]], // 4
+  [[2,3],[2,4],[2,5],[2,6],[2,7],[3,3],[4,3],[5,3],[5,4],[5,5],[5,6],[6,7],[7,7],[8,3],[8,4],[8,5],[8,6]], // 5
+  [[2,4],[2,5],[2,6],[3,3],[4,3],[5,3],[5,4],[5,5],[5,6],[6,3],[6,7],[7,3],[7,7],[8,4],[8,5],[8,6]], // 6
+  [[2,3],[2,4],[2,5],[2,6],[2,7],[3,7],[4,6],[5,5],[6,4],[7,4],[8,4]], // 7
+  [[2,4],[2,5],[2,6],[3,3],[3,7],[4,3],[4,7],[5,4],[5,5],[5,6],[6,3],[6,7],[7,3],[7,7],[8,4],[8,5],[8,6]], // 8
+  [[2,4],[2,5],[2,6],[3,3],[3,7],[4,3],[4,7],[5,4],[5,5],[5,6],[5,7],[6,7],[7,7],[8,4],[8,5],[8,6]], // 9
+];
+const DX_DIGIT_PATTERNS_INV = DX_DIGIT_PATTERNS.map(pattern => {
+  const set = new Set(pattern.map(([r,c]) => r * 12 + c));
+  const inv = [];
+  for (let r = 0; r < 12; r++)
+    for (let c = 0; c < 12; c++)
+      if (!set.has(r * 12 + c)) inv.push([r, c]);
+  return inv;
+});
+// Centering offset for the 12×12 digit grid inside a 2×2-cell block at this PIXEL.
+const _DX_DIGIT_OFFSET = Math.max(0, Math.floor((PIXEL * 2 - 12) / 2));
+function _applyDither(buf, W, vC, vR, oC, oR) {
+  if (!_activeDxPattern) return;
+
+  // 'o' — gray Lego-stud rings, NO target-color filter, high density, 50% alpha-blend
+  if (_activeDxPattern === 'o') {
+    const O_DENSITY = 0.90;       // near-full cell coverage
+    const O_R = 106, O_G = 98, O_B = 98; // #6a6262 — slightly warm dark grey
+    const ALPHA = 0.40;
+    const INV   = 1 - ALPHA;
+    const pattern = DX_PATTERNS.legoStud;
+    for (let r = 0; r < vR; r++) {
+      for (let c = 0; c < vC; c++) {
+        const gi = (oR + r) * GRID_COLS + (oC + c);
+        // No target check — paints over any color
+        if (_ditherNoise[gi] > O_DENSITY) continue;
+        const baseRow = r * PIXEL + _DX_OFFSET, baseCol = c * PIXEL + _DX_OFFSET;
+        for (let k = 0; k < pattern.length; k++) {
+          const idx2 = ((baseRow + pattern[k][0]) * W + (baseCol + pattern[k][1])) * 4;
+          buf[idx2]   = (O_R * ALPHA + buf[idx2]   * INV) | 0;
+          buf[idx2+1] = (O_G * ALPHA + buf[idx2+1] * INV) | 0;
+          buf[idx2+2] = (O_B * ALPHA + buf[idx2+2] * INV) | 0;
+          buf[idx2+3] = 255;
+        }
+      }
+    }
+    return;
+  }
+
+  if (_ditherTarget < 0 || _ditherTarget >= PAL.length) return;
+  const ci = Math.min(_ditherColorIdx, PAL.length - 1);
+  if (ci === _ditherTarget) return;
+  const [R, G, B] = PAL[ci];
+
+  // 'num' / 'numi' — digit bitmap (5×7 font in a 12×12 block, stride-2 across
+  // 2×2 cell groups). The digit disappears if any of the 4 cells in its 2×2
+  // block is invaded by a non-target color — same fragility as v2.
+  if (_activeDxPattern === 'num' || _activeDxPattern === 'numi') {
+    const NUM_DENSITY = DITHER_DENSITY * 1.95;
+    const maxRow = vR * PIXEL, maxCol = W;
+    for (let r = 0; r < vR - 1; r += 2) {
+      for (let c = 0; c < vC - 1; c += 2) {
+        const gi = (oR + r) * GRID_COLS + (oC + c);
+        if (_ditherNoise[gi] > NUM_DENSITY) continue;
+        // disappear if any of the 4 cells in the 2×2 block is invaded
+        if (grid[gi]                                       !== _ditherTarget) continue;
+        if (grid[(oR + r)     * GRID_COLS + (oC + c + 1)] !== _ditherTarget) continue;
+        if (grid[(oR + r + 1) * GRID_COLS + (oC + c)]     !== _ditherTarget) continue;
+        if (grid[(oR + r + 1) * GRID_COLS + (oC + c + 1)] !== _ditherTarget) continue;
+        const digit = ((oR + r) * 7 + (oC + c) * 13) % 10;
+        const pattern = _activeDxPattern === 'numi' ? DX_DIGIT_PATTERNS_INV[digit] : DX_DIGIT_PATTERNS[digit];
+        const baseRow = r * PIXEL + _DX_DIGIT_OFFSET, baseCol = c * PIXEL + _DX_DIGIT_OFFSET;
+        for (let k = 0; k < pattern.length; k++) {
+          const pr = baseRow + pattern[k][0], pc = baseCol + pattern[k][1];
+          if (pr >= maxRow || pc >= maxCol) continue;
+          const idx2 = (pr * W + pc) * 4;
+          buf[idx2] = R; buf[idx2+1] = G; buf[idx2+2] = B; buf[idx2+3] = 255;
+        }
+      }
+    }
+    return;
+  }
+
+  // 'm' — multi pattern, picks one of 4 internal shapes per cell via noise-band binning
+  if (_activeDxPattern === 'm') {
+    const N = _DX_MULTI.length;
+    const bandWidth = DITHER_DENSITY / N;
+    for (let r = 0; r < vR; r++) {
+      for (let c = 0; c < vC; c++) {
+        const gi = (oR + r) * GRID_COLS + (oC + c);
+        if (grid[gi] !== _ditherTarget) continue;
+        if (_ditherNoise[gi] > DITHER_DENSITY) continue;
+        const shapeIdx = Math.min(N - 1, Math.floor(_ditherNoise[gi] / bandWidth));
+        const pattern = DX_PATTERNS[_DX_MULTI[shapeIdx]];
+        const baseRow = r * PIXEL + _DX_OFFSET, baseCol = c * PIXEL + _DX_OFFSET;
+        for (let k = 0; k < pattern.length; k++) {
+          const idx2 = ((baseRow + pattern[k][0]) * W + (baseCol + pattern[k][1])) * 4;
+          buf[idx2] = R; buf[idx2+1] = G; buf[idx2+2] = B; buf[idx2+3] = 255;
+        }
+      }
+    }
+    return;
+  }
+
+  // Standard PAL-color pattern
+  const pattern = DX_PATTERNS[_activeDxPattern] || DX_PATTERNS.x;
+  for (let r = 0; r < vR; r++) {
+    for (let c = 0; c < vC; c++) {
+      const gi = (oR + r) * GRID_COLS + (oC + c);
+      if (grid[gi] !== _ditherTarget) continue;
+      if (_ditherNoise[gi] > DITHER_DENSITY) continue;
+      const baseRow = r * PIXEL + _DX_OFFSET, baseCol = c * PIXEL + _DX_OFFSET;
+      for (let k = 0; k < pattern.length; k++) {
+        const idx2 = ((baseRow + pattern[k][0]) * W + (baseCol + pattern[k][1])) * 4;
+        buf[idx2] = R; buf[idx2+1] = G; buf[idx2+2] = B; buf[idx2+3] = 255;
+      }
+    }
+  }
+}
+
+function render() {
+  const W  = canvas.width, H = canvas.height;
+  const vC = Math.min(Math.floor(W / PIXEL), GRID_COLS);
+  const vR = Math.min(Math.floor(H / PIXEL), GRID_ROWS);
+  const oC = Math.floor((GRID_COLS - vC) / 2);
+  const oR = Math.floor((GRID_ROWS - vR) / 2);
+  const img = ctx.createImageData(W, H);
+  const buf = img.data;
+  for (let r = 0; r < vR; r++) {
+    for (let c = 0; c < vC; c++) {
+      const [R, G, B] = PAL[grid[(oR + r) * GRID_COLS + (oC + c)]] || PAL[0];
+      for (let py = 0; py < PIXEL; py++) {
+        for (let px = 0; px < PIXEL; px++) {
+          const i = ((r * PIXEL + py) * W + (c * PIXEL + px)) * 4;
+          buf[i] = R; buf[i+1] = G; buf[i+2] = B; buf[i+3] = 255;
+        }
+      }
+    }
+  }
+  _applyDither(buf, W, vC, vR, oC, oR);
+  ctx.putImageData(img, 0, 0);
+}
+
+// ── Global loop ──────────────────────────────────────────────────────────────
+
+const _FI = 1000 / 60;
+const _rm  = window.matchMedia('(prefers-reduced-motion: reduce)');
+let _last  = 0;
+
+function loop(ts) {
+  if (!document.hidden && ts - _last >= (_rm.matches ? 200 : _FI)) {
+    try {
+      step(24);
+      for (let i = 0; i < 5; i++) applyRects();
+      tickRects();
+      _churnDither(); // refresh ~0.8% of dither noise per frame (~2s mark lifetime)
+      render();
+    } catch (e) { console.error('[Hero]', e); }
+    _last = ts;
+  }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// ── Intro animation ──────────────────────────────────────────────────────────
+
+const introCanvas = document.getElementById('intro-canvas');
+const iCtx        = introCanvas.getContext('2d');
+
+// Reveal-mask constants. Must match _drawIntroState — extracted here so _maxR
+// can budget for the worst-case bias and guarantee every cell is revealed at t=1.
+const REVEAL_BIAS_CELLS = 16; // ±BIAS_CELLS × PIXEL random offset per cell
+const REVEAL_FADE_CELLS = 3;  // FADE_W spread across alpha ramp
+
+let _iW, _iH, _icx, _icy, _maxR;
+function _initIntro() {
+  _iW = window.innerWidth;
+  _iH = window.innerHeight;
+  introCanvas.width  = _iW;
+  introCanvas.height = _iH;
+  _icx = Math.floor(_iW / 2);
+  _icy = Math.floor(_iH / 2);
+  // Furthest cell (corner) distance + worst-case positive bias + fade slack.
+  // Without the bias term, corner cells with bad bias never satisfy
+  // `eff < revealR - FADE_W` and stay visible at the end of the animation.
+  const corner = Math.hypot(_iW / 2, _iH / 2);
+  _maxR = corner + (REVEAL_BIAS_CELLS + REVEAL_FADE_CELLS + 2) * PIXEL;
+}
+_initIntro();
+
+// Hide UI until reveal
+const _topbar  = document.querySelector('.topbar');
+const _badge   = document.getElementById('mode-badge');
+const _elCta   = document.querySelector('.hero-cta');
+const _elSub   = document.querySelector('.hero-sub');
+const _elDiv   = document.querySelector('.hero-divider');
+const _elTitle = document.querySelector('.hero-title');
+_topbar.style.opacity  = '0';
+_badge.style.opacity   = '0';
+_elCta.style.opacity   = '0';
+_elSub.style.opacity   = '0';
+_elDiv.style.opacity   = '0';
+_elTitle.style.opacity = '0';
+
+// Draw initial state: full beige cover with one pixel hole at center
+function _drawIntroState(revealR, rings) {
+  const W  = _iW, H = _iH;
+  const vC = Math.ceil(W / PIXEL);
+  const vR = Math.ceil(H / PIXEL);
+
+  // Center cell coords — purple marker
+  const _pcx = Math.floor(_icx / PIXEL) * PIXEL;
+  const _pcy = Math.floor(_icy / PIXEL) * PIXEL;
+
+  if (revealR <= 0) {
+    iCtx.fillStyle = 'rgb(210,206,198)';
+    iCtx.fillRect(0, 0, W, H);
+    iCtx.fillStyle = 'rgb(160,64,255)';
+    iCtx.fillRect(_pcx, _pcy, PIXEL, PIXEL);
+    return;
+  }
+
+  // Per-cell random bias distorts the circle into a blob
+  // Each cell gets a unique ±BIAS offset to its distance → non-circular front
+  const BIAS   = PIXEL * 16;
+  const FADE_W = PIXEL * 3;
+
+  const img = iCtx.createImageData(W, H);
+  const buf = img.data;
+
+  for (let r = 0; r <= vR; r++) {
+    for (let c = 0; c <= vC; c++) {
+      const cx   = c * PIXEL + PIXEL / 2;
+      const cy   = r * PIXEL + PIXEL / 2;
+      const dist = Math.hypot(cx - _icx, cy - _icy);
+
+      const h    = (((c * 2654435761) ^ (r * 2246822519)) >>> 0) & 0xffff;
+      const bias = (h / 65535 - 0.5) * 2 * BIAS;
+      const eff  = dist + bias;
+
+      const inner = revealR - FADE_W;
+      const outer = revealR + FADE_W;
+
+      let alpha;
+      if      (eff < inner) { alpha = 0; }
+      else if (eff > outer) { alpha = 255; }
+      else {
+        const t = (eff - inner) / (FADE_W * 2);
+        alpha = Math.round(t * 0.95 * 255);
+      }
+
+      if (alpha === 0) continue;
+
+      const maxPY = Math.min(PIXEL, H - r * PIXEL);
+      const maxPX = Math.min(PIXEL, W - c * PIXEL);
+      for (let py = 0; py < maxPY; py++) {
+        const row = (r * PIXEL + py) * W;
+        for (let px = 0; px < maxPX; px++) {
+          const i  = (row + c * PIXEL + px) * 4;
+          buf[i]   = 210;
+          buf[i+1] = 206;
+          buf[i+2] = 198;
+          buf[i+3] = alpha;
+        }
+      }
+    }
+  }
+
+  iCtx.putImageData(img, 0, 0);
+
+  // Purple center cell fades out quickly at reveal start
+  const _pa = Math.max(0, 1 - revealR / (PIXEL * 6));
+  if (_pa > 0) {
+    iCtx.fillStyle = `rgba(160,64,255,${_pa})`;
+    iCtx.fillRect(_pcx, _pcy, PIXEL, PIXEL);
+  }
+}
+_drawIntroState(0, null);
+
+// Reveal on click
+let _introActive = false;
+let _uiRevealed  = false;
+
+function _revealUI() {
+  if (_uiRevealed) return;
+  _uiRevealed = true;
+  const fade = (el, delay, dur) => setTimeout(() => {
+    el.style.transition = `opacity ${dur}s ease`;
+    el.style.opacity = '1';
+  }, delay);
+  _topbar.style.transition = 'background 0.3s, border-color 0.3s, opacity 0.6s ease';
+  _topbar.style.opacity = '1';
+  _badge.style.transition = 'color 0.3s, opacity 0.6s ease';
+  _badge.style.opacity = '1';
+  fade(_elCta,    0,   0.6);
+  fade(_elSub,   220,  0.6);
+  fade(_elDiv,   420,  0.6);
+  fade(_elTitle, 680,  2.2);
+}
+
+function _startReveal() {
+  if (_introActive) return;
+  _introActive = true;
+
+  const DURATION = 7000;
+  const RING_DEFS = [
+    { delay:   0, speed: 1.00, peakAlpha: 0.22 },
+    { delay: 180, speed: 0.93, peakAlpha: 0.16 },
+    { delay: 390, speed: 0.86, peakAlpha: 0.11 },
+    { delay: 640, speed: 0.78, peakAlpha: 0.07 },
+  ];
+
+  let startT = null;
+
+  function frame(ts) {
+    if (!startT) startT = ts;
+    const elapsed = ts - startT;
+    const t       = Math.min(elapsed / DURATION, 1);
+    const eased   = 1 - Math.pow(1 - t, 2.8);
+    const revealR = PIXEL + eased * (_maxR - PIXEL);
+
+    const rings = RING_DEFS.map(def => {
+      const re = elapsed - def.delay;
+      if (re < 0) return { r: 0, alpha: 0 };
+      const rt    = Math.min(re / (DURATION * def.speed), 1);
+      const rEase = 1 - Math.pow(1 - rt, 2.2);
+      return {
+        r:     rEase * _maxR * 1.1,
+        alpha: def.peakAlpha * Math.max(0, 1 - rt * 1.2),
+      };
+    });
+
+    _drawIntroState(revealR, rings);
+
+    if (t > 0.38) _revealUI();
+
+    if (t < 1) {
+      requestAnimationFrame(frame);
+    } else {
+      introCanvas.style.transition = 'opacity 0.2s';
+      introCanvas.style.opacity    = '0';
+      setTimeout(() => { introCanvas.style.display = 'none'; }, 220);
+      _revealUI();
+      _elTitle.style.transition = 'none';
+      _elTitle.style.opacity    = '1';
+    }
+  }
+
+  requestAnimationFrame(frame);
+}
+
+introCanvas.addEventListener('click',      _startReveal);
+introCanvas.addEventListener('touchstart', _startReveal, { passive: true });
+
+// Skip intro if returning from app view
+if (location.hash === '#app') {
+  history.replaceState(null, '', location.pathname);
+  introCanvas.style.display = 'none';
+  _revealUI();
+  _uiRevealed = true;
+  // Top wash should also be gone on return — match post-reveal state.
+  // .instant-wash kills the 1.5s transition so it's gone immediately on the
+  // skip path (no flash of the white wash on return-from-app).
+  const _heroScrimReturn = document.querySelector('.hero-scrim');
+  if (_heroScrimReturn) {
+    _heroScrimReturn.classList.add('instant-wash', 'no-top-wash');
+  }
+  requestAnimationFrame(() => _openWindows());
+}
+
+// After reveal: click on animation area → random traits (mode + size + palette)
+// using all 8 engine modes (feedback/shift/noise/modulo/wave/jungle/sector/blocks).
+// The initial page-load animation stays on the original SEQ until first click.
+// First post-reveal click also clears the warm scrim (intro is already over —
+// the user has seen the loaded state, the wash is no longer needed). Idempotent
+// classList.add so subsequent clicks don't re-trigger the transition.
+let _scrimFaded = false;
+function _fadeScrimOnce() {
+  if (_scrimFaded) return;
+  _scrimFaded = true;
+  const _heroScrim = document.querySelector('.hero-scrim');
+  if (_heroScrim) _heroScrim.classList.add('no-top-wash');
+}
+document.addEventListener('click', (e) => {
+  if (_uiRevealed && !e.target.closest('a, button, .mod-window')) {
+    _fadeScrimOnce();
+    _randomTraits();
+  }
+});
+document.addEventListener('touchstart', (e) => {
+  if (_uiRevealed && !e.target.closest('a, button, .mod-window')) {
+    _fadeScrimOnce();
+    _randomTraits();
+  }
+}, { passive: true });
+
+// ── Module windows ───────────────────────────────────────────────────────────
+
+const _pageOverlay = document.getElementById('page-transition');
+
+// Fade out on arrive
+requestAnimationFrame(() => requestAnimationFrame(() => {
+  _pageOverlay.classList.add('out');
+  setTimeout(() => { _pageOverlay.style.display = 'none'; }, 600);
+}));
+
+function _navigateTo(href) {
+  _pageOverlay.style.display = '';
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    _pageOverlay.classList.remove('out');
+    _pageOverlay.classList.add('active');
+    setTimeout(() => { window.location.href = href; }, 580);
+  }));
+}
+
+const WIN_DATA = [
+  { label:'Enter',      href:'app/index.html',        desc:'Be part and explore the desires\nof different consciousness', x:'19vw', y:'34vh', delay:0,   w:318, fDur:'3.8s', fDel:'0.3s' },
+  { label:'About',      href:'about/index.html',      desc:'Know more about\nhow the machine works',                     x:'44vw', y:'44vh', delay:160, w:272, fDur:'4.4s', fDel:'1.6s' },
+  { label:'Collection', href:'collection/index.html', desc:'No desires settled\ncome back later',                        x:'67vw', y:'28vh', delay:310, w:312, fDur:'3.5s', fDel:'0.9s' },
+];
+
+let _windowsOpen = false;
+let _winLayer    = null;
+let _drag        = null;
+
+function _onDragMove(e) {
+  if (!_drag) return;
+  _drag.el.style.left = (_drag.sx + e.clientX - _drag.mx) + 'px';
+  _drag.el.style.top  = (_drag.sy + e.clientY - _drag.my) + 'px';
+}
+function _onDragUp() { _drag = null; }
+
+function _closeWindows() {
+  _windowsOpen = false;
+  document.getElementById('canvas-blur').classList.remove('active');
+  canvas.classList.remove('zoomed');
+  if (_winLayer) { _winLayer.remove(); _winLayer = null; }
+  document.removeEventListener('mousemove', _onDragMove);
+  document.removeEventListener('mouseup',   _onDragUp);
+}
+
+function _dodgeWindow(wrap) {
+  const allWraps = _winLayer ? Array.from(_winLayer.querySelectorAll('.mod-wrapper')) : [];
+  const others   = allWraps.filter(w => w !== wrap);
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const r  = wrap.getBoundingClientRect();
+
+  let nx = r.left, ny = r.top;
+  for (let i = 0; i < 30; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist  = 100 + Math.random() * 180;
+    const cx    = r.left + Math.cos(angle) * dist;
+    const cy    = r.top  + Math.sin(angle) * dist;
+    const bx    = Math.max(10, Math.min(vw - r.width  - 10, cx));
+    const by    = Math.max(44, Math.min(vh - r.height - 10, cy));
+    const hits  = others.some(o => {
+      const or = o.getBoundingClientRect();
+      return !(bx + r.width < or.left - 8 || bx > or.right + 8 || by + r.height < or.top - 8 || by > or.bottom + 8);
+    });
+    if (!hits) { nx = bx; ny = by; break; }
+  }
+
+  wrap.style.animation  = 'none';
+  wrap.style.transition = 'left 0.14s cubic-bezier(0.2,0,0.4,1), top 0.14s cubic-bezier(0.2,0,0.4,1)';
+  wrap.style.left = nx + 'px';
+  wrap.style.top  = ny + 'px';
+  setTimeout(() => {
+    wrap.style.transition = '';
+    const idx = allWraps.indexOf(wrap);
+    if (idx >= 0) wrap.style.animation = `win-float ${WIN_DATA[idx].fDur} ease-in-out ${WIN_DATA[idx].fDel} infinite`;
+  }, 160);
+}
+
+function _openWindows() {
+  if (_windowsOpen) return;
+  _windowsOpen = true;
+
+  document.getElementById('canvas-blur').classList.add('active');
+  canvas.classList.add('zoomed');
+
+  _winLayer = document.createElement('div');
+  _winLayer.id = 'windows-layer';
+  document.body.appendChild(_winLayer);
+
+  WIN_DATA.forEach(d => {
+    const wrap = document.createElement('div');
+    wrap.className = 'mod-wrapper';
+    wrap.style.left            = d.x;
+    wrap.style.top             = d.y;
+    wrap.style.animation       = `win-float ${d.fDur} ease-in-out ${d.fDel} infinite`;
+
+    const win = document.createElement('div');
+    win.className = 'mod-window';
+    win.style.width          = d.w + 'px';
+    win.style.animationDelay = d.delay + 'ms';
+    win.innerHTML = `
+      <div class="mod-titlebar">
+        <button class="mod-close"></button>
+      </div>
+      <div class="mod-content">
+        <a class="mod-label" href="${d.href}">${d.label}</a>
+        <span class="mod-desc">${d.desc.replace(/\n/g,'<br>')}</span>
+      </div>`;
+
+    win.querySelector('.mod-label').addEventListener('click', e => {
+      if (!d.href || d.href === '#') return;
+      e.preventDefault();
+      _navigateTo(d.href);
+    });
+
+    win.querySelector('.mod-close').addEventListener('click', () => {
+      _dodgeWindow(wrap);
+    });
+
+    win.querySelector('.mod-titlebar').addEventListener('mousedown', e => {
+      if (e.target.classList.contains('mod-close')) return;
+      const r = wrap.getBoundingClientRect();
+      wrap.style.left      = r.left + 'px';
+      wrap.style.top       = r.top  + 'px';
+      wrap.style.animation = 'none';
+      _drag = { el:wrap, mx:e.clientX, my:e.clientY, sx:r.left, sy:r.top };
+    });
+
+    wrap.appendChild(win);
+    _winLayer.appendChild(wrap);
+  });
+
+  document.addEventListener('mousemove', _onDragMove);
+  document.addEventListener('mouseup',   _onDragUp);
+}
+
+const _ctaBtn = document.querySelector('.hero-cta');
+_ctaBtn.addEventListener('click', e => {
+  e.preventDefault();
+  if (_windowsOpen) {
+    _closeWindows();
+    _ctaBtn.textContent = 'explore app →';
+  } else {
+    _openWindows();
+    _ctaBtn.textContent = '← back';
+  }
+});
+</script>
+</body>
+</html>
