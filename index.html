@@ -3,6 +3,33 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- CSP defence-in-depth. Homepage uses only inline CSS/JS + same-origin assets.
+     No external scripts, no Firebase, no wallet calls. -->
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'self';
+  script-src 'self' 'unsafe-inline';
+  style-src 'self' 'unsafe-inline';
+  font-src 'self' data:;
+  img-src 'self' data: blob:;
+  connect-src 'self';
+  frame-ancestors 'none';
+  base-uri 'self';
+  form-action 'self';
+">
+<!-- Frame-buster: clickjacking defense for GitHub Pages. Homepage links to
+     /app/ where users connect wallets — protect the entry point too. -->
+<script>
+  if (window !== window.top) {
+    try { window.top.location = window.location.href; } catch (_) {}
+    document.documentElement.innerHTML =
+      '<body style="background:#000;color:#fff;font-family:monospace;' +
+      'padding:40px;text-align:center"><h2>modulo</h2>' +
+      '<p>This page cannot be embedded in a frame. Open ' +
+      '<a href="https://modulo.ubk.art" style="color:#fff" target="_top" rel="noopener noreferrer">' +
+      'modulo.ubk.art</a> directly.</p></body>';
+    throw new Error('embedded in iframe — execution halted');
+  }
+</script>
 <title>TokenCluster — v2</title>
 <style>
 * { box-sizing:border-box; margin:0; padding:0; }
@@ -320,7 +347,7 @@ html, body { width:100%; margin:0; padding:0; height:100%; overflow:hidden; back
       <h1 class="hero-title">MODULO<a class="hero-byline" href="https://x.com/unbearableKnife" target="_blank" rel="noopener">by ubk</a></h1>
       <div class="hero-divider"></div>
       <div class="hero-sub">a modular cellular automata collection · fully on-chain · Ethereum</div>
-      <a href="app/index.html" class="hero-cta">explore app →</a>
+      <a href="app/" class="hero-cta">explore app →</a>
     </div>
     <div id="mode-badge">feedback</div>
   </section>
@@ -1393,6 +1420,13 @@ function _initIntro() {
   _maxR = corner + (REVEAL_BIAS_CELLS + REVEAL_FADE_CELLS + 2) * PIXEL;
 }
 _initIntro();
+// Recompute intro canvas dims on resize — without this, rotating the device
+// or resizing the window during the intro leaves the canvas sized for the
+// initial dimensions, causing visual artifacts.
+window.addEventListener('resize', () => {
+  if (introCanvas.style.display === 'none') return; // intro already finished
+  _initIntro();
+});
 
 // Hide UI until reveal
 const _topbar  = document.querySelector('.topbar');
@@ -1401,12 +1435,20 @@ const _elCta   = document.querySelector('.hero-cta');
 const _elSub   = document.querySelector('.hero-sub');
 const _elDiv   = document.querySelector('.hero-divider');
 const _elTitle = document.querySelector('.hero-title');
+const _elByline = document.querySelector('.hero-byline');
 _topbar.style.opacity  = '0';
 _badge.style.opacity   = '0';
 _elCta.style.opacity   = '0';
 _elSub.style.opacity   = '0';
 _elDiv.style.opacity   = '0';
 _elTitle.style.opacity = '0';
+// Anti-clickjack during intro: .hero-cta and .hero-byline have pointer-events:auto
+// in CSS (overriding the .hero-overlay none). Sitting at z-index 501 above the
+// intro-canvas (z-index 500), they swallow clicks meant for _startReveal — a
+// click on the bottom-left corner navigates to /app/ without ever revealing
+// the page. Disable until _revealUI restores them.
+_elCta.style.pointerEvents = 'none';
+if (_elByline) _elByline.style.pointerEvents = 'none';
 
 // Draw initial state: full beige cover with one pixel hole at center
 function _drawIntroState(revealR, rings) {
@@ -1502,6 +1544,9 @@ function _revealUI() {
   fade(_elSub,   220,  0.6);
   fade(_elDiv,   420,  0.6);
   fade(_elTitle, 680,  2.2);
+  // Restore pointer-events on revealed clickable elements (see boot block).
+  _elCta.style.pointerEvents = 'auto';
+  if (_elByline) _elByline.style.pointerEvents = 'auto';
 }
 
 function _startReveal() {
@@ -1587,16 +1632,22 @@ function _fadeScrimOnce() {
   const _heroScrim = document.querySelector('.hero-scrim');
   if (_heroScrim) _heroScrim.classList.add('no-top-wash');
 }
+// Tap dedup: on mobile, touchstart fires THEN a synthetic click ~300ms later.
+// Without dedup, _randomTraits ran twice per tap (palette flicker). We mark
+// the tap origin in touchstart and ignore the next click within 500ms.
+let _tapHandled = 0;
+function _triggerRandomTraits() {
+  _fadeScrimOnce();
+  _randomTraits();
+}
 document.addEventListener('click', (e) => {
-  if (_uiRevealed && !e.target.closest('a, button, .mod-window')) {
-    _fadeScrimOnce();
-    _randomTraits();
-  }
+  if (Date.now() - _tapHandled < 500) return; // came from a touch tap, already handled
+  if (_uiRevealed && !e.target.closest('a, button, .mod-window')) _triggerRandomTraits();
 });
 document.addEventListener('touchstart', (e) => {
   if (_uiRevealed && !e.target.closest('a, button, .mod-window')) {
-    _fadeScrimOnce();
-    _randomTraits();
+    _tapHandled = Date.now();
+    _triggerRandomTraits();
   }
 }, { passive: true });
 
@@ -1620,19 +1671,30 @@ function _navigateTo(href) {
 }
 
 const WIN_DATA = [
-  { label:'Enter',      href:'app/index.html',        desc:'Be part and explore the desires\nof different consciousness', x:'19vw', y:'34vh', delay:0,   w:318, fDur:'3.8s', fDel:'0.3s' },
-  { label:'About',      href:'about/index.html',      desc:'Know more about\nhow the machine works',                     x:'44vw', y:'44vh', delay:160, w:272, fDur:'4.4s', fDel:'1.6s' },
-  { label:'Collection', href:'collection/index.html', desc:'No desires settled\ncome back later',                        x:'67vw', y:'28vh', delay:310, w:312, fDur:'3.5s', fDel:'0.9s' },
+  { label:'Enter',      href:'app/',        desc:'Be part and explore the desires\nof different consciousness', x:'19vw', y:'34vh', delay:0,   w:318, fDur:'3.8s', fDel:'0.3s' },
+  { label:'About',      href:'about/',      desc:'Know more about\nhow the machine works',                     x:'44vw', y:'44vh', delay:160, w:272, fDur:'4.4s', fDel:'1.6s' },
+  { label:'Collection', href:'collection/', desc:'No desires settled\ncome back later',                        x:'67vw', y:'28vh', delay:310, w:312, fDur:'3.5s', fDel:'0.9s' },
 ];
 
 let _windowsOpen = false;
 let _winLayer    = null;
 let _drag        = null;
 
+// Pointer position helper — handles both mouse and touch events. Touch events
+// expose coordinates via `touches[0]` (start/move) or `changedTouches[0]` (end).
+function _ptCoords(e) {
+  if (e.touches && e.touches.length) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  if (e.changedTouches && e.changedTouches.length) return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
+  return { x: e.clientX, y: e.clientY };
+}
+
 function _onDragMove(e) {
   if (!_drag) return;
-  _drag.el.style.left = (_drag.sx + e.clientX - _drag.mx) + 'px';
-  _drag.el.style.top  = (_drag.sy + e.clientY - _drag.my) + 'px';
+  const p = _ptCoords(e);
+  _drag.el.style.left = (_drag.sx + p.x - _drag.mx) + 'px';
+  _drag.el.style.top  = (_drag.sy + p.y - _drag.my) + 'px';
+  // Prevent page scroll while dragging on touch devices
+  if (e.cancelable) e.preventDefault();
 }
 function _onDragUp() { _drag = null; }
 
@@ -1641,8 +1703,11 @@ function _closeWindows() {
   document.getElementById('canvas-blur').classList.remove('active');
   canvas.classList.remove('zoomed');
   if (_winLayer) { _winLayer.remove(); _winLayer = null; }
-  document.removeEventListener('mousemove', _onDragMove);
-  document.removeEventListener('mouseup',   _onDragUp);
+  document.removeEventListener('mousemove',  _onDragMove);
+  document.removeEventListener('mouseup',    _onDragUp);
+  document.removeEventListener('touchmove',  _onDragMove);
+  document.removeEventListener('touchend',   _onDragUp);
+  document.removeEventListener('touchcancel', _onDragUp);
 }
 
 function _dodgeWindow(wrap) {
@@ -1718,21 +1783,28 @@ function _openWindows() {
       _dodgeWindow(wrap);
     });
 
-    win.querySelector('.mod-titlebar').addEventListener('mousedown', e => {
+    // Drag start — supports mouse + touch. Same handler reads coords via _ptCoords.
+    const _onDragStart = e => {
       if (e.target.classList.contains('mod-close')) return;
       const r = wrap.getBoundingClientRect();
+      const p = _ptCoords(e);
       wrap.style.left      = r.left + 'px';
       wrap.style.top       = r.top  + 'px';
       wrap.style.animation = 'none';
-      _drag = { el:wrap, mx:e.clientX, my:e.clientY, sx:r.left, sy:r.top };
-    });
+      _drag = { el:wrap, mx:p.x, my:p.y, sx:r.left, sy:r.top };
+    };
+    win.querySelector('.mod-titlebar').addEventListener('mousedown',  _onDragStart);
+    win.querySelector('.mod-titlebar').addEventListener('touchstart', _onDragStart, { passive: true });
 
     wrap.appendChild(win);
     _winLayer.appendChild(wrap);
   });
 
-  document.addEventListener('mousemove', _onDragMove);
-  document.addEventListener('mouseup',   _onDragUp);
+  document.addEventListener('mousemove',  _onDragMove);
+  document.addEventListener('mouseup',    _onDragUp);
+  document.addEventListener('touchmove',  _onDragMove, { passive: false });
+  document.addEventListener('touchend',   _onDragUp);
+  document.addEventListener('touchcancel', _onDragUp);
 }
 
 const _ctaBtn = document.querySelector('.hero-cta');
