@@ -3276,8 +3276,11 @@ function buildModulo(mod) {
         if (!result.ok) {
           if (result.reason === 'guest-readonly') {
             alert('Connect a wallet to settle on shared modulos. Guest sessions can only settle in the workshop.');
-          } else if (result.reason === 'user-rejected-tx' || result.reason === 'user-rejected-sig') {
+          } else if (result.reason === 'user-rejected-tx' || result.reason === 'user-rejected-sig' || result.reason === 'user-rejected-auth') {
             // Quiet — user explicitly cancelled; no need for an alert.
+            // user-rejected-auth = Step 2a (settlerAuthSig, audit Chunk 3 2026-05-07)
+            // user-rejected-sig  = Step 3  (settlerSig for on-chain settle)
+            // user-rejected-tx   = Step 4  (final tx submission)
             dbg.log('[settle]', mod.id, 'cancelled by user');
           } else if (result.reason === 'need-multi-owner') {
             if (_isShared) _showToast('Need ≥2 distinct wallets', {
@@ -9314,11 +9317,52 @@ async function settleModulo(modId) {
       return { ok: false, reason: 'rpc-error', err };
     }
 
-    // Step 2: get signer attestation (EIP-712 sig from CF)
+    // Step 2a (2026-05-07 audit Chunk 3): settler authorizes the attest
+    // request via EIP-712 typed signature. CF verifies this BEFORE consuming
+    // the rate-limit, so an attacker cannot DoS another address's 30/h cap
+    // by calling attestSettle({settler: victim}). Distinct `name` from
+    // "Modulo Artifact" so this auth sig can't be replayed as a Settle sig.
+    // No verifyingContract — this auth is off-chain (not a contract interaction).
+    //
+    // UX: this is the FIRST of 2 popups in the settle flow:
+    //   #1 = settlerAuthSig (this step) — authorizes the attest request
+    //   #2 = settlerSig (Step 3 below) — authorizes the on-chain settle
+    let settlerAuthSig;
+    try {
+      const settlerAuthDomain = {
+        name:    'Modulo Attest Auth',
+        version: '1',
+        chainId: WALLET_TARGET_CHAIN_ID,
+      };
+      const settlerAuthTypes = {
+        AttestAuth: [
+          { name: 'settler',  type: 'address' },
+          { name: 'modId',    type: 'string'  },
+          { name: 'nonce',    type: 'uint256' },
+          { name: 'deadline', type: 'uint256' },
+        ],
+      };
+      const settlerAuthValue = {
+        settler:  settlerAddr,
+        modId,
+        nonce:    BigInt(nonce),
+        deadline: BigInt(deadline),
+      };
+      settlerAuthSig = await signer.signTypedData(settlerAuthDomain, settlerAuthTypes, settlerAuthValue);
+    } catch (err) {
+      if (err && (err.code === 4001 || err.code === 'ACTION_REJECTED')) {
+        // Distinct from 'user-rejected-sig' (Step 3) so toast UX can disambiguate.
+        return { ok: false, reason: 'user-rejected-auth' };
+      }
+      console.error('[settle] settlerAuthSig failed:', err);
+      return { ok: false, reason: 'auth-sign-error', err };
+    }
+
+    // Step 2b: get signer attestation (EIP-712 sig from CF)
     let attestation;
     try {
       const attestFn = httpsCallable(functions, 'attestSettle');
-      const res = await attestFn({ modId, settler: settlerAddr, nonce, deadline });
+      const res = await attestFn({ modId, settler: settlerAddr, nonce, deadline, settlerAuthSig });
       attestation = res && res.data;
     } catch (err) {
       console.error('[settle] attestSettle CF failed:', err);
