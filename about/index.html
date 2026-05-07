@@ -840,7 +840,7 @@ body.night .sys-entry-label  { color:rgba(255,255,255,0.30); }
 <!-- Topbar -->
 <nav class="topbar">
   <div class="tbar-left">
-    <a class="tbar-back" href="../index.html#app" title="back to home"></a>
+    <a class="tbar-back" href="../#app" title="back to home"></a>
   </div>
   <span class="tbar-center">About</span>
   <div class="tbar-right">
@@ -885,7 +885,7 @@ body.night .sys-entry-label  { color:rgba(255,255,255,0.30); }
             <input class="qty-val" id="qty-val" type="number" min="1" max="100" step="1" value="1" inputmode="numeric" aria-label="quantity">
             <button class="qty-btn" id="qty-plus" aria-label="increase">+</button>
           </div>
-          <div class="qty-cost"><b id="qty-cost-val">0.0099</b> ETH<span id="qty-quota-hint"></span></div>
+          <div class="qty-cost"><b id="qty-cost-val">0.0069</b> ETH<span id="qty-quota-hint"></span></div>
           <button class="mint-btn" id="mint-btn">MINT</button>
           <div class="mint-wallet" id="mint-wallet" title="click to disconnect">
             <b id="mint-wallet-addr">—</b>
@@ -1010,8 +1010,8 @@ SettleArtifact            initiates settle
       <div class="mint-modal-h">Mint <span id="mm-q">1</span> Modulo <span id="mm-tok">token</span>?</div>
       <div class="mint-rows">
         <div class="mint-r"><span class="mint-r-k">Quantity</span><span class="mint-r-v" id="mm-qty">1</span></div>
-        <div class="mint-r"><span class="mint-r-k">Price each</span><span class="mint-r-v">0.0099 ETH</span></div>
-        <div class="mint-r mint-r-total"><span class="mint-r-k">Total</span><span class="mint-r-v" id="mm-total">0.0099 ETH</span></div>
+        <div class="mint-r"><span class="mint-r-k">Price each</span><span class="mint-r-v">0.0069 ETH</span></div>
+        <div class="mint-r mint-r-total"><span class="mint-r-k">Total</span><span class="mint-r-v" id="mm-total">0.0069 ETH</span></div>
       </div>
     </div>
     <div class="mint-modal-actions">
@@ -1026,7 +1026,7 @@ SettleArtifact            initiates settle
   <span class="footer-copy">© 2026 Modulo by ubk — all tokens on-chain</span>
   <div class="footer-links">
     <a class="footer-link" href="https://x.com/unbearableKnife" target="_blank" rel="noopener noreferrer">X / Twitter</a>
-    <a class="footer-link" href="../index.html">Home</a>
+    <a class="footer-link" href="../">Home</a>
   </div>
 </footer>
 
@@ -1947,8 +1947,8 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
   const ETHERSCAN_TX = 'https://sepolia.etherscan.io/tx/';
   const WALLET_LS_KEY = 'tc-wallet-address';     // shared across modulo.ubk.art pages
   const MIN = 1, MAX = 100;                      // matches MAX_PER_WALLET
-  const PRICE_ETH = 0.0099;                      // matches MINT_PRICE
-  const PRICE_WEI_STR = '9900000000000000';      // 0.0099 * 1e18 — exact, no float
+  const PRICE_ETH = 0.0069;                      // matches MINT_PRICE
+  const PRICE_WEI_STR = '6900000000000000';      // 0.0069 * 1e18 — exact, no float
 
   // ── DOM refs ────────────────────────────────────────────────────────────
   const $ = id => document.getElementById(id);
