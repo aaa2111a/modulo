@@ -8164,14 +8164,20 @@ async function lockToken(modId, tokenNum, durationMs) {
   // the user sees they're authorizing a Lock on the Modulo TokenAgent —
   // not a generic opaque string a phishing site could mimic.
   // CF reconstructs the same value from `payload` and verifies via ethers.verifyTypedData.
-  const value = {
-    owner:     SESSION_USER,
-    modId:     modId,
-    tokenNum:  tokenNum,
-    duration:  durationMs,
-    timestamp: ts,
-  };
+  //
+  // 2026-05-07 audit Chunk 2: traitsHash added as bytes32 field. Signs the
+  // canonical hash of traits so MITM cannot modify trait values without
+  // invalidating the signature. CF's _hashTraits MUST produce identical bytes
+  // for the same input — see _LOCK_TRAIT_KEYS for the canonical key list.
   const traits = userDraftTraits[tokenNum] ? { ...userDraftTraits[tokenNum] } : {};
+  const value = {
+    owner:      SESSION_USER,
+    modId:      modId,
+    tokenNum:   tokenNum,
+    duration:   durationMs,
+    timestamp:  ts,
+    traitsHash: _hashTraits(traits),
+  };
   let signature;
   try {
     const signer = await _walletProvider.getSigner();
@@ -8693,13 +8699,36 @@ const EIP712_DOMAIN_LOCK = {
 
 const EIP712_TYPES_LOCK = {
   LockToken: [
-    { name: 'owner',     type: 'address' },
-    { name: 'modId',     type: 'string'  },
-    { name: 'tokenNum',  type: 'uint256' },
-    { name: 'duration',  type: 'uint256' },
-    { name: 'timestamp', type: 'uint256' },
+    { name: 'owner',      type: 'address' },
+    { name: 'modId',      type: 'string'  },
+    { name: 'tokenNum',   type: 'uint256' },
+    { name: 'duration',   type: 'uint256' },
+    { name: 'timestamp',  type: 'uint256' },
+    { name: 'traitsHash', type: 'bytes32' },
   ],
 };
+
+// Canonical hash of trait values for the lockToken EIP-712 signature.
+// MUST produce byte-identical output frontend (Chrome ethers v6 UMD) and
+// backend (Node ethers v6) — added 2026-05-07 audit Chunk 2 to prevent MITM
+// modification of traits without invalidating the signature.
+//
+// Algorithm (mirror of `_hashTraits` in firebase-functions/index.js):
+//   1. Filter to TRAIT_KEYS subset
+//   2. Sort keys alphabetically
+//   3. JSON.stringify with no whitespace (default)
+//   4. keccak256 of UTF-8 bytes
+//
+// TRAIT_KEYS hardcoded here so a future change in either side requires
+// updating both — silent drift = every lock signature fails verification.
+const _LOCK_TRAIT_KEYS = ['mode', 'sz', 'rs', 'rd', 'rv', 'bios', 'dx', 'colorSel', 'speedOps'];
+function _hashTraits(traits) {
+  const sortedKeys = Object.keys(traits || {}).filter(k => _LOCK_TRAIT_KEYS.includes(k)).sort();
+  const canonical = {};
+  for (const k of sortedKeys) canonical[k] = traits[k];
+  const serialized = JSON.stringify(canonical);
+  return window.ethers.keccak256(window.ethers.toUtf8Bytes(serialized));
+}
 
 // Helpers — return ethers.Contract instances bound to either provider (read)
 // or signer (write). Signer-bound contracts can submit txs.
