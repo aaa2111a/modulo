@@ -1,1 +1,2403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- Fix #4: CSP defence-in-depth. Trimmed vs app/index.html — about page does
+     not use Firebase, gstatic, cloudfunctions. Allows: jsdelivr (ethers SDK),
+     Sepolia RPCs (publicnode + sepolia.org for fallback), data:/blob: for the
+     inline SVG MODULO blur background. frame-ancestors 'none' is informational
+     only via meta tag — real enforcement requires HTTP header (Cloudflare). -->
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'self';
+  script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net;
+  style-src 'self' 'unsafe-inline';
+  font-src 'self' data:;
+  img-src 'self' data: blob:;
+  connect-src 'self' https://rpc.sepolia.org https://ethereum-sepolia-rpc.publicnode.com;
+  frame-ancestors 'none';
+  base-uri 'self';
+  form-action 'self';
+">
+<!-- Frame-buster: clickjacking defense for GitHub Pages where we can't send
+     X-Frame-Options or CSP frame-ancestors as headers (only via meta, ignored
+     by browsers). Critical here because of the mint flow + wallet connect. -->
+<script>
+  if (window !== window.top) {
+    try { window.top.location = window.location.href; } catch (_) {}
+    document.documentElement.innerHTML =
+      '<body style="background:#000;color:#fff;font-family:monospace;' +
+      'padding:40px;text-align:center"><h2>modulo</h2>' +
+      '<p>This page cannot be embedded in a frame. Open ' +
+      '<a href="https://modulo.ubk.art" style="color:#fff" target="_top" rel="noopener noreferrer">' +
+      'modulo.ubk.art</a> directly.</p></body>';
+    throw new Error('embedded in iframe — execution halted');
+  }
+</script>
+<title>About</title>
+<!-- ethers v6 — same pinned version + SRI as app/index.html.
+     Used only for the mint flow on this page; safe to remove if mint moves elsewhere. -->
+<script
+  src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"
+  integrity="sha384-6Zl0Pc8zjSz8KvmNeXRvUQgY4ryFb+BwDvKCmLYcBME0joAaru491tQgi9B7zsMM"
+  crossorigin="anonymous"
+  referrerpolicy="no-referrer"></script>
+<style>
+* { box-sizing:border-box; margin:0; padding:0; }
 
+:root {
+  --tbar-bg:      #c9c6c0;
+  --bg:           #dbd8d1;
+  --bg-alt:       #d8d5cd;
+  --border:       rgba(0,0,0,0.12);
+  --border-mid:   rgba(0,0,0,0.20);
+  --border-strong:rgba(0,0,0,0.32);
+  --text:         rgba(0,0,0,0.78);
+  --text-sub:     rgba(0,0,0,0.44);
+  --text-meta:    rgba(0,0,0,0.28);
+}
+
+html, body {
+  min-height:100vh;
+  background:var(--bg);
+  color:var(--text);
+  display:flex;
+  flex-direction:column;
+}
+
+/* ── Topbar ── */
+.topbar {
+  position:sticky; top:0; z-index:200;
+  height:34px;
+  background:var(--tbar-bg);
+  border-bottom:0.5px solid var(--border-mid);
+  display:grid;
+  grid-template-columns:1fr auto 1fr;
+  align-items:center;
+  padding:0 24px;
+  backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
+}
+.tbar-left {
+  font-size:11px; font-family:monospace;
+  letter-spacing:.05em; color:rgba(0,0,0,0.45);
+}
+.tbar-center {
+  font-size:10px; font-family:monospace;
+  letter-spacing:.14em; text-transform:uppercase;
+  color:rgba(0,0,0,0.32);
+}
+.tbar-right { display:flex; justify-content:flex-end; }
+.tbar-back {
+  display:block;
+  width:12px; height:12px; border-radius:50%;
+  background:#ff5f57;
+}
+.tbar-back:hover { filter:brightness(0.85); }
+
+/* ── Grid dot background ── */
+.grid-bg {
+  background-image:radial-gradient(rgba(0,0,0,0.09) 1px, transparent 1px);
+  background-size:20px 20px;
+}
+
+/* ── Page header ── */
+.page-header {
+  padding:80px 96px 72px;
+  border-bottom:0.5px solid var(--border-mid);
+  border-bottom-right-radius:48px;
+  position:relative;
+}
+/* Overlay a bg-colored strip on top of the border's left portion so it fades
+   in. The right portion of the border remains native CSS and keeps its
+   natural curve along the border-bottom-right-radius. */
+.page-header::after {
+  content:'';
+  position:absolute;
+  left:0; bottom:-0.5px;
+  width:22%; height:1px;
+  background:linear-gradient(to right, var(--bg) 0%, transparent 100%);
+  pointer-events:none;
+}
+.header-inner {
+  max-width:1200px; margin:0 auto;
+  display:grid; grid-template-columns:1fr auto;
+  align-items:end;
+  gap:40px;
+}
+.display-title {
+  font-family:'Times New Roman',Times,serif;
+  font-size:clamp(64px, 9vw, 140px);
+  font-weight:400;
+  letter-spacing:-.02em;
+  line-height:1.0;
+  color:rgba(0,0,0,1.0);
+}
+#desires-word {
+  display:inline-block;
+  transition:opacity 0.18s ease, transform 0.18s ease;
+}
+#desires-word.dw-out {
+  opacity:0;
+  transform:translateY(-12px);
+}
+#desires-word.dw-in {
+  opacity:0;
+  transform:translateY(14px);
+}
+#desires-word.dw-scramble {
+  opacity:0.55;
+}
+.meta-box {
+  border:0.5px solid var(--border-strong);
+  border-radius:16px;
+  background:var(--bg);
+  min-width:420px; flex-shrink:0;
+  overflow:hidden;
+  display:flex; flex-direction:column;
+}
+.meta-tbar {
+  display:flex; align-items:center; gap:8px;
+  height:32px; padding:0 14px;
+  background:var(--tbar-bg);
+  border-bottom:0.5px solid var(--border-mid);
+  flex-shrink:0;
+}
+.meta-dot {
+  width:12px; height:12px; border-radius:50%;
+  background:rgba(0,0,0,0.20); flex-shrink:0;
+}
+.meta-body {
+  display:flex; gap:28px;
+  padding:18px 20px;
+}
+.meta-rows {
+  display:flex; flex-direction:column; gap:12px;
+  flex:1;
+}
+.meta-row { display:flex; flex-direction:column; gap:3px; }
+.meta-label {
+  font-size:8px; font-family:monospace;
+  letter-spacing:.14em; text-transform:uppercase;
+  color:var(--text-meta);
+}
+.meta-value {
+  font-size:11px; font-family:monospace;
+  letter-spacing:.05em; color:rgba(0,0,0,0.58);
+}
+.meta-link {
+  color:rgba(0,0,0,0.58);
+  text-decoration:none;
+  border-bottom:0.5px solid transparent;
+  transition:border-color 0.15s, color 0.15s;
+}
+.meta-link:hover {
+  color:rgba(0,0,0,0.85);
+  border-bottom-color:rgba(0,0,0,0.30);
+}
+/* Mint controls — qty selector + cost preview + MINT button.
+   Cosmetic for now (modal confirmation, no wallet wiring yet) */
+.meta-mint {
+  display:flex; flex-direction:column; gap:8px;
+  min-width:170px; justify-content:center;
+}
+.qty-row {
+  display:flex; align-items:center; gap:6px;
+}
+.qty-btn {
+  width:36px; height:36px;
+  background:#000; color:#fff;
+  border:none; border-radius:6px; cursor:pointer;
+  font-family:monospace; font-size:16px; line-height:1;
+  display:flex; align-items:center; justify-content:center;
+  padding:0; user-select:none;
+  transition:background 0.15s;
+}
+.qty-btn:hover { background:#222; }
+.qty-btn:active { background:#333; }
+.qty-val {
+  flex:1; text-align:center;
+  font-size:18px; font-family:monospace;
+  letter-spacing:.04em;
+  color:rgba(0,0,0,0.78);
+  /* input reset — keep visual identical to former span */
+  border:none; background:transparent; outline:none;
+  padding:0; margin:0; width:0; min-width:0;
+  -moz-appearance:textfield;
+}
+.qty-val::-webkit-outer-spin-button,
+.qty-val::-webkit-inner-spin-button {
+  -webkit-appearance:none; margin:0;
+}
+.qty-val:focus { color:rgba(0,0,0,1); }
+.qty-val::selection { background:#000; color:#fff; }
+.qty-val::-moz-selection { background:#000; color:#fff; }
+.qty-cost {
+  font-size:9px; font-family:monospace;
+  letter-spacing:.14em; text-transform:uppercase;
+  color:var(--text-meta);
+  text-align:center;
+  padding:2px 0;
+}
+.qty-cost b {
+  font-weight:400; color:rgba(0,0,0,0.72);
+  letter-spacing:.06em;
+}
+/* Fix #3: dynamic quota hint — shown only when wallet has minted before
+   (remaining < MAX). Empty by default; JS fills it with "(N left)" or "cap reached". */
+#qty-quota-hint { color:rgba(0,0,0,0.42); margin-left:6px; }
+#qty-quota-hint:empty { display:none; }
+/* Fix #5: wrong-chain warning state for MINT button. */
+.mint-btn.wrong-chain { background:#5a3a3a; }
+.mint-btn.wrong-chain:hover { background:#6c4747; }
+.mint-btn:disabled { background:#555 !important; cursor:not-allowed; opacity:0.65; }
+/* Pre-mint mode: everything in the meta-mint block looks disabled — qty buttons
+   greyed out, input greyed out, cost text faded, MINT button outlined ghost.
+   pointer-events:none on qty controls blocks clicks AND hover states.
+   Flip MINT_ENABLED=true in the IIFE to re-arm — class is removed automatically. */
+.mint-btn.pre-mint {
+  background:transparent !important;
+  color:rgba(0,0,0,0.42);
+  border:0.5px solid var(--border-mid);
+  cursor:not-allowed;
+  opacity:1;
+}
+.mint-btn.pre-mint:hover { background:transparent !important; }
+body.night .mint-btn.pre-mint { color:rgba(255,255,255,0.42); }
+.meta-mint.pre-mint .qty-btn {
+  background:#9a9a9a;
+  cursor:not-allowed;
+  pointer-events:none;
+  opacity:0.7;
+}
+.meta-mint.pre-mint .qty-val {
+  color:rgba(0,0,0,0.38);
+  pointer-events:none;
+}
+.meta-mint.pre-mint .qty-cost { opacity:0.55; }
+.meta-mint.pre-mint .qty-cost b { color:rgba(0,0,0,0.45); }
+body.night .meta-mint.pre-mint .qty-val { color:rgba(255,255,255,0.38); }
+body.night .meta-mint.pre-mint .qty-cost b { color:rgba(255,255,255,0.45); }
+body.night .meta-mint.pre-mint .qty-btn { background:#444; }
+.mint-btn {
+  height:42px;
+  background:#000; color:#fff;
+  border:none; border-radius:6px; cursor:pointer;
+  font-family:monospace; font-size:11px;
+  letter-spacing:.20em; text-transform:uppercase;
+  transition:background 0.15s;
+}
+.mint-btn:hover { background:#222; }
+.mint-btn:active { background:#333; }
+
+/* Mint confirmation modal — same pattern as app/index.html lock modal.
+   Hidden by default; .open class fades it in. */
+#mint-overlay {
+  position:fixed; inset:0; z-index:9000;
+  background:rgba(0,0,0,0.42);
+  display:flex; align-items:center; justify-content:center;
+  opacity:0; pointer-events:none;
+  transition:opacity 0.18s ease;
+}
+#mint-overlay.open { opacity:1; pointer-events:auto; }
+.mint-modal {
+  background:var(--bg);
+  border:0.5px solid var(--border-strong);
+  border-radius:14px;
+  width:420px; max-width:92vw;
+  overflow:hidden;
+  display:flex; flex-direction:column;
+  transform:translateY(8px);
+  transition:transform 0.18s ease;
+}
+#mint-overlay.open .mint-modal { transform:translateY(0); }
+.mint-modal-tbar {
+  height:32px; padding:0 14px;
+  background:var(--tbar-bg);
+  border-bottom:0.5px solid var(--border-mid);
+  display:flex; align-items:center; gap:8px;
+}
+.mint-modal-tbar .meta-dot { background:rgba(0,0,0,0.20); }
+.mint-modal-tbar-title {
+  font-size:9px; font-family:monospace;
+  letter-spacing:.18em; text-transform:uppercase;
+  color:var(--text-meta);
+}
+.mint-modal-body { padding:22px 24px; display:flex; flex-direction:column; gap:14px; }
+.mint-modal-h {
+  font-family:'Times New Roman',Times,serif;
+  font-size:22px; font-weight:400; color:rgba(0,0,0,0.92);
+  line-height:1.2;
+}
+.mint-rows { display:flex; flex-direction:column; gap:8px; padding-top:4px; }
+.mint-r {
+  display:flex; justify-content:space-between; align-items:baseline;
+  font-family:monospace; font-size:11px; letter-spacing:.06em;
+}
+.mint-r-k { color:var(--text-meta); text-transform:uppercase; letter-spacing:.14em; font-size:9px; }
+.mint-r-v { color:rgba(0,0,0,0.78); }
+.mint-r-total {
+  border-top:0.5px solid var(--border-mid);
+  padding-top:10px; margin-top:4px;
+}
+.mint-r-total .mint-r-k { color:rgba(0,0,0,0.72); }
+.mint-r-total .mint-r-v { color:#000; font-size:13px; letter-spacing:.04em; }
+.mint-modal-actions {
+  padding:14px 16px;
+  border-top:0.5px solid var(--border-mid);
+  display:flex; gap:10px; justify-content:flex-end;
+  background:rgba(0,0,0,0.015);
+}
+.mint-modal-btn {
+  height:36px; padding:0 18px;
+  border:0.5px solid var(--border-strong);
+  border-radius:6px; cursor:pointer;
+  font-family:monospace; font-size:10px;
+  letter-spacing:.18em; text-transform:uppercase;
+  background:transparent; color:rgba(0,0,0,0.72);
+  transition:background 0.15s, border-color 0.15s;
+}
+.mint-modal-btn:hover { background:rgba(0,0,0,0.05); }
+.mint-modal-btn.primary {
+  background:#000; color:#fff; border-color:#000;
+}
+.mint-modal-btn.primary:hover { background:#222; }
+.mint-modal-btn:disabled { opacity:0.45; cursor:not-allowed; }
+.mint-modal-btn:disabled:hover { background:transparent; }
+.mint-modal-btn.primary:disabled:hover { background:#000; }
+
+/* Wallet status line — shown in meta-mint when wallet is connected.
+   Shows the short address; click disconnects. Hidden by default. */
+.mint-wallet {
+  font-size:9px; font-family:monospace;
+  letter-spacing:.10em; text-transform:uppercase;
+  color:var(--text-meta);
+  text-align:center;
+  cursor:pointer;
+  padding:2px 0;
+  user-select:none;
+  display:none;
+}
+.mint-wallet.connected { display:block; }
+.mint-wallet:hover { color:rgba(0,0,0,0.78); }
+.mint-wallet b {
+  font-weight:400;
+  color:rgba(0,0,0,0.72);
+  letter-spacing:.06em;
+}
+
+/* Toast — minimal stack at top-right for tx pending/success/error feedback */
+#mint-toast-stack {
+  position:fixed; top:16px; right:16px;
+  z-index:9500;
+  display:flex; flex-direction:column; gap:8px;
+  pointer-events:none;
+}
+.mtoast {
+  background:#0f0f0f; color:#fff;
+  border:0.5px solid rgba(255,255,255,0.10);
+  border-radius:8px;
+  padding:11px 16px;
+  min-width:240px; max-width:380px;
+  font-family:monospace; font-size:11px;
+  letter-spacing:.05em; line-height:1.5;
+  box-shadow:0 8px 24px rgba(0,0,0,0.18);
+  pointer-events:auto;
+  opacity:0; transform:translateY(-6px);
+  transition:opacity 0.18s, transform 0.18s;
+}
+.mtoast.in { opacity:1; transform:translateY(0); }
+.mtoast.fade-out { opacity:0; transform:translateY(-4px); }
+.mtoast.success { border-color:rgba(80,200,140,0.35); }
+.mtoast.error   { border-color:rgba(255,95,87,0.50); }
+.mtoast-main { font-size:11px; }
+.mtoast-sub  {
+  font-size:9px; color:rgba(255,255,255,0.55);
+  letter-spacing:.08em; text-transform:uppercase;
+  margin-top:3px; word-break:break-all;
+}
+.mtoast a { color:#88c0ff; text-decoration:none; }
+.mtoast a:hover { text-decoration:underline; }
+
+/* ── Body section ── */
+.body-section {
+  padding:80px 52px 130px;
+  flex:1;
+}
+.body-inner {
+  max-width:1200px; margin:0 auto;
+  display:grid;
+  grid-template-columns:1fr 2fr;
+  gap:0;
+  position:relative;
+}
+.col-divider {
+  position:absolute;
+  left:33.33%;
+  top:0; bottom:0;
+  width:0.5px;
+  background:var(--border-mid);
+}
+
+/* Left col */
+.left-col {
+  padding-right:40px;
+  display:flex;
+}
+#left-canvas {
+  display:block;
+  width:100%; height:100%;
+  min-height:340px;
+  image-rendering:crisp-edges;
+  image-rendering:pixelated;
+}
+
+/* Right col */
+.right-col {
+  display:flex; flex-direction:column; gap:40px;
+  padding-left:52px;
+}
+.quote {
+  font-family:'Times New Roman',Times,serif;
+  font-size:clamp(22px, 2.8vw, 38px);
+  font-weight:400; line-height:1.25;
+  color:rgba(0,0,0,0.76);
+}
+.body-text {
+  font-size:13px; font-family:monospace;
+  line-height:1.85; letter-spacing:.02em;
+  color:var(--text-sub);
+  columns:2; column-gap:36px;
+}
+.body-text p { margin-bottom:14px; break-inside:avoid; }
+
+/* ── Long text section ── */
+.long-section {
+  padding:140px 52px 80px; /* extra top to leave room for the folder tab curve */
+  background:var(--tbar-bg);
+  position:relative;
+  overflow:hidden;
+  /* Folder-tab silhouette: left ~45% is tall (tab), transitions with a curve
+     to the shorter right ~52% (folder body). clipPathUnits=objectBoundingBox
+     means the path uses 0..1 fractions so it stays responsive on any width. */
+  clip-path:url(#folder-clip);
+  -webkit-clip-path:url(#folder-clip);
+}
+/* SVG outline traces the folder shape. The stroke sits centered on the clip
+   edge, so clipping cuts it in half — visible half ≈ half of stroke-width.
+   stroke-width=1 + non-scaling-stroke → 0.5px visible, matching the former border. */
+.long-outline {
+  position:absolute; inset:0; width:100%; height:100%;
+  pointer-events:none; z-index:3;
+}
+.long-outline path {
+  fill:none;
+  stroke:var(--border-mid);
+  stroke-width:1;
+  vector-effect:non-scaling-stroke;
+}
+.modulo-bg-word {
+  position:absolute;
+  pointer-events:none;
+  user-select:none;
+  white-space:nowrap;
+  z-index:0;
+  will-change:transform,opacity;
+  /* content is a pre-blurred SVG set as background-image from JS */
+}
+.modulo-bg-word.from-left  { left:0; }
+.modulo-bg-word.from-right { right:0; }
+@keyframes _mLTR {
+  0%   { transform:translateX(-100%) translateY(-50%); opacity:0;
+         animation-timing-function:cubic-bezier(0.22,1,0.36,1); }
+  5%   { opacity:1; }
+  38%  { transform:translateX(0%)    translateY(-50%);
+         animation-timing-function:linear; }
+  50%  { transform:translateX(0%)    translateY(-50%);
+         animation-timing-function:cubic-bezier(0.64,0,0.78,0); }
+  95%  { opacity:1; }
+  100% { transform:translateX(100vw) translateY(-50%); opacity:0; }
+}
+@keyframes _mRTL {
+  0%   { transform:translateX(100%)  translateY(-50%); opacity:0;
+         animation-timing-function:cubic-bezier(0.22,1,0.36,1); }
+  5%   { opacity:1; }
+  38%  { transform:translateX(0%)    translateY(-50%);
+         animation-timing-function:linear; }
+  50%  { transform:translateX(0%)    translateY(-50%);
+         animation-timing-function:cubic-bezier(0.64,0,0.78,0); }
+  95%  { opacity:1; }
+  100% { transform:translateX(-100vw) translateY(-50%); opacity:0; }
+}
+.long-inner {
+  max-width:1200px; margin:0 auto;
+  display:grid; grid-template-columns:1fr 1fr; gap:40px;
+  align-items:start;
+  position:relative; z-index:1;
+}
+.long-col {
+  display:flex; flex-direction:column; gap:22px;
+}
+/* Right column drops down so the eye reads the left column first, then the right. */
+.long-col:last-child { margin-top:180px; }
+
+.long-text {
+  font-size:13px; font-family:monospace;
+  line-height:1.85; letter-spacing:.02em;
+  color:var(--text-sub);
+  border:0.5px solid var(--bg);
+  border-radius:6px;
+  padding:14px 18px;
+  background:var(--bg);
+}
+
+/* Staircase per column — 6 steps each side, identical pacing for visual symmetry */
+.long-col:first-child .long-text:nth-child(1)  { margin-left:0%;  margin-right:22%; }
+.long-col:first-child .long-text:nth-child(2)  { margin-left:4%;  margin-right:18%; }
+.long-col:first-child .long-text:nth-child(3)  { margin-left:8%;  margin-right:14%; }
+.long-col:first-child .long-text:nth-child(4)  { margin-left:12%; margin-right:10%; }
+.long-col:first-child .long-text:nth-child(5)  { margin-left:16%; margin-right:6%;  }
+.long-col:first-child .long-text:nth-child(6)  { margin-left:20%; margin-right:2%;  }
+
+.long-col:last-child .long-text:nth-child(1)   { margin-left:0%;  margin-right:22%; }
+.long-col:last-child .long-text:nth-child(2)   { margin-left:4%;  margin-right:18%; }
+.long-col:last-child .long-text:nth-child(3)   { margin-left:8%;  margin-right:14%; }
+.long-col:last-child .long-text:nth-child(4)   { margin-left:12%; margin-right:10%; }
+.long-col:last-child .long-text:nth-child(5)   { margin-left:16%; margin-right:6%;  }
+.long-col:last-child .long-text:nth-child(6)   { margin-left:20%; margin-right:2%;  }
+
+/* ── Specs section ── */
+.specs-section {
+  padding:80px 52px;
+  position:relative;
+  overflow:hidden;
+  border-top:0.5px solid var(--border-mid);
+}
+.specs-inner {
+  max-width:760px; margin:0 auto;
+  border:0.5px solid var(--border-strong);
+  border-radius:16px;
+  position:relative; z-index:1;
+  padding:0 52px 52px;
+  background:var(--bg);
+  display:flex; flex-direction:column; gap:32px;
+  overflow:hidden;
+}
+.specs-tbar {
+  display:flex; align-items:center; gap:8px;
+  height:32px; padding:0 14px;
+  background:var(--tbar-bg);
+  border-bottom:0.5px solid var(--border-mid);
+  margin:0 -52px 20px;
+  flex-shrink:0;
+}
+.specs-dot {
+  width:12px; height:12px; border-radius:50%;
+  background:rgba(0,0,0,0.20); flex-shrink:0;
+}
+.specs-tbar-title {
+  font-size:10px; font-family:monospace;
+  letter-spacing:.10em; text-transform:uppercase;
+  color:var(--text-meta);
+}
+.specs-head { border-bottom:0.5px solid var(--border-mid); padding-bottom:18px; }
+.specs-title {
+  font-family:'Times New Roman',Times,serif;
+  font-size:28px; font-weight:400;
+  letter-spacing:-.01em; color:rgba(0,0,0,0.78);
+}
+.specs-sub {
+  font-size:8px; font-family:monospace;
+  letter-spacing:.14em; color:var(--text-meta);
+  margin-top:8px; text-transform:uppercase;
+}
+.specs-grid {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:20px 40px;
+}
+.spec-item {
+  border-bottom:0.5px solid var(--border);
+  padding-bottom:10px;
+  display:flex; flex-direction:column; gap:4px;
+}
+.spec-label {
+  font-size:8px; font-family:monospace;
+  letter-spacing:.14em; color:var(--text-meta);
+  text-transform:uppercase;
+}
+.spec-value {
+  font-size:11px; font-family:monospace;
+  letter-spacing:.04em; color:rgba(0,0,0,0.62);
+}
+
+/* ── System overview ── */
+.sys-header { border-bottom:0.5px solid var(--border-mid); padding-bottom:16px; }
+.sys-title {
+  font-size:9px; font-family:monospace;
+  letter-spacing:.16em; text-transform:uppercase;
+  color:var(--text-meta);
+}
+.sys-diagram-wrap {
+  border-top:0.5px solid var(--border);
+  border-bottom:0.5px solid var(--border);
+  padding:20px 0;
+  display:flex;
+  justify-content:center;
+  overflow-x:auto;
+}
+.sys-diagram {
+  font-size:10px; font-family:monospace;
+  line-height:1.6; letter-spacing:.02em;
+  color:rgba(0,0,0,0.45);
+  white-space:pre;
+  text-align:left;
+}
+.sys-body { display:flex; flex-direction:column; gap:24px; }
+.sys-entry { display:grid; grid-template-columns:140px 1fr; gap:24px; }
+.sys-entry-label {
+  font-size:9px; font-family:monospace;
+  letter-spacing:.10em; text-transform:uppercase;
+  color:rgba(0,0,0,0.38); padding-top:2px;
+  border-top:0.5px solid var(--border-mid);
+}
+.sys-entry-text {
+  font-size:13px; font-family:monospace;
+  line-height:1.8; letter-spacing:.02em;
+  color:var(--text-sub);
+  border-top:0.5px solid var(--border-mid);
+  padding-top:2px;
+  max-width:760px;  /* clamp width so long entries grow vertically (more lines) instead of stretching across the page — keeps visual rhythm consistent with other boxes */
+}
+
+/* ── Footer ── */
+footer {
+  background:var(--tbar-bg);
+  border-top:0.5px solid var(--border-strong);
+  padding:16px 24px;
+  display:grid;
+  grid-template-columns:1fr auto;
+  align-items:center; gap:24px;
+  margin-top:auto;
+}
+.footer-copy {
+  font-size:8px; font-family:monospace;
+  letter-spacing:.08em; color:var(--text-meta);
+  text-transform:uppercase;
+}
+.footer-links { display:flex; gap:20px; }
+.footer-link {
+  font-size:8px; font-family:monospace;
+  letter-spacing:.08em; color:var(--text-meta);
+  text-decoration:none; text-transform:uppercase;
+}
+.footer-link:hover { color:rgba(0,0,0,0.55); }
+
+/* ── Page transition ── */
+#page-transition {
+  position:fixed; inset:0; z-index:2000;
+  background:#c9c6c0;
+  opacity:1;
+  pointer-events:none;
+  transition:opacity 0.55s ease;
+}
+
+/* ── Night mode toggle ── */
+.tbar-night {
+  display:block;
+  width:12px; height:12px; border-radius:50%;
+  background:rgba(0,0,0,0.18);
+  border:none; cursor:pointer; padding:0;
+}
+.tbar-night:hover { filter:brightness(0.75); }
+
+/* ── Decorative floating module windows (specs-section bg) ── */
+.deco-card {
+  position:absolute; top:0; left:0;
+  width:260px;
+  background:rgba(219,216,209,0.92);
+  border:0.5px solid rgba(0,0,0,0.14);
+  border-radius:11px;
+  overflow:hidden;
+  box-shadow:
+    0 0 0 0.5px rgba(0,0,0,0.08),
+    0 4px 10px rgba(0,0,0,0.10),
+    0 12px 26px rgba(0,0,0,0.10),
+    0 28px 48px rgba(0,0,0,0.08);
+  pointer-events:none;
+  will-change:transform;
+  z-index:0;
+}
+.deco-tbar {
+  height:28px;
+  background:rgba(201,198,192,0.99);
+  border-bottom:0.5px solid rgba(0,0,0,0.07);
+  display:flex; align-items:center;
+  padding:0 10px; gap:5px;
+  flex-shrink:0;
+}
+.deco-tbar-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+.deco-tbar-label {
+  font-size:10px; font-family:monospace;
+  letter-spacing:.03em; color:rgba(0,0,0,0.52);
+  margin-left:5px;
+}
+.deco-canvas-wrap {
+  height:155px; background:#dbd8d1;
+  position:relative; overflow:hidden;
+}
+body.night .deco-canvas-wrap { background:#1a1917; }
+body.night .deco-card { background:rgba(26,25,23,0.92); border-color:rgba(255,255,255,0.12); }
+body.night .deco-tbar { background:rgba(40,38,36,0.99); border-bottom-color:rgba(255,255,255,0.08); }
+body.night .deco-tbar-label { color:rgba(255,255,255,0.52); }
+.deco-canvas {
+  position:absolute; inset:0;
+  width:100%; height:100%;
+  display:block;
+  image-rendering:crisp-edges;
+  image-rendering:pixelated;
+}
+
+/* ── Night mode ── */
+body.night {
+  --tbar-bg:       #111010;
+  --bg:            #1a1917;
+  --bg-alt:        #141312;
+  --border:        rgba(255,255,255,0.08);
+  --border-mid:    rgba(255,255,255,0.14);
+  --border-strong: rgba(255,255,255,0.24);
+  --text:          rgba(255,255,255,0.80);
+  --text-sub:      rgba(255,255,255,0.44);
+  --text-meta:     rgba(255,255,255,0.28);
+}
+body.night #page-transition { background:#111010; }
+body.night .tbar-night       { background:rgba(255,255,255,0.22); }
+body.night .specs-dot        { background:rgba(255,255,255,0.20); }
+body.night .meta-dot         { background:rgba(255,255,255,0.20); }
+body.night .tbar-center      { color:rgba(255,255,255,0.28); }
+body.night .display-title    { color:rgba(255,255,255,1.0); }
+body.night .meta-value       { color:rgba(255,255,255,0.52); }
+body.night .specs-title      { color:rgba(255,255,255,0.78); }
+body.night .sys-diagram      { color:rgba(255,255,255,0.32); }
+body.night .sys-entry-label  { color:rgba(255,255,255,0.30); }
+
+@media (max-width:768px) {
+  .page-header, .body-section, .specs-section { padding-left:24px; padding-right:24px; }
+  .body-inner { grid-template-columns:1fr; }
+  .col-divider { display:none; }
+  .left-col { padding-right:0; }
+  .right-col { padding-left:0; }
+  .body-text { columns:1; }
+  .long-inner { grid-template-columns:1fr; gap:22px; }
+  .long-col:last-child { margin-top:0; }
+  .long-section {
+    clip-path:none; -webkit-clip-path:none; padding-top:80px;
+    border-top:0.5px solid var(--border-mid);
+    border-bottom:0.5px solid var(--border-mid);
+  }
+  .long-outline { display:none; }
+  .specs-grid { grid-template-columns:1fr; }
+  .specs-inner { padding:32px 24px; }
+}
+</style>
+</head>
+<body>
+<!-- Folder-tab clip path for the long-section. Coords are fractions (0..1)
+     of the section's bounding box so the shape scales with any height/width. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <clipPath id="folder-clip" clipPathUnits="objectBoundingBox">
+      <path d="M 0,0 L 0.44,0 C 0.48,0 0.48,0.055 0.54,0.055 L 1,0.055 L 1,1 L 0,1 Z" />
+    </clipPath>
+  </defs>
+</svg>
+<div id="page-transition"></div>
+<script>
+  const _overlay = document.getElementById('page-transition');
+
+  // Fade in on arrive
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    _overlay.style.opacity = '0';
+    setTimeout(() => { _overlay.style.display = 'none'; }, 600);
+  }));
+
+  // Fade out on leave — defer until .tbar-back exists in the DOM
+  document.addEventListener('DOMContentLoaded', () => {
+    const _back = document.querySelector('.tbar-back');
+    if (!_back) return;
+    _back.addEventListener('click', e => {
+      e.preventDefault();
+      const href = e.currentTarget.getAttribute('href');
+      _overlay.style.display = '';
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        _overlay.style.opacity = '1';
+        setTimeout(() => { window.location.href = href; }, 580);
+      }));
+    });
+  });
+</script>
+
+<!-- Topbar -->
+<nav class="topbar">
+  <div class="tbar-left">
+    <a class="tbar-back" href="../index.html#app" title="back to home"></a>
+  </div>
+  <span class="tbar-center">About</span>
+  <div class="tbar-right">
+    <button class="tbar-night" id="night-toggle" title="toggle night mode"></button>
+  </div>
+</nav>
+
+<!-- Header -->
+<header class="page-header grid-bg">
+  <div class="header-inner">
+    <h1 class="display-title">The machine of <span id="desires-word">desires</span></h1>
+    <div class="meta-box">
+      <div class="meta-tbar">
+        <span class="meta-dot"></span>
+      </div>
+      <div class="meta-body">
+        <div class="meta-rows">
+          <div class="meta-row">
+            <span class="meta-label">Type</span>
+            <span class="meta-value">Generative Art NFT</span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-label">Chain</span>
+            <span class="meta-value">Ethereum</span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-label">Contract</span>
+            <a class="meta-value meta-link" id="meta-contract-link" href="https://sepolia.etherscan.io/address/0xdE4AC7c11c0B3dbDcE4d60F2B14F659a553f8b8a" target="_blank" rel="noopener noreferrer">0xdE4A…f8b8a ↗</a>
+          </div>
+          <div class="meta-row">
+            <span class="meta-label">Storage</span>
+            <span class="meta-value">100% On-chain</span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-label">Status</span>
+            <span class="meta-value">Sepolia testnet</span>
+          </div>
+        </div>
+        <div class="meta-mint">
+          <div class="qty-row">
+            <button class="qty-btn" id="qty-minus" aria-label="decrease">−</button>
+            <input class="qty-val" id="qty-val" type="number" min="1" max="100" step="1" value="1" inputmode="numeric" aria-label="quantity">
+            <button class="qty-btn" id="qty-plus" aria-label="increase">+</button>
+          </div>
+          <div class="qty-cost"><b id="qty-cost-val">0.0099</b> ETH<span id="qty-quota-hint"></span></div>
+          <button class="mint-btn" id="mint-btn">MINT</button>
+          <div class="mint-wallet" id="mint-wallet" title="click to disconnect">
+            <b id="mint-wallet-addr">—</b>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- Body -->
+<section class="body-section">
+  <div class="body-inner">
+    <div class="col-divider"></div>
+
+    <div class="left-col">
+      <canvas id="left-canvas"></canvas>
+    </div>
+
+    <div class="right-col">
+      <div class="body-text">
+        <p>On its own, an element doesn't mean much. It's like a coordinate without a map, or a frequency without a signal—something that exists, but doesn't really point anywhere. But when you place it next to others, when you give it context, something changes. The structure starts to feel alive. What you bring into it begins to respond.</p>
+        <p>The way things are arranged isn't just decoration—it's a way of saying something. Every element you include already has its own character, something it brings with it no matter how you use it. The system doesn't choose what goes in—you do. And the combinations you make shape the outcome. In that sense, the arrangement itself becomes the argument.</p>
+        <p>And every argument has something at stake. Here, it reflects something older: the gap between what you want and what you can actually reach. That gap isn't new—it's something we've always lived with.</p>
+        <p>It's a familiar feeling. Anyone can take part—the entry point is open. But how much you can really shape the outcome depends on what you bring with you, on what you've built up over time. Access might be equal, but reach isn't.</p>
+        <p>That's what accumulation has always been about—not just having more, but closing that gap. The more you have, the more ways you have to move toward what you want. But what you use, you no longer hold. What you gain doesn't remove the condition. It reflects it. More reach, more possibilities. It's not a flaw. It's just how things are.</p>
+        <p>This condition has a name: Modulo. A system that reflects it—where desire can be arranged, and accumulation becomes visible. Even then, not everything is resolved. Some things come in already ordered. The hierarchy within each arrangement was set before you arrived. Access is still open, but order was never something you could buy.</p>
+        <p>In the end, commitment is the final step. To choose is to stop leaving everything open and say: this is it. At some point, desire asks you to let go—not of the desire itself, but of all the other ways it could have taken shape. The distance doesn't disappear; it just stops being a question. Modulo becomes what it is when you decide to stop holding it open.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Specs -->
+<section class="long-section">
+  <svg class="long-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+    <!-- Must match the path in #folder-clip exactly (scaled ×100) -->
+    <path d="M 0,0 L 44,0 C 48,0 48,5.5 54,5.5 L 100,5.5 L 100,100 L 0,100 Z"/>
+  </svg>
+  <div class="long-inner">
+    <div class="long-col">
+      <p class="long-text">Modulo is an Ethereum collection where tokens are distributed across compositional vessels that share its name. Each token is built from a single immutable seed — one number the contract computes at mint and never alters — from which its palette, speed, animation mode, and behavior layers are all derived.</p>
+      <p class="long-text">The token doesn't point to an image stored somewhere else. It generates one. Every time it's called, it runs a <strong>cellular automaton</strong> — a grid of cells whose state evolves frame by frame following local rules, generating emergent visual patterns — from inside a self-contained HTML file that lives within the token itself, fully on-chain. The automaton operates in one of eight behavioral modes, each defining how cells propagate, shift, and deform.</p>
+      <p class="long-text">Some tokens carry additional layers — a bitmap system that stamps text directly into the grid, a dither pattern that introduces a repeating structure across the surface, and a rect-shift system that displaces regions of the canvas at varying density and scale. What the system produces feels alive — never the same frame twice, always within the same visual language. The rules are fixed. What they generate moves.</p>
+      <p class="long-text">None of this depends on an external system. The rendering engine, the animation logic, the full computational apparatus — all of it is stored in Ethereum's contract layer through EthFS.</p>
+      <p class="long-text">When a token is called, the contract doesn't return a URL. It builds the entire document on the fly, injecting each token's traits directly into the HTML, and returns it as a self-contained data URI that runs in the browser without a single external request.</p>
+      <p class="long-text">There's no server that can go offline. No platform that can shut it down or change the rules. A call to any token will return the same engine, the same seed, the same behavior — in a year, in twenty years, under any condition short of the network itself disappearing. Permanence here isn't a promise. It's a property of how it's built.</p>
+    </div>
+    <div class="long-col">
+      <p class="long-text">When the mint window closes, ownership of the contract itself is renounced. From that block onward, no one — not even its author — can change a setting, swap a renderer, or alter behavior. What was provisional becomes fixed. The transaction that records the renunciation is part of the work as much as anything visible inside it.</p>
+      <p class="long-text">Each token can be placed across the shared modulos or the owner's personal workshop (modulo 00) — up to eight per modulo, drawn one at a time from the owner's inventory. A token can only occupy one modulo at a time, and only its owner can place or remove it. Where it is placed is chosen. What that choice allows is not fixed. What can be done alone does not remain so.</p>
+      <p class="long-text">Inside a modulo, the system reads the combined set and produces a single animation from it. Color palettes merge into a shared pool, influenced by position — tokens with lower rank sit higher in the arrangement and pull more strongly on what appears.</p>
+      <p class="long-text">When multiple animation modes are present, the system cycles between them at a fixed interval, blending from one into the next. The position each token occupies isn't chosen by the owner. It's determined by rank, fixed from the moment the token was created. What enters is chosen. Where it lands was already decided.</p>
+      <p class="long-text">What you hold when you own a token is a unique seed, a defined visual behavior, and the ability to decide where it goes. The token exists on its own, as a complete on-chain object, whether it's placed or not.</p>
+      <p class="long-text">To settle is to close that openness. A transaction that burns the tokens you committed to a modulo and mints a new artifact in their place — a permanent on-chain capture of the composition at that exact moment. What the arrangement was becomes fixed. What it was doing stops. What remains is a record of the moment it was chosen. What it could have been no longer applies.</p>
+    </div>
+  </div>
+</section>
+
+<section class="specs-section">
+  <div class="specs-inner">
+    <div class="specs-tbar">
+      <span class="specs-dot"></span>
+      <span class="specs-tbar-title">System Overview</span>
+    </div>
+
+    <div class="sys-diagram-wrap"><pre class="sys-diagram">ETHEREUM                INTERFACE                 SYNC
+───────────────────     ──────────────────       ──────────────────
+TokenAgent (ERC-721)     Web Application          Real-time layer
+  open supply             reads ownership          locks state
+  immutable seeds         reads token traits       activity stream
+  on-chain rendering      composes modulos         presence
+  EthFS storage           configures active        propagates within
+  burnFromSettle()         traits                   milliseconds
+                          previews animation
+SettleArtifact            initiates settle
+  (ERC-721)
+  composition
+   snapshots
+  settle()
+  minted at settle
+───────────────────     ──────────────────       ──────────────────
+         │                       │                       │
+         └───────────────────────┴───────────────────────┘
+                                 │
+                  tokenURI()  → data:text/html
+                  settle()    → burn locked + mint artifact
+                  lock/event  → sync layer (off-chain mirror)</pre></div>
+
+    <div class="sys-body">
+      <div class="sys-entry">
+        <div class="sys-entry-label">Contract</div>
+        <p class="sys-entry-text">Two ERC-721 contracts are deployed on Ethereum: TokenAgent holds the originals, SettleArtifact holds the composition snapshots that appear at settle. Each token is bound to a unique seed generated at mint, from which its traits are derived deterministically and cannot be changed. The rendering engine and animation logic are stored on-chain through EthFS and shared by both contracts. A call to tokenURI() assembles the complete document on the fly — injecting that token's trait data directly into the HTML — and returns a fully self-contained data:text/html;base64. No external request, no server, no dependency. The contracts handle ownership and transfer natively. They are the source of truth for what each token is and who holds it.</p>
+      </div>
+      <div class="sys-entry">
+        <div class="sys-entry-label">Interface</div>
+        <p class="sys-entry-text">The web application reads ownership and trait data from the contracts — which tokens exist, who owns them, what each one carries. Owners place tokens into modulos and configure which of their traits are active: which animation mode runs, at what speed, what visual size, whether the text, dither, or rect-shift layers are on. The token defines what is possible. The owner decides what is running. Nothing is final until a token is settled. The interface is where intention takes shape.</p>
+      </div>
+      <div class="sys-entry">
+        <div class="sys-entry-label">Sync</div>
+        <p class="sys-entry-text">The shared, evolving state lives in a separate real-time layer that the contract doesn't need to know about. When one owner locks a token in a modulo, every other connected viewer sees it within a fraction of a second — the lock, the address that placed it, the duration that remains. A public activity stream surfaces every lock, expiry, and settle as it happens, so the room feels populated. The contract is still the source of truth — locks expire on schedule, settles burn on-chain — but the sync layer is what makes the shared moment legible. Drafts that an owner is still composing remain private to them; only commitments propagate. When the lock window closes without a settle, the token returns to the inventory and the participant cannot re-lock in that same modulo for a short cooldown — pressure to act, not to hold.</p>
+      </div>
+      <div class="sys-entry">
+        <div class="sys-entry-label">Settle</div>
+        <p class="sys-entry-text">Settling is the act of commitment. Before a token can be settled in a shared modulo, the owner locks it for a chosen window — 1, 6, or 12 hours — making it visible to everyone and freezing its traits. If the lock window passes without a settle, the token returns to the owner's inventory and that modulo briefly cools down for them — a short window where they cannot lock again in the same vessel. When the owner signs the settle transaction, their locked tokens in that modulo are burned and a new artifact is minted in return — an on-chain NFT encoding the full composition at that moment, including tokens locked by other participants. The composition evolves between settles. The personal workshop (modulo 00) settles directly without a lock, as a solo space. To settle is to produce and reduce at once.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Toast stack — tx pending/success/error feedback for mint flow -->
+<div id="mint-toast-stack" aria-live="polite"></div>
+
+<!-- Mint confirmation modal -->
+<div id="mint-overlay" role="dialog" aria-hidden="true">
+  <div class="mint-modal" role="document">
+    <div class="mint-modal-tbar">
+      <span class="meta-dot"></span>
+      <span class="mint-modal-tbar-title">confirm mint</span>
+    </div>
+    <div class="mint-modal-body">
+      <div class="mint-modal-h">Mint <span id="mm-q">1</span> Modulo <span id="mm-tok">token</span>?</div>
+      <div class="mint-rows">
+        <div class="mint-r"><span class="mint-r-k">Quantity</span><span class="mint-r-v" id="mm-qty">1</span></div>
+        <div class="mint-r"><span class="mint-r-k">Price each</span><span class="mint-r-v">0.0099 ETH</span></div>
+        <div class="mint-r mint-r-total"><span class="mint-r-k">Total</span><span class="mint-r-v" id="mm-total">0.0099 ETH</span></div>
+      </div>
+    </div>
+    <div class="mint-modal-actions">
+      <button class="mint-modal-btn" id="mm-cancel">Cancel</button>
+      <button class="mint-modal-btn primary" id="mm-confirm">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- Footer -->
+<footer>
+  <span class="footer-copy">© 2026 Modulo by ubk — all tokens on-chain</span>
+  <div class="footer-links">
+    <a class="footer-link" href="https://x.com/unbearableKnife" target="_blank" rel="noopener noreferrer">X / Twitter</a>
+    <a class="footer-link" href="../index.html">Home</a>
+  </div>
+</footer>
+
+<script>
+// ── "desires" word — multilingual cycling ──────────────────────────────────────
+(function() {
+  const _dw = document.getElementById('desires-word');
+  if (!_dw) return;
+
+  const _WORDS = [
+    'desires',   // EN
+    'deseos',    // ES
+    'désirs',    // FR
+    'desideri',  // IT
+    'desejos',   // PT
+    'Wunsche',   // DE (no umlaut to keep width)
+    'zhelaniya', // RU (romanized)
+    'yokubou',   // JA (romanized)
+    'yuwang',    // ZH (romanized)
+  ];
+
+  // Only narrow ASCII chars — no wide scripts, no block chars
+  const _SCRAMBLE_CHARS = 'x+-/\\|_.';
+  let _wi = 0;
+
+  // Lock width on init so layout never shifts
+  requestAnimationFrame(() => {
+    _dw.style.minWidth = _dw.offsetWidth + 'px';
+  });
+
+  function _scramble(target, onDone) {
+    // Use exactly desires-length chars during scramble to keep width stable
+    const len = 7; // length of 'desires'
+    let frame = 0;
+    const totalFrames = 9;
+    const iv = setInterval(() => {
+      const reveal = Math.max(0, frame - (totalFrames - 4));
+      let out = '';
+      for (let i = 0; i < len; i++) {
+        if (i < reveal && i < target.length) {
+          out += target[i];
+        } else {
+          out += _SCRAMBLE_CHARS[Math.floor(Math.random() * _SCRAMBLE_CHARS.length)];
+        }
+      }
+      _dw.textContent = out;
+      frame++;
+      if (frame > totalFrames) {
+        clearInterval(iv);
+        _dw.textContent = target;
+        onDone();
+      }
+    }, 45);
+  }
+
+  // Pause state — set by IntersectionObserver on .page-header + visibilitychange.
+  // When paused, _next() early-returns and re-arms itself for when the page is
+  // visible again, so the cycle resumes seamlessly without stacking timers.
+  let _dwVisible = true;
+  let _dwQueued  = false;
+
+  function _dwTryResume() {
+    if (!_dwVisible || document.hidden) return;
+    if (_dwQueued) { _dwQueued = false; setTimeout(_next, 400); }
+  }
+
+  if ('IntersectionObserver' in window) {
+    const _io = new IntersectionObserver(entries => {
+      _dwVisible = entries[0].isIntersecting;
+      _dwTryResume();
+    }, { threshold: 0 });
+    _io.observe(_dw.closest('.page-header') || _dw);
+  }
+  document.addEventListener('visibilitychange', _dwTryResume);
+
+  function _next() {
+    if (!_dwVisible || document.hidden) { _dwQueued = true; return; }
+
+    _wi = (_wi + 1) % _WORDS.length;
+    const word = _WORDS[_wi];
+
+    // 1 — slide out upward
+    _dw.classList.add('dw-out');
+
+    setTimeout(() => {
+      // 2 — position below, hidden
+      _dw.classList.remove('dw-out');
+      _dw.style.transition = 'none';
+      _dw.classList.add('dw-in');
+      _dw.textContent = word;
+
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        // 3 — scramble + slide in
+        _dw.style.transition = '';
+        _dw.classList.remove('dw-in');
+        _dw.classList.add('dw-scramble');
+
+        _scramble(word, () => {
+          _dw.classList.remove('dw-scramble');
+          // 4 — wait, then repeat
+          setTimeout(_next, 3200);
+        });
+      }));
+    }, 220);
+  }
+
+  // Start after 5 seconds
+  setTimeout(_next, 5000);
+})();
+
+// ── Batched resize / scroll dispatcher ────────────────────────────────────────
+// rAF-throttled so multiple scroll/resize events within a frame collapse to one
+// invocation of each handler. Prevents duplicate getBoundingClientRect reads.
+const _resizeFns = [], _scrollFns = [];
+let _scrollPending = false, _resizePending = false;
+window.addEventListener('scroll', () => {
+  if (_scrollPending) return;
+  _scrollPending = true;
+  requestAnimationFrame(() => { _scrollPending = false; _scrollFns.forEach(f => f()); });
+}, { passive: true });
+window.addEventListener('resize', () => {
+  if (_resizePending) return;
+  _resizePending = true;
+  requestAnimationFrame(() => { _resizePending = false; _resizeFns.forEach(f => f()); });
+}, { passive: true });
+
+// ── Left column grid animation ────────────────────────────────────────────────
+const _lc   = document.getElementById('left-canvas');
+const _lctx = _lc.getContext('2d');
+let   LPIX  = 24;  // changes randomly every 3–7s — must be in _LPIX_OPTIONS
+const LCOL  = [219, 216, 209]; // bg beige (#dbd8d1)
+const LBLK  = [15,  15,  15];  // near-black
+
+// Wrap canvas in a padding-free div — exact stacking context for both canvases
+const _lWrap = document.createElement('div');
+_lWrap.style.cssText = 'flex:1;position:relative;z-index:0;min-height:340px;overflow:hidden;';
+_lc.parentNode.insertBefore(_lWrap, _lc);
+_lWrap.appendChild(_lc);
+
+// Top canvas = current animation (z:1)
+_lc.style.cssText = 'position:absolute;inset:0;z-index:1;image-rendering:crisp-edges;image-rendering:pixelated;';
+
+// Bot canvas = incoming animation (z:0, behind top)
+const _lBotC = document.createElement('canvas');
+_lBotC.style.cssText = 'position:absolute;inset:0;z-index:0;image-rendering:crisp-edges;image-rendering:pixelated;';
+_lWrap.insertBefore(_lBotC, _lc);
+const _lbCtx = _lBotC.getContext('2d');
+
+let _lW, _lH, _lCols, _lRows, _lGrid, _lNext;
+// Reusable ImageData buffers — recreated only on resize, mutated each frame.
+let _lImg, _lBuf, _lbImg, _lbBuf;
+
+function _lResize() {
+  const r = _lWrap.getBoundingClientRect();
+  _lW = Math.round(r.width)  || 300;
+  _lH = Math.round(r.height) || 340;
+  _lc.width  = _lW;   _lc.height  = _lH;
+  _lBotC.width = _lW; _lBotC.height = _lH;
+  _lCols = Math.floor(_lW / LPIX);
+  _lRows = Math.floor(_lH / LPIX);
+  _lGrid = new Uint8Array(_lCols * _lRows);
+  _lNext = new Uint8Array(_lCols * _lRows);
+  _lImg  = _lctx.createImageData(_lW, _lH);
+  _lBuf  = _lImg.data;
+  _lbImg = _lbCtx.createImageData(_lW, _lH);
+  _lbBuf = _lbImg.data;
+  // Sparse init — ~18% black
+  for (let i = 0; i < _lGrid.length; i++)
+    _lGrid[i] = Math.random() < 0.18 ? 1 : 0;
+}
+_lResize();
+_resizeFns.push(_lResize);
+// Separate handler — cancels any in-flight wipe so the bot grid + mask (sized
+// for the old dims) don't render garbage at the new size. Must come AFTER
+// _lResize in the dispatcher so dims are already updated when we clear bot.
+_resizeFns.push(() => {
+  if (_lWipeP >= 0) {
+    _lWipeP    = -1;
+    _lbGrid    = null;
+    _lbNext    = null;
+    _lWipeMask = null;
+    _lbCtx.clearRect(0, 0, _lW, _lH);
+  }
+});
+
+const _lDIRS = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1],[1,-1],[-1,1]];
+
+// Shared cellular-automaton helpers used by both top and bot canvas
+function _caIdx(c, r, cols, rows) {
+  return ((r + rows) % rows) * cols + ((c + cols) % cols);
+}
+function _caStep(grid, next, cols, rows) {
+  next.set(grid);
+  // Feedback — clustering
+  const rx = Math.floor(Math.random() * cols);
+  const ry = Math.floor(Math.random() * rows);
+  const rw = 1 + Math.floor(Math.random() * 5);
+  const rh = 1 + Math.floor(Math.random() * 4);
+  for (let dy = 0; dy < rh; dy++) for (let dx = 0; dx < rw; dx++) {
+    const c = rx + dx, r = ry + dy;
+    const ones =
+      grid[_caIdx(c-1,r,cols,rows)] + grid[_caIdx(c+1,r,cols,rows)] +
+      grid[_caIdx(c,r-1,cols,rows)] + grid[_caIdx(c,r+1,cols,rows)];
+    next[_caIdx(c,r,cols,rows)] = ones >= 2 ? 1 : 0;
+  }
+  // Shift — directional dispersion across a rect
+  const sx  = Math.floor(Math.random() * cols);
+  const sy  = Math.floor(Math.random() * rows);
+  const sw  = 3 + Math.floor(Math.random() * 7);
+  const sh  = 3 + Math.floor(Math.random() * 5);
+  const [ddx, ddy] = _lDIRS[Math.floor(Math.random() * _lDIRS.length)];
+  for (let dy = 0; dy < sh; dy++) for (let dx = 0; dx < sw; dx++)
+    next[_caIdx(sx+dx,sy+dy,cols,rows)] = grid[_caIdx(sx+dx-ddx,sy+dy-ddy,cols,rows)];
+  // Noise
+  if (Math.random() < 0.3) {
+    const nc = Math.floor(Math.random() * cols);
+    const nr = Math.floor(Math.random() * rows);
+    next[_caIdx(nc,nr,cols,rows)] = Math.random() < 0.18 ? 1 : 0;
+  }
+  grid.set(next);
+}
+
+// Density limiter — keep black between 10% and 55%. Pulled out of _caStep so
+// it runs once per frame instead of once per step (we step 3× per frame).
+function _caDensityClamp(grid) {
+  const total = grid.length;
+  let blacks = 0;
+  for (let i = 0; i < total; i++) if (grid[i]) blacks++;
+  const ratio = blacks / total;
+  if (ratio > 0.55) {
+    for (let i = 0; i < total; i++)
+      if (grid[i] && Math.random() < 0.15) grid[i] = 0;
+  } else if (ratio < 0.10) {
+    for (let i = 0; i < total; i++)
+      if (!grid[i] && Math.random() < 0.08) grid[i] = 1;
+  }
+}
+
+function _lStep() { _caStep(_lGrid, _lNext, _lCols, _lRows); }
+
+// Steps-per-frame scaled inversely with cell size so perceived movement stays
+// constant — a "shift" displaces by 1 cell, so big cells visually move much
+// further per step. Baseline 3 steps @ LPIX=12 ≈ 36px/frame perceived motion.
+function _lStepsPerFrame(pix) {
+  return Math.max(1, Math.min(5, Math.round(36 / pix)));
+}
+
+// ── Bot canvas state (incoming animation during wipe) ─────────────────────────
+let _lbPix = 0, _lbCols = 0, _lbRows = 0, _lbGrid = null, _lbNext = null;
+let _lWipeP = -1, _lWipeStart = 0; // -1 = idle, 0..1 = progress
+let _lWipeMask = null;              // Float32Array: per-cell clear threshold
+const _WIPE_DUR = 900;
+
+function _lbStep() { _caStep(_lbGrid, _lbNext, _lbCols, _lbRows); }
+
+function _lbRender() {
+  const buf = _lbBuf;
+  for (let i = 0; i < buf.length; i += 4) {
+    buf[i]=LCOL[0]; buf[i+1]=LCOL[1]; buf[i+2]=LCOL[2]; buf[i+3]=255;
+  }
+  for (let r = 0; r < _lbRows; r++) {
+    for (let c = 0; c < _lbCols; c++) {
+      if (!_lbGrid[r*_lbCols+c]) continue;
+      for (let py = 0; py < _lbPix; py++) for (let px = 0; px < _lbPix; px++) {
+        const i = ((r*_lbPix+py)*_lW + (c*_lbPix+px)) * 4;
+        buf[i]=LBLK[0]; buf[i+1]=LBLK[1]; buf[i+2]=LBLK[2]; buf[i+3]=255;
+      }
+    }
+  }
+  _lbCtx.putImageData(_lbImg, 0, 0);
+}
+
+function _lRender() {
+  const buf    = _lBuf;
+  const wiping = _lWipeP >= 0;
+
+  if (!wiping) {
+    // Prefill LCOL — covers partial edge strips outside grid bounds
+    for (let i = 0; i < buf.length; i += 4) {
+      buf[i]=LCOL[0]; buf[i+1]=LCOL[1]; buf[i+2]=LCOL[2]; buf[i+3]=255;
+    }
+  } else {
+    // Wipe mode: clear alpha so un-wiped cells reveal the bot canvas below.
+    // We must zero the whole buffer since we reuse it across frames.
+    buf.fill(0);
+  }
+
+  for (let r = 0; r < _lRows; r++) {
+    for (let c = 0; c < _lCols; c++) {
+      const isBlk = _lGrid[r * _lCols + c];
+      if (wiping) {
+        if (_lWipeP >= _lWipeMask[r * _lCols + c]) continue; // transparent
+      } else {
+        if (!isBlk) continue; // beige already covered by prefill
+      }
+      const col = isBlk ? LBLK : LCOL;
+      for (let py = 0; py < LPIX; py++) for (let px = 0; px < LPIX; px++) {
+        const i = ((r*LPIX+py)*_lW + (c*LPIX+px)) * 4;
+        buf[i]=col[0]; buf[i+1]=col[1]; buf[i+2]=col[2]; buf[i+3]=255;
+      }
+    }
+  }
+  _lctx.putImageData(_lImg, 0, 0);
+}
+
+const _lFI = 1000/30;
+let _lLast = 0, _lVisible = true;
+function _lChkVis() {
+  const r = document.querySelector('.body-section').getBoundingClientRect();
+  const vH = window.innerHeight;
+  _lVisible = Math.min(r.bottom, vH) - Math.max(r.top, 0) > 50;
+}
+_lChkVis();
+_resizeFns.push(_lChkVis);
+_scrollFns.push(_lChkVis);
+
+function _lLoop(ts) {
+  if (!_lVisible || document.hidden) { requestAnimationFrame(_lLoop); return; }
+  if (ts - _lLast >= _lFI) {
+    // Advance wipe progress
+    if (_lWipeP >= 0) {
+      _lWipeP = (ts - _lWipeStart) / _WIPE_DUR;
+      if (_lWipeP >= 1) {
+        // Wipe done — bot becomes top
+        LPIX   = _lbPix;  _lCols = _lbCols;
+        _lRows = _lbRows;  _lGrid = _lbGrid;  _lNext = _lbNext;
+        _lbGrid = null; _lbNext = null; _lWipeMask = null;
+        _lbCtx.clearRect(0, 0, _lW, _lH);
+        _lWipeP = -1;
+      }
+    }
+    // Step + render bot (only while wiping)
+    if (_lWipeP >= 0 && _lbGrid) {
+      const bSteps = _lStepsPerFrame(_lbPix);
+      for (let i = 0; i < bSteps; i++) _lbStep();
+      _caDensityClamp(_lbGrid);
+      _lbRender();
+    }
+    // Always step + render top
+    const tSteps = _lStepsPerFrame(LPIX);
+    for (let i = 0; i < tSteps; i++) _lStep();
+    _caDensityClamp(_lGrid);
+    _lRender();
+    _lLast = ts;
+  }
+  requestAnimationFrame(_lLoop);
+}
+requestAnimationFrame(_lLoop);
+
+// ── Resolution wipe transition ────────────────────────────────────────────────
+// Cell sizes chosen so each pair has divisor relationships (every value here is
+// either a multiple or divisor of every other value used in transitions). This
+// keeps wipe transitions clean — each top cell reveals whole bot cells (no
+// jagged half-cells at boundaries). _lPickNextRes filters to enforce this.
+const _LPIX_OPTIONS = [8, 12, 16, 24, 32, 48];
+
+// Pick the next pix value such that one is a multiple of the other (clean wipe).
+function _lPickNextRes() {
+  const candidates = _LPIX_OPTIONS.filter(v =>
+    v !== LPIX && (v % LPIX === 0 || LPIX % v === 0)
+  );
+  // Fallback: any other value (shouldn't trigger with the curated list)
+  const pool = candidates.length ? candidates : _LPIX_OPTIONS.filter(v => v !== LPIX);
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+function _lSwitchRes(newPix) {
+  if (_lWipeP >= 0) return; // already transitioning
+  _lbPix  = newPix;
+  _lbCols = Math.floor(_lW / _lbPix);
+  _lbRows = Math.floor(_lH / _lbPix);
+  _lbGrid = new Uint8Array(_lbCols * _lbRows);
+  _lbNext = new Uint8Array(_lbCols * _lbRows);
+  for (let i = 0; i < _lbGrid.length; i++)
+    _lbGrid[i] = Math.random() < 0.18 ? 1 : 0;
+
+  // Build Voronoi wipe mask — N seeds, each with random position + activation time.
+  // Each cell inherits the threshold of its closest seed, so shapes are organic blobs.
+  const N = 8 + Math.floor(Math.random() * 7); // 8–14 seeds
+  const seeds = Array.from({length: N}, () => ({
+    x: Math.random() * _lCols,
+    y: Math.random() * _lRows,
+    t: Math.random()
+  }));
+  _lWipeMask = new Float32Array(_lCols * _lRows);
+  for (let r = 0; r < _lRows; r++) {
+    for (let c = 0; c < _lCols; c++) {
+      let minD2 = Infinity, t = 0;
+      // Squared distance — sqrt is monotonic, so the closest seed is the same.
+      // Skips ~6000+ Math.hypot calls per wipe trigger.
+      for (let i = 0; i < seeds.length; i++) {
+        const s = seeds[i];
+        const dx = c - s.x, dy = r - s.y;
+        const d2 = dx*dx + dy*dy;
+        if (d2 < minD2) { minD2 = d2; t = s.t; }
+      }
+      // Small per-cell jitter softens Voronoi edges
+      _lWipeMask[r * _lCols + c] = Math.min(1, Math.max(0, t + (Math.random() - 0.5) * 0.12));
+    }
+  }
+
+  _lWipeP     = 0;
+  _lWipeStart = performance.now();
+}
+
+function _lScheduleRes() {
+  setTimeout(() => {
+    // Skip triggering wipes when the section isn't visible — otherwise they
+    // queue up, collapse instantly on return, and waste work building masks.
+    if (_lVisible && !document.hidden) {
+      _lSwitchRes(_lPickNextRes());
+    }
+    _lScheduleRes();
+  }, (3 + Math.random() * 4) * 1000);
+}
+_lScheduleRes();
+
+// ── Night mode ────────────────────────────────────────────────────────────────
+const _DAY_COL = [219, 216, 209];
+const _DAY_BLK = [15,  15,  15];
+const _NGT_COL = [26,  25,  23];
+const _NGT_BLK = [206, 201, 188];
+
+// Shared palettes used by deco cards and ASCII dither — mutated in place by _setNight
+// so IIFEs below pick up changes without re-wiring.
+const _DECO_BG   = [219, 216, 209];
+const _DECO_PAL0 = [15,  15,  15];   // deco "black"
+const _DECO_PAL1 = [201, 198, 192];  // deco "grey"
+const _ASCII_FILL = { v: 'rgba(219,216,209,0.55)' };
+
+function _setNight(on) {
+  document.body.classList.toggle('night', on);
+  const col = on ? _NGT_COL : _DAY_COL;
+  const blk = on ? _NGT_BLK : _DAY_BLK;
+  LCOL[0]=col[0]; LCOL[1]=col[1]; LCOL[2]=col[2];
+  LBLK[0]=blk[0]; LBLK[1]=blk[1]; LBLK[2]=blk[2];
+
+  // Deco canvases: invert palette for night
+  if (on) {
+    _DECO_BG[0]=26;  _DECO_BG[1]=25;  _DECO_BG[2]=23;
+    _DECO_PAL0[0]=206; _DECO_PAL0[1]=201; _DECO_PAL0[2]=188;
+    _DECO_PAL1[0]=60;  _DECO_PAL1[1]=60;  _DECO_PAL1[2]=60;
+    _ASCII_FILL.v = 'rgba(26,25,23,0.55)';
+  } else {
+    _DECO_BG[0]=219; _DECO_BG[1]=216; _DECO_BG[2]=209;
+    _DECO_PAL0[0]=15;  _DECO_PAL0[1]=15;  _DECO_PAL0[2]=15;
+    _DECO_PAL1[0]=201; _DECO_PAL1[1]=198; _DECO_PAL1[2]=192;
+    _ASCII_FILL.v = 'rgba(219,216,209,0.55)';
+  }
+
+  localStorage.setItem('tc-night', on ? '1' : '0');
+}
+
+document.getElementById('night-toggle').addEventListener('click', () => {
+  _setNight(!document.body.classList.contains('night'));
+});
+
+// Restore preference
+if (localStorage.getItem('tc-night') === '1') _setNight(true);
+
+// ── Rotating background gradient (specs section) ──────────────────────────────
+(function() {
+  const _gs  = document.querySelector('.specs-section');
+  const _gc  = document.createElement('canvas');
+  _gc.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+  _gs.insertBefore(_gc, _gs.firstChild);
+  const _gx  = _gc.getContext('2d');
+  let _gW, _gH, _gA = 280 * Math.PI / 180;
+  const _gSPD = (2 * Math.PI) / (7 * 60); // 1 rev / 7 s at 60 fps
+
+  function _gResize() {
+    const r = _gs.getBoundingClientRect();
+    _gW = Math.round(r.width);
+    _gH = Math.round(r.height);
+    _gc.width  = _gW;
+    _gc.height = _gH;
+  }
+  _gResize();
+  _resizeFns.push(_gResize);
+
+  function _gRender() {
+    _gA += _gSPD;
+    const cx = _gW/2, cy = _gH/2;
+    const len = Math.sqrt(_gW*_gW + _gH*_gH) / 2;
+    const x0 = cx + Math.cos(_gA + Math.PI) * len;
+    const y0 = cy + Math.sin(_gA + Math.PI) * len;
+    const x1 = cx + Math.cos(_gA) * len;
+    const y1 = cy + Math.sin(_gA) * len;
+    const g = _gx.createLinearGradient(x0, y0, x1, y1);
+    if (document.body.classList.contains('night')) {
+      g.addColorStop(0, '#2C2C2C');
+      g.addColorStop(1, '#1E1E1E');
+    } else {
+      g.addColorStop(0, '#A4A19D');
+      g.addColorStop(1, '#D8D5CD');
+    }
+    _gx.fillStyle = g;
+    _gx.fillRect(0, 0, _gW, _gH);
+  }
+
+  const _gFI = 1000/60;
+  let _gLast = 0, _gVisible = false;
+  function _gChkVis() {
+    const r = _gs.getBoundingClientRect();
+    const vH = window.innerHeight;
+    _gVisible = Math.min(r.bottom, vH) - Math.max(r.top, 0) > 50;
+  }
+  _scrollFns.push(_gChkVis);
+  _resizeFns.push(_gChkVis);
+  _gChkVis();
+
+  function _gLoop(ts) {
+    if (_gVisible && !document.hidden && ts - _gLast >= _gFI) { _gRender(); _gLast = ts; }
+    requestAnimationFrame(_gLoop);
+  }
+  requestAnimationFrame(_gLoop);
+})();
+
+// ── MODULO loop words (long-section background) ────────────────────────────────
+(function() {
+  const _msec = document.querySelector('.long-section');
+  const _minn = document.querySelector('.long-inner');
+  if (!_msec || !_minn) return;
+
+  const _MN   = 8;
+  const _BLUR = 11;  // px — restored; cost is now one-time (SVG rasterizes once)
+  const _FS   = 180;
+
+  // Pre-rasterize "MODULO" with a gaussian blur into an SVG data URI.
+  // The browser rasterizes the SVG to a bitmap once and caches it; every
+  // subsequent frame just composites the cached bitmap. The blur convolution
+  // no longer runs per-frame per-element (previously 8 layers × 60 fps).
+  function _mkModuloSVG(blur, fontSize) {
+    // Measure text width using canvas to size the SVG exactly to the glyphs.
+    const _mx = document.createElement('canvas').getContext('2d');
+    _mx.font = `400 ${fontSize}px "Times New Roman", Times, serif`;
+    const textW = Math.ceil(_mx.measureText('MODULO').width);
+
+    const pad = Math.ceil(blur * 3); // margin so the blur doesn't clip at edges
+    const W   = textW + pad * 2;
+    const H   = fontSize + pad * 2;
+
+    const svg =
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">` +
+        `<filter id="b" x="-10%" y="-10%" width="120%" height="120%">` +
+          `<feGaussianBlur stdDeviation="${blur}"/>` +
+        `</filter>` +
+        `<text x="${pad}" y="${H - pad * 0.82}" ` +
+              `font-family="Times New Roman, Times, serif" ` +
+              `font-size="${fontSize}" ` +
+              `font-weight="400" ` +
+              `letter-spacing="-0.02em" ` +
+              `fill="black" ` +
+              `filter="url(#b)">MODULO</text>` +
+      `</svg>`;
+
+    return { url: 'data:image/svg+xml;utf8,' + encodeURIComponent(svg), w: W, h: H };
+  }
+
+  const _msvg = _mkModuloSVG(_BLUR, _FS);
+
+  for (let i = 0; i < _MN; i++) {
+    const ltr  = i % 2 === 0;
+    const dur  = 3.5 + Math.random() * 2;
+    const delay = -(Math.random() * dur);
+    const top  = 3 + (i / (_MN - 1)) * 94;
+
+    const el = document.createElement('div');
+    el.className = 'modulo-bg-word ' + (ltr ? 'from-left' : 'from-right');
+    el.style.width  = _msvg.w + 'px';
+    el.style.height = _msvg.h + 'px';
+    el.style.top    = top + '%';
+    el.style.backgroundImage  = `url("${_msvg.url}")`;
+    el.style.backgroundRepeat = 'no-repeat';
+    el.style.animation = `${ltr ? '_mLTR' : '_mRTL'} ${dur.toFixed(2)}s ${delay.toFixed(2)}s linear infinite`;
+    _msec.insertBefore(el, _minn);
+  }
+
+  // Pause CSS animations when section has < 50px visible
+  const _mWords = _msec.querySelectorAll('.modulo-bg-word');
+  function _mChkVis() {
+    const r = _msec.getBoundingClientRect();
+    const vH = window.innerHeight;
+    const vis = Math.min(r.bottom, vH) - Math.max(r.top, 0) > 50;
+    const state = vis ? 'running' : 'paused';
+    _mWords.forEach(w => { w.style.animationPlayState = state; });
+  }
+  _scrollFns.push(_mChkVis);
+  _resizeFns.push(_mChkVis);
+  _mChkVis();
+})();
+
+// ── ASCII dither background (long-section) ─────────────────────────────────────
+(function() {
+  const _asec = document.querySelector('.long-section');
+  if (!_asec) return;
+
+  const _ac  = document.createElement('canvas');
+  _ac.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+  _asec.insertBefore(_ac, _asec.firstChild);
+  const _ax  = _ac.getContext('2d');
+
+  const _AFSIZE = 22; // px — larger glyphs → fewer cells to step/render
+  const _AFONT  = `${_AFSIZE}px monospace`;
+  const _ACHARS = [' ', '-', '+', 'x']; // 0=empty 1=dash 2=plus 3=cross
+  const _ANS    = _ACHARS.length;
+  const _AFI    = 1000 / 12; // 12fps — slow drift
+
+  let _aW, _aH, _aCols, _aRows, _aG, _aN, _aCW, _aCH;
+
+  function _aResize() {
+    const r = _asec.getBoundingClientRect();
+    _aW = Math.round(r.width)  || 800;
+    _aH = Math.round(r.height) || 400;
+    _ac.width  = _aW;
+    _ac.height = _aH;
+    _ax.font = _AFONT;
+    _aCW = _ax.measureText('x').width;
+    _aCH = Math.round(_AFSIZE * 1.15); // line height scales with font
+    _aCols = Math.ceil(_aW / _aCW);
+    _aRows = Math.ceil(_aH / _aCH);
+    _aG = new Uint8Array(_aCols * _aRows);
+    _aN = new Uint8Array(_aCols * _aRows);
+    // seed with scattered noise
+    for (let i = 0; i < _aG.length; i++)
+      _aG[i] = Math.random() < 0.25 ? Math.floor(Math.random() * _ANS) : 0;
+  }
+
+  function _aIdx(c, r) {
+    return ((r + _aRows) % _aRows) * _aCols + ((c + _aCols) % _aCols);
+  }
+
+  function _aStep() {
+    _aN.set(_aG);
+    // DT automaton: advance state if neighbour is next state (stochastic)
+    for (let r = 0; r < _aRows; r++) {
+      for (let c = 0; c < _aCols; c++) {
+        const v  = _aG[_aIdx(c, r)];
+        const nv = (v + 1) % _ANS;
+        const nb = [
+          _aG[_aIdx(c-1, r)], _aG[_aIdx(c+1, r)],
+          _aG[_aIdx(c, r-1)], _aG[_aIdx(c, r+1)]
+        ];
+        let cnt = 0;
+        for (const n of nb) if (n === nv) cnt++;
+        if (cnt >= 1 && Math.random() < 0.4) _aN[_aIdx(c, r)] = nv;
+      }
+    }
+    // sparse noise injection to keep it alive
+    for (let i = 0; i < 4; i++) {
+      const rc = Math.floor(Math.random() * _aCols);
+      const rr = Math.floor(Math.random() * _aRows);
+      const rw = 1 + Math.floor(Math.random() * 5);
+      const rh = 1 + Math.floor(Math.random() * 3);
+      const rv = Math.floor(Math.random() * _ANS);
+      for (let dy = 0; dy < rh; dy++)
+        for (let dx = 0; dx < rw; dx++)
+          _aN[_aIdx(rc + dx, rr + dy)] = rv;
+    }
+    _aG.set(_aN);
+  }
+
+  function _aRender() {
+    _ax.clearRect(0, 0, _aW, _aH);
+    _ax.font = _AFONT;
+    _ax.fillStyle = _ASCII_FILL.v;
+    for (let r = 0; r < _aRows; r++) {
+      for (let c = 0; c < _aCols; c++) {
+        const v = _aG[r * _aCols + c];
+        if (!v) continue;
+        _ax.fillText(_ACHARS[v], c * _aCW, r * _aCH + _aCH);
+      }
+    }
+  }
+
+  _aResize();
+  _resizeFns.push(_aResize);
+
+  let _aLast = 0, _aVisible = false;
+  function _aChkVis() {
+    const r = _asec.getBoundingClientRect();
+    const vH = window.innerHeight;
+    _aVisible = Math.min(r.bottom, vH) - Math.max(r.top, 0) > 50;
+  }
+  _scrollFns.push(_aChkVis);
+  _resizeFns.push(_aChkVis);
+  _aChkVis();
+
+  function _aLoop(ts) {
+    if (_aVisible && !document.hidden && ts - _aLast >= _AFI) {
+      for (let s = 0; s < 2; s++) _aStep();
+      _aRender();
+      _aLast = ts;
+    }
+    requestAnimationFrame(_aLoop);
+  }
+  requestAnimationFrame(_aLoop);
+})();
+
+// ── Floating decorative module windows (specs-section) ────────────────────────
+(function() {
+  const _dsec = document.querySelector('.specs-section');
+  if (!_dsec) return;
+
+  const _DW = 260, _DCH = 155, _DTH = 28, _DPX = 15, _DFI = 1000 / 30, _DSI = 1000 / 20;
+  const _DCARD_H = _DTH + _DCH;
+  // Palette arrays are defined in outer scope and mutated by _setNight — by holding
+  // references here we pick up day/night swaps without re-wiring anything.
+  const _DPAL  = [_DECO_PAL0, _DECO_PAL1];
+  const _DBG   = _DECO_BG;
+  const _DDOTS = ['#ff5f57','#ffbd2e','#28c840'];
+  const _DN    = _DPAL.length;
+  const _dcols = Math.floor(_DW / _DPX);
+  const _drows = Math.floor(_DCH / _DPX);
+  // Pre-allocated cnt buffer — shared across all card steps (sequential, never concurrent)
+  const _cnt   = new Int32Array(_DN + 1);
+
+  let _dsW = 0, _dsH = 0;
+  function _dmeasure() {
+    const r = _dsec.getBoundingClientRect();
+    _dsW = r.width  || 1000;
+    _dsH = r.height || 500;
+  }
+  _dmeasure();
+
+  function _dix(c, r) {
+    return ((r + _drows) % _drows) * _dcols + ((c + _dcols) % _dcols);
+  }
+
+  const _allCards = [];
+
+  function _spawnCards(names, noisePct, angOffset) {
+    for (let i = 0; i < names.length; i++) {
+      const _el = document.createElement('div');
+      _el.className = 'deco-card';
+      _el.innerHTML =
+        '<div class="deco-tbar">' +
+        _DDOTS.map(d => `<span class="deco-tbar-dot" style="background:${d}"></span>`).join('') +
+        `<span class="deco-tbar-label">${names[i]}</span>` +
+        '</div><div class="deco-canvas-wrap"><canvas class="deco-canvas"></canvas></div>';
+      _dsec.appendChild(_el);
+
+      const _cv = _el.querySelector('.deco-canvas');
+      const _cx = _cv.getContext('2d');
+      _cx.imageSmoothingEnabled = false;
+      _cv.width  = _dcols * _DPX;
+      _cv.height = _drows * _DPX;
+
+      const g = new Uint8Array(_dcols * _drows);
+      const n = new Uint8Array(_dcols * _drows);
+      for (let j = 0; j < g.length; j++)
+        g[j] = Math.random() < 0.22 ? (1 + Math.floor(Math.random() * _DN)) : 0;
+
+      // Reusable ImageData — allocated once per card, mutated every frame.
+      // Previously this was allocated on every render() call (~160KB × 10 cards × 30fps ≈ 48MB/s GC pressure).
+      const _img = _cx.createImageData(_dcols * _DPX, _drows * _DPX);
+      const _buf = _img.data;
+
+      const step = () => {
+        n.set(g);
+        // Feedback
+        const fx=Math.floor(Math.random()*_dcols), fy=Math.floor(Math.random()*_drows);
+        const fw=2+Math.floor(Math.random()*10), fh=2+Math.floor(Math.random()*5);
+        for (let dy=0;dy<fh;dy++) for (let dx=0;dx<fw;dx++) {
+          const cc=fx+dx, cr=fy+dy;
+          const nb=[g[_dix(cc-1,cr)],g[_dix(cc+1,cr)],g[_dix(cc,cr-1)],g[_dix(cc,cr+1)]];
+          _cnt.fill(0);
+          for (const v of nb) _cnt[Math.min(v,_DN)]++;
+          let mx=0, bst=g[_dix(cc,cr)];
+          for (let v=0;v<=_DN;v++) if(_cnt[v]>mx){mx=_cnt[v];bst=v;}
+          n[_dix(cc,cr)]=bst;
+        }
+        // Noise
+        const nx=Math.floor(Math.random()*_dcols), ny=Math.floor(Math.random()*_drows);
+        const nw=2+Math.floor(Math.random()*8), nh=2+Math.floor(Math.random()*4);
+        for (let dy=0;dy<nh;dy++) for (let dx=0;dx<nw;dx++)
+          n[_dix(nx+dx,ny+dy)]=Math.random()<noisePct?(1+Math.floor(Math.random()*_DN)):0;
+        // Shift
+        const sx=Math.floor(Math.random()*_dcols), sy=Math.floor(Math.random()*_drows);
+        const sw=2+Math.floor(Math.random()*14), sh=2+Math.floor(Math.random()*7);
+        const horiz=Math.random()<0.5, sdir=Math.random()<0.5?1:-1;
+        for (let dy=0;dy<sh;dy++) for (let dx=0;dx<sw;dx++)
+          n[_dix(sx+dx,sy+dy)]=g[horiz?_dix(sx+dx+sdir,sy+dy):_dix(sx+dx,sy+dy+sdir)];
+        g.set(n);
+      };
+
+      const render = () => {
+        // Reuses _buf every frame (no alloc). _DBG/_DPAL arrays are mutated in-place
+        // by _setNight so day/night swap works without re-creating anything.
+        for (let j=0;j<_buf.length;j+=4){_buf[j]=_DBG[0];_buf[j+1]=_DBG[1];_buf[j+2]=_DBG[2];_buf[j+3]=255;}
+        for (let r=0;r<_drows;r++) for (let c=0;c<_dcols;c++) {
+          const v=g[r*_dcols+c]; if(!v) continue;
+          const col=_DPAL[v-1];
+          for (let py=0;py<_DPX;py++) for (let px=0;px<_DPX;px++) {
+            const bi=((r*_DPX+py)*(_dcols*_DPX)+(c*_DPX+px))*4;
+            _buf[bi]=col[0];_buf[bi+1]=col[1];_buf[bi+2]=col[2];_buf[bi+3]=255;
+          }
+        }
+        _cx.putImageData(_img,0,0);
+      };
+
+      const ang = (Math.PI * 2 / names.length) * i + angOffset + Math.random() * 0.4;
+      const spd = 0.5 + Math.random() * 0.4;
+      const sx  = Math.random() * Math.max(1, _dsW - _DW);
+      const sy  = Math.random() * Math.max(1, _dsH - _DCARD_H);
+      _allCards.push({ el:_el, step, render, x:sx, y:sy, rx:sx, ry:sy,
+        vx:Math.cos(ang)*spd, vy:Math.sin(ang)*spd });
+    }
+  }
+
+  _spawnCards(['modulo_01','modulo_03','modulo_07','modulo_05','modulo_02'], 0.35, 0);
+  _spawnCards(['modulo_04','modulo_06','modulo_08','modulo_09','modulo_10'], 0.22, 0.3);
+
+  _allCards.forEach(c => { c.el.style.transform = `translate3d(${c.x}px,${c.y}px,0)`; });
+
+  let _dlast = 0, _dStepLast = 0, _dVis = false, _dPrevTs = 0;
+  function _dChkVis() {
+    const r = _dsec.getBoundingClientRect();
+    const vH = window.innerHeight;
+    _dVis = Math.min(r.bottom, vH) - Math.max(r.top, 0) > 50;
+    // Reset prev timestamp when resuming visibility so we don't get a giant
+    // delta on the first tick after scroll-away.
+    if (!_dVis) _dPrevTs = 0;
+  }
+
+  function _dloop(ts) {
+    if (_dVis && !document.hidden) {
+      // Delta-time physics: movement scales to elapsed milliseconds, not frame
+      // count. Keeps perceived speed constant even when other sections (ASCII
+      // dither, left canvas, MODULO words) are stealing the frame budget and
+      // the effective FPS drops below 60. dt is clamped so a long tab-switch
+      // or GC pause can't launch cards off-screen.
+      const raw = _dPrevTs ? (ts - _dPrevTs) : 16.67;
+      const dt  = Math.min(raw, 50) / 16.67; // normalized to 60fps baseline
+      _dPrevTs = ts;
+      // Framerate-independent exponential smoothing: when dt=1 this equals the
+      // original 0.18 factor; for larger dt it converges proportionally faster.
+      const k = 1 - Math.pow(1 - 0.18, dt);
+
+      _allCards.forEach(c => {
+        c.x += c.vx * dt; c.y += c.vy * dt;
+        const mx = _dsW - _DW, my = Math.max(0, _dsH - _DCARD_H);
+        if (c.x < 0)  { c.x = 0;  c.vx =  Math.abs(c.vx); }
+        if (c.x > mx) { c.x = mx; c.vx = -Math.abs(c.vx); }
+        if (c.y < 0)  { c.y = 0;  c.vy =  Math.abs(c.vy); }
+        if (c.y > my) { c.y = my; c.vy = -Math.abs(c.vy); }
+        c.rx += (c.x - c.rx) * k;
+        c.ry += (c.y - c.ry) * k;
+        c.el.style.transform = `translate3d(${c.rx.toFixed(2)}px,${c.ry.toFixed(2)}px,0)`;
+      });
+      // Step is throttled to 20Hz (_DSI) — the pattern's perceived speed.
+      // Render is throttled to 30Hz (_DFI) — visual smoothness of card movement.
+      // Decoupling them lets the pattern evolve slowly while cards drift smoothly.
+      const doStep   = ts - _dStepLast >= _DSI;
+      const doRender = ts - _dlast     >= _DFI;
+      if (doStep || doRender) {
+        _allCards.forEach(c => {
+          if (doStep)   c.step();
+          if (doRender) c.render();
+        });
+        if (doStep)   _dStepLast = ts;
+        if (doRender) _dlast     = ts;
+      }
+    } else {
+      _dPrevTs = 0; // reset so next resume doesn't have stale timestamp
+    }
+    requestAnimationFrame(_dloop);
+  }
+
+  _resizeFns.push(_dmeasure, _dChkVis);
+  _scrollFns.push(_dChkVis);
+  _dChkVis();
+  requestAnimationFrame(_dloop);
+})();
+
+// ── Mint flow — Sepolia wired (hybrid wallet pattern) ─────────────────────
+// Connects via window.ethereum (MetaMask/Rabby/etc). Reuses the same
+// `tc-wallet-address` localStorage key as app/index.html so a wallet
+// connected on the app carries over to about (silent reconnect at boot).
+//
+// Hybrid click handler:
+//   - Wallet not connected → first triggers connect popup, then opens modal
+//   - Wallet connected     → opens modal directly
+// Confirm in modal → calls tokenAgent.mint(q, {value}) on-chain.
+// All tx feedback via top-right toast stack. Esc / click-outside cancels modal.
+(function(){
+  // ════════════════════════════════════════════════════════════════════════
+  // MINT_ENABLED — single switch to arm/disarm the entire mint flow.
+  //
+  // false (current): button shows "MINTING SOON", disabled, click is a no-op.
+  //   Qty selector + cost preview still work — visitors can see the layout.
+  //   No wallet connect, no chain switch, no contract reads, no listeners.
+  //
+  // true: full mint flow wired (connect → chain check → modal → tx → toast).
+  //
+  // To launch: flip false → true, redeploy. Nothing else to change here.
+  // T-1 runbook: also swap TOKEN_AGENT_ADDRESS + CHAIN_ID + RPC URLs + CSP.
+  // ════════════════════════════════════════════════════════════════════════
+  const MINT_ENABLED = false;
+
+  // ── Constants matching contracts.md / TokenAgent Sepolia deploy ─────────
+  // Public on-chain address (visible on Etherscan + contracts.md). Not a secret.
+  const TOKEN_AGENT_ADDRESS = '0xdE4AC7c11c0B3dbDcE4d60F2B14F659a553f8b8a'; // gitleaks:allow
+  const TOKEN_AGENT_ABI = [
+    'function mint(uint256 quantity) external payable',
+    'function totalMinted() external view returns (uint256)',
+    'function mintedBy(address) external view returns (uint256)',
+  ];
+  const CHAIN_ID = 11155111;                     // Sepolia
+  const CHAIN_HEX = '0x' + CHAIN_ID.toString(16);
+  const CHAIN_INFO = {
+    chainId: CHAIN_HEX,
+    chainName: 'Sepolia',
+    nativeCurrency: { name: 'Sepolia Ether', symbol: 'ETH', decimals: 18 },
+    rpcUrls: ['https://ethereum-sepolia-rpc.publicnode.com', 'https://rpc.sepolia.org'],
+    blockExplorerUrls: ['https://sepolia.etherscan.io'],
+  };
+  const ETHERSCAN_TX = 'https://sepolia.etherscan.io/tx/';
+  const WALLET_LS_KEY = 'tc-wallet-address';     // shared across modulo.ubk.art pages
+  const MIN = 1, MAX = 100;                      // matches MAX_PER_WALLET
+  const PRICE_ETH = 0.0099;                      // matches MINT_PRICE
+  const PRICE_WEI_STR = '9900000000000000';      // 0.0099 * 1e18 — exact, no float
+
+  // ── DOM refs ────────────────────────────────────────────────────────────
+  const $ = id => document.getElementById(id);
+  const _v = $('qty-val'), _m = $('qty-minus'), _p = $('qty-plus');
+  const _b = $('mint-btn'), _c = $('qty-cost-val');
+  const _ov = $('mint-overlay');
+  const _mmQ = $('mm-q'), _mmTok = $('mm-tok'), _mmQty = $('mm-qty'), _mmTotal = $('mm-total');
+  const _mmCancel = $('mm-cancel'), _mmConfirm = $('mm-confirm');
+  const _wl = $('mint-wallet'), _wlAddr = $('mint-wallet-addr');
+  const _toastStack = $('mint-toast-stack');
+  if (!_v || !_m || !_p) return;
+
+  // ── State ───────────────────────────────────────────────────────────────
+  let q = 1;
+  let _provider = null;
+  let _address = null;
+  let _chainId = null;
+  let _connecting = false;
+  // Fix #3: per-wallet quota tracking. _remaining = how many tokens this wallet
+  // can still mint before hitting MAX_PER_WALLET. Defaults to MAX until we read
+  // mintedBy() on-chain. Effective cap = min(MAX, _remaining).
+  let _remaining = MAX;
+  let _quotaLoaded = false;
+  const _hint = $('qty-quota-hint');
+
+  // ── Helpers ─────────────────────────────────────────────────────────────
+  const _fmt = n => Number(n.toFixed(4)).toString();
+  const _short = a => a ? (a.slice(0, 6) + '…' + a.slice(-4)) : '';
+
+  const _effectiveMax = () => Math.min(MAX, _remaining);
+
+  const _setQty = n => {
+    const cap = _effectiveMax();
+    // When cap=0 (wallet cap reached), don't fall back to MIN=1 — that's
+    // misleading. Display 0 so user sees the actual state. Button is disabled
+    // anyway in that case so no functional impact.
+    if (cap <= 0) {
+      q = 0;
+      _v.value = 0;
+      if (_v.max != cap) _v.max = cap; // keep HTML attr in sync; otherwise native step uses stale value
+      if (_c) _c.textContent = _fmt(0);
+      return;
+    }
+    q = Math.max(MIN, Math.min(cap, n));
+    _v.value = q;
+    if (_v.max != cap) _v.max = cap; // sync HTML attr for native step
+    if (_c) _c.textContent = _fmt(q * PRICE_ETH);
+  };
+
+  function _renderQuotaHint() {
+    if (!_hint) return;
+    if (_quotaLoaded && _remaining < MAX) {
+      _hint.textContent = _remaining > 0 ? ` (${_remaining} left)` : ' cap reached';
+    } else {
+      _hint.textContent = '';
+    }
+  }
+
+  function _renderWallet() {
+    // Fix #5: chain-mismatch + Fix #3: cap-reached states surfaced via the
+    // MINT button. Order of precedence: not connected → cap reached → wrong
+    // chain → ready.
+    const wrongChain = _address && _chainId !== null && _chainId !== CHAIN_ID;
+    const capReached = _address && _quotaLoaded && _remaining === 0;
+    if (_address) {
+      _wlAddr.textContent = _short(_address);
+      _wl.classList.add('connected');
+      _b.classList.toggle('wrong-chain', !!wrongChain);
+      if (capReached) {
+        _b.textContent = 'WALLET CAP REACHED';
+        _b.disabled = true;
+      } else if (wrongChain) {
+        _b.textContent = 'SWITCH TO SEPOLIA';
+        _b.disabled = false;
+      } else {
+        _b.textContent = 'MINT';
+        _b.disabled = false;
+      }
+    } else {
+      _wlAddr.textContent = '—';
+      _wl.classList.remove('connected');
+      _b.classList.remove('wrong-chain');
+      _b.textContent = 'CONNECT & MINT';
+      _b.disabled = false;
+    }
+  }
+
+  // Fix #3: read on-chain mintedBy() to compute remaining cap. Uses the
+  // wallet provider (we have it post-connect anyway) — no need for separate
+  // readonly RPC since this only runs when wallet is connected.
+  async function _refreshQuota() {
+    if (!_address || !_provider || !window.ethers) {
+      _remaining = MAX; _quotaLoaded = false;
+      _renderQuotaHint(); _renderWallet();
+      return;
+    }
+    try {
+      const agent = new window.ethers.Contract(TOKEN_AGENT_ADDRESS, TOKEN_AGENT_ABI, _provider);
+      const minted = await agent.mintedBy(_address);
+      const used = Number(minted);
+      _remaining = Math.max(0, MAX - used);
+      _quotaLoaded = true;
+      // Re-clamp if current qty exceeds new cap (e.g. user switched accounts)
+      if (q > _effectiveMax()) _setQty(_effectiveMax() || MIN);
+      _renderQuotaHint();
+      _renderWallet();
+    } catch (e) {
+      console.error('[mint] quota read failed:', e);
+      // Don't block UX on read failure — leave defaults (MAX, !loaded)
+    }
+  }
+
+  // ── Toast helpers ───────────────────────────────────────────────────────
+  function _toast(text, opts) {
+    if (!_toastStack) return null;
+    const o = opts || {};
+    const el = document.createElement('div');
+    el.className = 'mtoast' + (o.variant ? ' ' + o.variant : '');
+    const main = document.createElement('div');
+    main.className = 'mtoast-main';
+    main.textContent = text;
+    el.appendChild(main);
+    if (o.sub) {
+      const sub = document.createElement('div');
+      sub.className = 'mtoast-sub';
+      if (o.txHash) {
+        const a = document.createElement('a');
+        a.href = ETHERSCAN_TX + o.txHash;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.textContent = o.sub;
+        sub.appendChild(a);
+      } else {
+        sub.textContent = o.sub;
+      }
+      el.appendChild(sub);
+    }
+    _toastStack.appendChild(el);
+    requestAnimationFrame(() => el.classList.add('in'));
+    if (!o.sticky) {
+      const ttl = o.ttlMs || 5200;
+      setTimeout(() => _dismissToast(el), ttl);
+    }
+    return el;
+  }
+  function _dismissToast(el) {
+    if (!el || !el.parentNode) return;
+    el.classList.add('fade-out');
+    setTimeout(() => { if (el.parentNode) el.remove(); }, 220);
+  }
+
+  // ── Wallet flow ─────────────────────────────────────────────────────────
+  async function _connect(silent) {
+    if (_connecting) return null;
+    if (!window.ethereum) {
+      if (!silent) _toast('No wallet detected', { sub: 'Install MetaMask or Rabby to mint', variant: 'error' });
+      return null;
+    }
+    if (!window.ethers) {
+      _toast('Wallet library not loaded', { variant: 'error' });
+      return null;
+    }
+    _connecting = true;
+    try {
+      _provider = new window.ethers.BrowserProvider(window.ethereum, 'any');
+      const method = silent ? 'eth_accounts' : 'eth_requestAccounts';
+      const accounts = await window.ethereum.request({ method });
+      if (!accounts || !accounts.length) { _provider = null; return null; }
+      _address = window.ethers.getAddress(accounts[0]);
+      try {
+        const net = await _provider.getNetwork();
+        _chainId = Number(net.chainId);
+      } catch { _chainId = null; }
+      localStorage.setItem(WALLET_LS_KEY, _address);
+      _renderWallet();
+      // Push to Sepolia if user is on a different chain (skip silent path —
+      // popup on every page load would be annoying)
+      if (!silent && _chainId !== CHAIN_ID) await _ensureChain();
+      // Fix #3: read on-chain quota now that we have an address + provider.
+      // Awaited (was fire-and-forget) so callers like _onMintClick block until
+      // _remaining is loaded — otherwise modal could open with qty > real cap.
+      await _refreshQuota();
+      return _address;
+    } catch (err) {
+      if (err && err.code === 4001) {
+        if (!silent) _toast('Connection rejected', { sub: 'You cancelled the wallet popup', ttlMs: 3500 });
+      } else if (!silent) {
+        console.error('[mint] connect failed:', err);
+        _toast('Connection failed', { sub: String(err && err.message || err).slice(0, 80), variant: 'error' });
+      }
+      return null;
+    } finally {
+      _connecting = false;
+    }
+  }
+
+  async function _disconnect() {
+    // Fix #6: guard against re-entry. wallet_revokePermissions below makes
+    // MetaMask emit accountsChanged with [], whose listener calls _disconnect
+    // again. In practice no infinite loop (second revoke is a no-op), but
+    // explicit guard is cleaner.
+    if (!_address && !_provider) return;
+    _address = null; _provider = null; _chainId = null;
+    _remaining = MAX; _quotaLoaded = false;
+    localStorage.removeItem(WALLET_LS_KEY);
+    _renderWallet();
+    _renderQuotaHint();
+    // EIP-2255 (best-effort — only MetaMask supports this consistently)
+    try {
+      if (window.ethereum && window.ethereum.request) {
+        await window.ethereum.request({
+          method: 'wallet_revokePermissions',
+          params: [{ eth_accounts: {} }],
+        });
+      }
+    } catch (_) { /* unsupported on some wallets — ignore */ }
+  }
+
+  async function _ensureChain() {
+    if (!window.ethereum) return false;
+    // Helper: read actual chainId from wallet (don't trust optimistic updates).
+    // Some wallets add a chain via wallet_addEthereumChain without auto-switching.
+    const _readChainId = async () => {
+      try {
+        const hex = await window.ethereum.request({ method: 'eth_chainId' });
+        const id = parseInt(hex, 16);
+        _chainId = id;
+        return id;
+      } catch { return null; }
+    };
+    try {
+      await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: CHAIN_HEX }] });
+      const id = await _readChainId();
+      return id === CHAIN_ID;
+    } catch (err) {
+      if (err && err.code === 4902) {
+        try {
+          await window.ethereum.request({ method: 'wallet_addEthereumChain', params: [CHAIN_INFO] });
+          // Wallet may or may not auto-switch after add. Verify with eth_chainId
+          // and retry switch if still on the old chain.
+          let id = await _readChainId();
+          if (id !== CHAIN_ID) {
+            try {
+              await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: CHAIN_HEX }] });
+              id = await _readChainId();
+            } catch (_) { /* user rejected the second prompt */ }
+          }
+          return id === CHAIN_ID;
+        } catch (e2) {
+          _toast('Chain switch failed', { sub: 'Switch to Sepolia in your wallet', variant: 'error' });
+          return false;
+        }
+      }
+      _toast('Chain switch rejected', { sub: 'Switch to Sepolia in your wallet', ttlMs: 4000 });
+      return false;
+    }
+  }
+
+  // ── Modal open/close ────────────────────────────────────────────────────
+  function _openModal() {
+    if (!_ov) return;
+    _mmQ.textContent = q;
+    _mmTok.textContent = q === 1 ? 'token' : 'tokens';
+    _mmQty.textContent = q;
+    _mmTotal.textContent = _fmt(q * PRICE_ETH) + ' ETH';
+    _ov.classList.add('open');
+    _ov.setAttribute('aria-hidden', 'false');
+  }
+  function _closeModal() {
+    if (!_ov) return;
+    _ov.classList.remove('open');
+    _ov.setAttribute('aria-hidden', 'true');
+  }
+
+  // ── Hybrid click: connect-if-needed → open modal ────────────────────────
+  async function _onMintClick() {
+    // Fix #1: commit any pending input edit. Without this, typing "150" without
+    // blur leaves _v.value="150" but q=1 (since 150 > MAX is rejected by the
+    // input listener). Modal would open with stale qty=1 while user sees 150.
+    const pending = parseInt(_v.value, 10);
+    _setQty(isNaN(pending) ? MIN : pending);
+    if (!_address) {
+      const addr = await _connect(false);
+      if (!addr) return; // user cancelled or wallet missing
+    }
+    // Fix #3: cap reached → block at click level (button is also disabled, but
+    // belt-and-suspenders in case state drifts between render and click).
+    if (_quotaLoaded && _remaining === 0) {
+      _toast('Wallet cap reached', { sub: 'You have already minted 100 tokens', ttlMs: 4000 });
+      return;
+    }
+    // Fix #2: treat _chainId === null as "unknown chain → force switch".
+    // Otherwise a silent reconnect where getNetwork() failed could let the
+    // user submit a mint tx on the wallet's current chain (e.g. mainnet).
+    if (_chainId !== CHAIN_ID) {
+      const ok = await _ensureChain();
+      if (!ok) return;
+    }
+    _openModal();
+  }
+
+  // ── Mint tx ─────────────────────────────────────────────────────────────
+  async function _doMint() {
+    if (!_provider || !_address) {
+      _toast('Wallet disconnected', { variant: 'error' });
+      return;
+    }
+    _mmConfirm.disabled = true;
+    _mmCancel.disabled = true;
+    const _toastPending = _toast('Submitting mint…', {
+      sub: 'sign the transaction in your wallet', sticky: true
+    });
+    let tx;
+    try {
+      const signer = await _provider.getSigner();
+      const agent = new window.ethers.Contract(TOKEN_AGENT_ADDRESS, TOKEN_AGENT_ABI, signer);
+      const totalWei = window.ethers.toBigInt(PRICE_WEI_STR) * window.ethers.toBigInt(q);
+      tx = await agent.mint(q, { value: totalWei });
+    } catch (err) {
+      _dismissToast(_toastPending);
+      _mmConfirm.disabled = false;
+      _mmCancel.disabled = false;
+      if (err && (err.code === 4001 || err.code === 'ACTION_REJECTED')) {
+        _toast('Mint cancelled', { sub: 'You rejected the transaction', ttlMs: 3500 });
+      } else {
+        const msg = (err && (err.shortMessage || err.reason || err.message)) || 'unknown error';
+        console.error('[mint] tx submit failed:', err);
+        _toast('Mint failed', { sub: String(msg).slice(0, 100), variant: 'error', ttlMs: 6500 });
+      }
+      return;
+    }
+    _dismissToast(_toastPending);
+    _closeModal();
+    _mmConfirm.disabled = false;
+    _mmCancel.disabled = false;
+    const _toastConfirm = _toast('Mint submitted', {
+      sub: 'View on Etherscan: ' + tx.hash.slice(0, 10) + '…',
+      sticky: true,
+      txHash: tx.hash,
+    });
+    try {
+      const receipt = await tx.wait();
+      _dismissToast(_toastConfirm);
+      _toast('Minted ✓ ' + q + ' token' + (q > 1 ? 's' : ''), {
+        sub: 'block ' + receipt.blockNumber + ' · view tx',
+        variant: 'success',
+        txHash: tx.hash,
+        ttlMs: 8000,
+      });
+      // Fix #3: refresh quota after successful mint. Could decrement locally
+      // (_remaining -= q) but a fresh on-chain read also catches state drift
+      // (e.g. user minted from another tab between connect and now).
+      _refreshQuota();
+    } catch (err) {
+      _dismissToast(_toastConfirm);
+      console.error('[mint] tx revert:', err);
+      _toast('Mint reverted', {
+        sub: (err && err.shortMessage) || 'transaction failed on-chain',
+        variant: 'error',
+        ttlMs: 6500,
+      });
+    }
+  }
+
+  // ── Wire qty controls — always attached, but in pre-mint mode the
+  //    .pre-mint container class applies pointer-events:none on .qty-btn and
+  //    .qty-val (CSS), so listeners don't fire. Re-enabling MINT_ENABLED also
+  //    re-enables qty interaction without rewiring. ─────────────────────────
+  _m.addEventListener('click', () => _setQty(q - 1));
+  _p.addEventListener('click', () => _setQty(q + 1));
+  // Editable qty: live-filter non-digits (no clamp on input — let user type "100"
+  // without "1" being clamped to MAX while typing). Clamp on blur / Enter.
+  _v.addEventListener('input', () => {
+    const cleaned = _v.value.replace(/[^\d]/g, '');
+    if (cleaned !== _v.value) _v.value = cleaned;
+    const n = parseInt(cleaned, 10);
+    // Live update against effective cap (Fix #3 — respects per-wallet quota)
+    const cap = _effectiveMax();
+    if (!isNaN(n) && n >= MIN && n <= cap) {
+      q = n;
+      if (_c) _c.textContent = _fmt(q * PRICE_ETH);
+    }
+  });
+  _v.addEventListener('blur', () => {
+    const n = parseInt(_v.value, 10);
+    _setQty(isNaN(n) ? MIN : n);  // clamp + redisplay
+  });
+  _v.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); _v.blur(); }
+  });
+  _v.addEventListener('focus', () => _v.select());
+
+  // ── Pre-mint mode: button disabled, no wallet wiring, no listeners ──────
+  if (!MINT_ENABLED) {
+    if (_b) {
+      _b.textContent = 'MINTING SOON';
+      _b.disabled = true;
+      _b.classList.add('pre-mint');
+      // Defensive: even though disabled, prevent click from doing anything if
+      // some wallet extension or browser quirk fires the event.
+      _b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); });
+    }
+    // Grey out the entire qty/cost block visually + block clicks via CSS
+    // (pointer-events:none on .qty-btn and .qty-val). Container class only —
+    // remove .pre-mint from .meta-mint to reactivate everything.
+    const _container = _b && _b.closest('.meta-mint');
+    if (_container) _container.classList.add('pre-mint');
+    return; // skip wallet connect, modal handlers, boot reconnect
+  }
+
+  // ── MINT_ENABLED: full mint flow wiring ─────────────────────────────────
+  if (_b) _b.addEventListener('click', _onMintClick);
+  if (_mmCancel) _mmCancel.addEventListener('click', _closeModal);
+  if (_mmConfirm) _mmConfirm.addEventListener('click', _doMint);
+  if (_wl) _wl.addEventListener('click', _disconnect);
+  if (_ov) _ov.addEventListener('click', e => { if (e.target === _ov) _closeModal(); });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && _ov && _ov.classList.contains('open') && !_mmConfirm.disabled) _closeModal();
+  });
+
+  // ── Wallet event listeners (cross-page state sync) ──────────────────────
+  if (window.ethereum && window.ethereum.on) {
+    window.ethereum.on('accountsChanged', accs => {
+      if (!accs || !accs.length) {
+        _disconnect();
+      } else {
+        _address = window.ethers.getAddress(accs[0]);
+        localStorage.setItem(WALLET_LS_KEY, _address);
+        // Fix #3: new account → new quota. Reset + refetch.
+        _remaining = MAX; _quotaLoaded = false;
+        _renderWallet();
+        _renderQuotaHint();
+        _refreshQuota();
+      }
+    });
+    window.ethereum.on('chainChanged', hex => {
+      _chainId = parseInt(hex, 16);
+      // Fix #5: surface chain mismatch in MINT button immediately (no popup —
+      // user can self-correct or be prompted on next click).
+      _renderWallet();
+    });
+  }
+
+  // ── Boot: silent reconnect if address persisted from prior session ──────
+  _renderWallet();
+  if (localStorage.getItem(WALLET_LS_KEY) && window.ethereum) {
+    _connect(true);
+  }
+})();
+</script>
+</body>
+</html>
