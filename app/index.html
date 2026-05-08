@@ -49,7 +49,7 @@
     throw new Error('embedded in iframe — execution halted');
   }
 </script>
-<title>TokenCluster — v2</title>
+<title>Modulo</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23d8d4c9'/%3E%3Crect x='4' y='4' width='8' height='8' fill='%23222'/%3E%3C/svg%3E">
 <!-- Google Fonts removed 2026-05-03: the previously-loaded `Ultra` font was
      dead code (linked but never applied via font-family). Site uses only
@@ -3280,10 +3280,10 @@ function buildModulo(mod) {
             // introduces an upstream UI bug; no toast/alert needed here.
             dbg.warn('[settle] guest reached settleModulo — upstream bug');
           } else if (result.reason === 'user-rejected-tx' || result.reason === 'user-rejected-sig' || result.reason === 'user-rejected-auth') {
-            // Quiet — user explicitly cancelled; no need for an alert.
             // user-rejected-auth = Step 2a (settlerAuthSig, audit Chunk 3 2026-05-07)
             // user-rejected-sig  = Step 3  (settlerSig for on-chain settle)
             // user-rejected-tx   = Step 4  (final tx submission)
+            _showToast('Tx cancelled', { ttlMs: 2500 });
             dbg.log('[settle]', mod.id, 'cancelled by user');
           } else if (result.reason === 'need-multi-owner') {
             _showToast('Need ≥2 distinct wallets', {
@@ -8584,6 +8584,13 @@ async function _initWalletSession(address) {
     try { await _sepoliaSync(); }
     catch (err) { dbg.warn('[wallet] auto-sepoliaSync failed:', err); }
   }
+  // Activate Transfer event listener once provider is ready. Idempotent —
+  // safe to call multiple times across reconnects (NEW 2026-05-07: keeps UI
+  // in sync with on-chain mint/transfer/burn without page refresh).
+  if (typeof _setupTransferListener === 'function') {
+    try { await _setupTransferListener(); }
+    catch (err) { dbg.warn('[wallet] transfer listener setup failed:', err); }
+  }
   // Refresh topbar after _sepoliaSync stamps owner=SESSION_USER on the user's
   // tokens. Otherwise the topbar-inv counter stays at the value from
   // _endSession's call (when SESSION_USER was 0x0000…0000 → matched all the
@@ -8605,6 +8612,12 @@ async function _walletDeferredFallback() {
   if (typeof _sepoliaSync === 'function') {
     try { await _sepoliaSync(); }
     catch (err) { console.error('[bootstrap] guest sepoliaSync failed:', err); }
+  }
+  // Activate Transfer listener for guests too (read-only) so they see
+  // real-time updates of mints/burns/transfers in shared modulos.
+  if (typeof _setupTransferListener === 'function') {
+    try { await _setupTransferListener(); }
+    catch (err) { dbg.warn('[bootstrap] guest transfer listener failed:', err); }
   }
 }
 
@@ -8894,6 +8907,102 @@ async function _sepoliaSync() {
   return { ok: true, count: owned.length, tokens: owned };
 }
 window._sepoliaSync = _sepoliaSync;
+
+// ── Transfer event listener (NEW 2026-05-07) ──────────────────────────────
+// Keeps TOKEN_DATA + UI in sync with on-chain state without page refresh.
+// Listens to TokenAgent's `Transfer(address from, address to, uint256 tokenId)`
+// event (ERC-721 standard, fires on mint/transfer/burn).
+//
+//   • MINT (from = 0x0):  hydrate TOKEN_DATA[id], increment _onchainTotalMinted,
+//                         rebuild inventory if `to` is the connected wallet.
+//   • TRANSFER (both non-zero): update TOKEN_DATA[id].owner, rebuild inventory.
+//   • BURN (to = 0x0):    mark TOKEN_DATA[id] = null, sessionBurnedTokens.add,
+//                         clean fbLocked entry for any modulo that had this
+//                         token locked → other tabs see the visual lock removed
+//                         instantly (resolves Test 5 cross-tab settle issue).
+//
+// Single listener attached to the readonly RPC provider — works even without
+// a wallet connected. Persists across wallet reconnects (the contract instance
+// is bound to the provider, not the signer).
+const _ZERO_ADDR = '0x0000000000000000000000000000000000000000';
+let _transferListenerActive = false;
+let _transferListenerContract = null;
+
+async function _setupTransferListener() {
+  if (_transferListenerActive) {
+    dbg.log('[transfer-listener] already active, skip');
+    return;
+  }
+  const provider = _getReadonlyProvider() || _walletProvider;
+  if (!provider) { dbg.warn('[transfer-listener] no provider available'); return; }
+  const agent = _getTokenAgent(provider);
+  if (!agent) { dbg.warn('[transfer-listener] no contract'); return; }
+
+  _transferListenerContract = agent;
+  _transferListenerActive = true;
+
+  agent.on('Transfer', async (from, to, tokenId, event) => {
+    let id;
+    try { id = Number(tokenId); } catch (_) { return; }
+    if (!Number.isInteger(id) || id < 1) return;
+
+    const fromZero = from && from.toLowerCase() === _ZERO_ADDR;
+    const toZero   = to   && to.toLowerCase()   === _ZERO_ADDR;
+    const kind = fromZero ? 'MINT' : toZero ? 'BURN' : 'XFER';
+    dbg.log('[transfer]', kind, 'id:', id, 'from:', _shortAddr(from), 'to:', _shortAddr(to));
+
+    if (toZero) {
+      // ── BURN ────────────────────────────────────────────────────────────
+      // Settle path. Mark token as burned so inventory/draft filters exclude it,
+      // and clean any stale fbLocked entries so other tabs see the lock disappear
+      // immediately (without waiting for sweeper or refresh).
+      if (TOKEN_DATA[id]) TOKEN_DATA[id] = null;
+      sessionBurnedTokens.add(id);
+      for (const modId of Object.keys(fbLocked)) {
+        if (fbLocked[modId] && fbLocked[modId][id]) {
+          delete fbLocked[modId][id];
+          const mod = MODULOS.find(m => m.id === modId);
+          if (mod) _syncModuloState(mod, /* forceRebuild */ true);
+        }
+      }
+    } else if (fromZero) {
+      // ── MINT ────────────────────────────────────────────────────────────
+      // Grow TOKEN_DATA to fit + hydrate via getTraits. Needed for the new
+      // token to appear in inventory if `to` matches the connected wallet.
+      try {
+        while (TOKEN_DATA.length <= id) TOKEN_DATA.push(null);
+        const traits = await agent.getTraits(id);
+        TOKEN_DATA[id] = _traitsToTokenData(id, traits, to);
+        _onchainTotalMinted = Math.max(_onchainTotalMinted || 0, id);
+      } catch (err) {
+        dbg.warn('[transfer-listener] mint hydrate failed for id', id, err && err.message);
+      }
+    } else {
+      // ── TRANSFER ────────────────────────────────────────────────────────
+      // Update owner; hydrate if not yet in TOKEN_DATA (race with _sepoliaSync).
+      if (TOKEN_DATA[id]) {
+        TOKEN_DATA[id].owner = to;
+      } else {
+        try {
+          while (TOKEN_DATA.length <= id) TOKEN_DATA.push(null);
+          const traits = await agent.getTraits(id);
+          TOKEN_DATA[id] = _traitsToTokenData(id, traits, to);
+        } catch (err) {
+          dbg.warn('[transfer-listener] transfer hydrate failed for id', id, err && err.message);
+        }
+      }
+    }
+
+    // UI sync — cheap, idempotent. Rebuild inventory if connected wallet is
+    // affected (sender, receiver, or burner).
+    if (typeof updatePillTokens === 'function') updatePillTokens();
+    if (typeof _rebuildInventory === 'function') _rebuildInventory();
+    if (typeof updateTopbarWallet === 'function') updateTopbarWallet();
+  });
+
+  dbg.log('[transfer-listener] active');
+}
+window._setupTransferListener = _setupTransferListener;
 
 let _walletAddress = null;     // 0x... when connected, null otherwise
 let _walletProvider = null;    // ethers.BrowserProvider instance
@@ -9443,6 +9552,22 @@ async function settleModulo(modId) {
       if (fbLocked[modId]) delete fbLocked[modId][tokenNum];
     }
     _syncModuloState(mod);
+
+    // 2026-05-07 audit Chunk 4: persist the cleanup to Firebase RTDB so other
+    // tabs (and tabs that load AFTER the settle) see the locks gone, and the
+    // MAX_LOCKED_PER_MODULO / MAX_OWN_PER_MODULO caps stop counting ghost locks.
+    // Backend's unlockToken now detects burned tokens as a valid unlock reason.
+    // Fire-and-forget — failures are non-fatal (sweeper retries on next pass).
+    try {
+      const unlockFn = httpsCallable(functions, 'unlockToken');
+      for (const tokenNum of tokensToBurn) {
+        unlockFn({ modId, tokenNum }).catch(err => {
+          dbg.warn('[settle] post-burn unlock failed for', tokenNum, err && err.message);
+        });
+      }
+    } catch (err) {
+      dbg.warn('[settle] post-burn unlock dispatch failed:', err && err.message);
+    }
     } finally {
       // Always lift the in-flight flag. If the settle didn't reach tx.wait
       // (any failure path before _txConfirmed=true), re-arm the precise
