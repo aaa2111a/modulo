@@ -8983,13 +8983,77 @@ function _getEventProvider() {
   }
 }
 
+// Handler for a single Transfer event — extracted as a shared function so
+// both the WS-push path (if RPC supports `eth_subscribe logs`) and the
+// block-poll path (manual `eth_getLogs` per block) can call it.
+async function _handleTransferEvent(from, to, tokenId, agent) {
+  let id;
+  try { id = Number(tokenId); } catch (_) { return; }
+  if (!Number.isInteger(id) || id < 1) return;
+
+  const fromZero = from && from.toLowerCase() === _ZERO_ADDR;
+  const toZero   = to   && to.toLowerCase()   === _ZERO_ADDR;
+  const kind = fromZero ? 'MINT' : toZero ? 'BURN' : 'XFER';
+  dbg.log('[transfer]', kind, 'id:', id, 'from:', _shortAddr(from), 'to:', _shortAddr(to));
+
+  if (toZero) {
+    // BURN — settle path. Mark token as burned so inventory/draft filters
+    // exclude it, and clean any stale fbLocked entries so other tabs see
+    // the lock disappear immediately.
+    if (TOKEN_DATA[id]) TOKEN_DATA[id] = null;
+    sessionBurnedTokens.add(id);
+    for (const modId of Object.keys(fbLocked)) {
+      if (fbLocked[modId] && fbLocked[modId][id]) {
+        delete fbLocked[modId][id];
+        const mod = MODULOS.find(m => m.id === modId);
+        if (mod) _syncModuloState(mod, /* forceRebuild */ true);
+      }
+    }
+  } else if (fromZero) {
+    // MINT — hydrate TOKEN_DATA[id] via getTraits.
+    try {
+      while (TOKEN_DATA.length <= id) TOKEN_DATA.push(null);
+      const traits = await agent.getTraits(id);
+      TOKEN_DATA[id] = _traitsToTokenData(id, traits, to);
+      _onchainTotalMinted = Math.max(_onchainTotalMinted || 0, id);
+    } catch (err) {
+      dbg.warn('[transfer-listener] mint hydrate failed for id', id, err && err.message);
+    }
+  } else {
+    // TRANSFER — update owner; hydrate if not yet in TOKEN_DATA.
+    if (TOKEN_DATA[id]) {
+      TOKEN_DATA[id].owner = to;
+    } else {
+      try {
+        while (TOKEN_DATA.length <= id) TOKEN_DATA.push(null);
+        const traits = await agent.getTraits(id);
+        TOKEN_DATA[id] = _traitsToTokenData(id, traits, to);
+      } catch (err) {
+        dbg.warn('[transfer-listener] transfer hydrate failed for id', id, err && err.message);
+      }
+    }
+  }
+
+  if (typeof updatePillTokens === 'function') updatePillTokens();
+  if (typeof _rebuildInventory === 'function') _rebuildInventory();
+  if (typeof updateTopbarWallet === 'function') updateTopbarWallet();
+}
+
+let _lastProcessedBlock = null;
+
 async function _setupTransferListener() {
   if (_transferListenerActive) {
     dbg.log('[transfer-listener] already active, skip');
     return;
   }
-  // Prefer WebSocket (push-based, throttle-resistant). Fall back to HTTP polling
-  // provider if WS init fails (e.g. corporate firewall blocks WSS).
+  // WS for block-event push (newHeads subscription works on publicnode).
+  // Falls back to HTTP polling provider if WS init fails. After receiving
+  // each new block via WS, we manually `eth_getLogs` for Transfer events
+  // in the new block — publicnode WSS supports newHeads but NOT logs
+  // subscription (`eth_subscribe logs`), so direct `agent.on('Transfer')`
+  // never fires events even though it returns a subscription handle.
+  // This block-poll path is reliable across all RPC providers (eth_getLogs
+  // is the most universally-supported read method).
   const provider = _getEventProvider() || _getReadonlyProvider() || _walletProvider;
   if (!provider) { dbg.warn('[transfer-listener] no provider available'); return; }
   const agent = _getTokenAgent(provider);
@@ -8998,66 +9062,43 @@ async function _setupTransferListener() {
   _transferListenerContract = agent;
   _transferListenerActive = true;
 
-  agent.on('Transfer', async (from, to, tokenId, event) => {
-    let id;
-    try { id = Number(tokenId); } catch (_) { return; }
-    if (!Number.isInteger(id) || id < 1) return;
+  // Initialize cursor at current tip — events before listener setup are
+  // covered by the initial `_sepoliaSync` that ran prior to this.
+  try {
+    _lastProcessedBlock = await provider.getBlockNumber();
+    dbg.log('[transfer-listener] cursor initialized at block', _lastProcessedBlock);
+  } catch (err) {
+    dbg.warn('[transfer-listener] getBlockNumber failed:', err && err.message);
+    _lastProcessedBlock = 0;
+  }
 
-    const fromZero = from && from.toLowerCase() === _ZERO_ADDR;
-    const toZero   = to   && to.toLowerCase()   === _ZERO_ADDR;
-    const kind = fromZero ? 'MINT' : toZero ? 'BURN' : 'XFER';
-    dbg.log('[transfer]', kind, 'id:', id, 'from:', _shortAddr(from), 'to:', _shortAddr(to));
-
-    if (toZero) {
-      // ── BURN ────────────────────────────────────────────────────────────
-      // Settle path. Mark token as burned so inventory/draft filters exclude it,
-      // and clean any stale fbLocked entries so other tabs see the lock disappear
-      // immediately (without waiting for sweeper or refresh).
-      if (TOKEN_DATA[id]) TOKEN_DATA[id] = null;
-      sessionBurnedTokens.add(id);
-      for (const modId of Object.keys(fbLocked)) {
-        if (fbLocked[modId] && fbLocked[modId][id]) {
-          delete fbLocked[modId][id];
-          const mod = MODULOS.find(m => m.id === modId);
-          if (mod) _syncModuloState(mod, /* forceRebuild */ true);
-        }
-      }
-    } else if (fromZero) {
-      // ── MINT ────────────────────────────────────────────────────────────
-      // Grow TOKEN_DATA to fit + hydrate via getTraits. Needed for the new
-      // token to appear in inventory if `to` matches the connected wallet.
+  // On each new block, query Transfer events in the gap [_lastProcessedBlock+1, current].
+  // Gap-aware so a missed block (network blip) recovers on the next event.
+  provider.on('block', async (blockNumber) => {
+    if (_lastProcessedBlock === null || blockNumber <= _lastProcessedBlock) return;
+    const fromBlock = _lastProcessedBlock + 1;
+    let logs;
+    try {
+      logs = await agent.queryFilter(agent.filters.Transfer(), fromBlock, blockNumber);
+    } catch (err) {
+      dbg.warn('[transfer-poll] queryFilter failed at block', blockNumber, ':', err && err.message);
+      // Don't advance cursor on failure — retry the same range next block
+      return;
+    }
+    if (logs.length > 0) {
+      dbg.log('[transfer-poll] found', logs.length, 'event(s) in blocks', fromBlock, '-', blockNumber);
+    }
+    for (const log of logs) {
       try {
-        while (TOKEN_DATA.length <= id) TOKEN_DATA.push(null);
-        const traits = await agent.getTraits(id);
-        TOKEN_DATA[id] = _traitsToTokenData(id, traits, to);
-        _onchainTotalMinted = Math.max(_onchainTotalMinted || 0, id);
+        await _handleTransferEvent(log.args.from, log.args.to, log.args.tokenId, agent);
       } catch (err) {
-        dbg.warn('[transfer-listener] mint hydrate failed for id', id, err && err.message);
-      }
-    } else {
-      // ── TRANSFER ────────────────────────────────────────────────────────
-      // Update owner; hydrate if not yet in TOKEN_DATA (race with _sepoliaSync).
-      if (TOKEN_DATA[id]) {
-        TOKEN_DATA[id].owner = to;
-      } else {
-        try {
-          while (TOKEN_DATA.length <= id) TOKEN_DATA.push(null);
-          const traits = await agent.getTraits(id);
-          TOKEN_DATA[id] = _traitsToTokenData(id, traits, to);
-        } catch (err) {
-          dbg.warn('[transfer-listener] transfer hydrate failed for id', id, err && err.message);
-        }
+        dbg.warn('[transfer-poll] handler error:', err && err.message);
       }
     }
-
-    // UI sync — cheap, idempotent. Rebuild inventory if connected wallet is
-    // affected (sender, receiver, or burner).
-    if (typeof updatePillTokens === 'function') updatePillTokens();
-    if (typeof _rebuildInventory === 'function') _rebuildInventory();
-    if (typeof updateTopbarWallet === 'function') updateTopbarWallet();
+    _lastProcessedBlock = blockNumber;
   });
 
-  dbg.log('[transfer-listener] active');
+  dbg.log('[transfer-listener] active (block-poll mode)');
 }
 window._setupTransferListener = _setupTransferListener;
 
