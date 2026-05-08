@@ -8769,6 +8769,16 @@ function _getReadonlyProvider() {
   if (!urls.length) return null;
   try {
     _readonlyProvider = new window.ethers.JsonRpcProvider(urls[0], WALLET_TARGET_CHAIN_ID);
+    // Force a snappy polling interval for the Transfer event listener (2026-05-07).
+    // ethers v6 default for JsonRpcProvider is 4000ms, but in practice with
+    // public RPC providers it can drift to 60s+ if the provider doesn't
+    // signal new blocks reliably. Cross-tab event sync is UX-critical here
+    // (Le reported 2-3 min delays before this), so we set 4s explicitly to
+    // match Sepolia block time / 3. Trade-off: ~15 polling calls per minute
+    // per tab. publicnode.com handles this without rate-limiting.
+    if (_readonlyProvider.pollingInterval !== undefined) {
+      _readonlyProvider.pollingInterval = 4000;
+    }
   } catch (err) {
     console.error('[rpc] failed to create readonly provider:', err);
     return null;
