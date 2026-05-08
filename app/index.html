@@ -9032,6 +9032,61 @@ async function _handleTransferEvent(from, to, tokenId, agent) {
         dbg.warn('[transfer-listener] transfer hydrate failed for id', id, err && err.message);
       }
     }
+
+    // 2026-05-08 fix: token transferred while it had drafts/locks → clean
+    // those up so the sender's UI doesn't keep them as "still mine" until
+    // refresh. Two cleanup paths run in any tab that sees this event:
+    //   (a) Local drafts: only meaningful in the sender's tab (other tabs
+    //       have empty userDrafts for sender's tokens), but the check is
+    //       cheap and idempotent everywhere.
+    //   (b) Firebase locks: fbLocked is a shared mirror — every tab sees
+    //       the same state. Local cleanup + a fire-and-forget unlockToken
+    //       call to persist the cleanup in Firebase RTDB. Backend's
+    //       extended unlockToken detects "stale owner" via on-chain
+    //       ownerOf check (lock.owner ≠ current ownerOf → unlock allowed).
+    //       Multiple tabs may each fire the call; backend is idempotent.
+    const fromLc = (from || '').toLowerCase();
+
+    // (a) Sender's draft cleanup
+    if (SESSION_USER && fromLc === SESSION_USER.toLowerCase()) {
+      for (const modId of Object.keys(userDrafts || {})) {
+        if (userDrafts[modId] && userDrafts[modId].has(id)) {
+          userDrafts[modId].delete(id);
+        }
+      }
+      if (userDraftTraits && userDraftTraits[id] != null) {
+        delete userDraftTraits[id];
+      }
+      // Drafts live in mod.tokens for personal modulo (workshop). Remove there.
+      for (const mod of MODULOS) {
+        if (!mod.personal) continue;
+        const idx = mod.tokens.indexOf(id);
+        if (idx !== -1) {
+          mod.tokens.splice(idx, 1);
+          _syncModuloState(mod, /* forceRebuild */ true);
+        }
+      }
+    }
+
+    // (b) Firebase locks cleanup (any tab can trigger; backend dedups).
+    for (const modId of Object.keys(fbLocked)) {
+      const entry = fbLocked[modId] && fbLocked[modId][id];
+      if (entry && entry.owner && entry.owner.toLowerCase() === fromLc) {
+        delete fbLocked[modId][id];
+        const mod = MODULOS.find(m => m.id === modId);
+        if (mod) _syncModuloState(mod, /* forceRebuild */ true);
+        // Persist to Firebase via backend (handles on-chain validity check).
+        try {
+          const { functions, httpsCallable } = window.FB || {};
+          if (functions && httpsCallable) {
+            const unlockFn = httpsCallable(functions, 'unlockToken');
+            unlockFn({ modId, tokenNum: id }).catch(err => {
+              dbg.warn('[transfer-listener] unlock cleanup failed for', id, ':', err && err.message);
+            });
+          }
+        } catch (_) {}
+      }
+    }
   }
 
   if (typeof updatePillTokens === 'function') updatePillTokens();
