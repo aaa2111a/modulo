@@ -23,7 +23,7 @@
   style-src 'self' 'unsafe-inline';
   font-src 'self' data:;
   img-src 'self' data: blob:;
-  connect-src 'self' https://*.firebaseio.com wss://*.firebaseio.com https://*.googleapis.com https://www.gstatic.com https://*.cloudfunctions.net https://www.google.com https://rpc.sepolia.org https://ethereum-sepolia-rpc.publicnode.com;
+  connect-src 'self' https://*.firebaseio.com wss://*.firebaseio.com https://*.googleapis.com https://www.gstatic.com https://*.cloudfunctions.net https://www.google.com https://rpc.sepolia.org https://ethereum-sepolia-rpc.publicnode.com wss://ethereum-sepolia-rpc.publicnode.com;
   frame-src 'self' https://www.google.com;
   frame-ancestors 'none';
   base-uri 'self';
@@ -8918,7 +8918,7 @@ async function _sepoliaSync() {
 }
 window._sepoliaSync = _sepoliaSync;
 
-// ── Transfer event listener (NEW 2026-05-07) ──────────────────────────────
+// ── Transfer event listener (NEW 2026-05-07, WS upgrade 2026-05-08) ───────
 // Keeps TOKEN_DATA + UI in sync with on-chain state without page refresh.
 // Listens to TokenAgent's `Transfer(address from, address to, uint256 tokenId)`
 // event (ERC-721 standard, fires on mint/transfer/burn).
@@ -8931,19 +8931,66 @@ window._sepoliaSync = _sepoliaSync;
 //                         token locked → other tabs see the visual lock removed
 //                         instantly (resolves Test 5 cross-tab settle issue).
 //
-// Single listener attached to the readonly RPC provider — works even without
-// a wallet connected. Persists across wallet reconnects (the contract instance
-// is bound to the provider, not the signer).
+// Provider: WebSocket (push-based). HTTP polling JsonRpcProvider was unreliable
+// for cross-tab event sync — browsers throttle setTimeout in background tabs
+// to ~1Hz, so the polling loop stalled and events arrived 1-3 min late or not
+// at all. WebSocket messages are NOT throttled in background tabs (only
+// timer-driven code is). Push-based delivery means events arrive within
+// seconds of block confirmation regardless of tab visibility state.
+//
+// Auto-reconnect on close: WS can drop on network blip / RPC maintenance.
+// Reconnect logic recreates the provider and re-attaches the Transfer listener.
 const _ZERO_ADDR = '0x0000000000000000000000000000000000000000';
+const _WSS_URL_SEPOLIA = 'wss://ethereum-sepolia-rpc.publicnode.com';
+let _wsProvider = null;
+let _wsReconnectTimer = null;
 let _transferListenerActive = false;
 let _transferListenerContract = null;
+
+function _getEventProvider() {
+  if (_wsProvider) return _wsProvider;
+  if (!window.ethers || !window.ethers.WebSocketProvider) return null;
+  try {
+    _wsProvider = new window.ethers.WebSocketProvider(_WSS_URL_SEPOLIA, WALLET_TARGET_CHAIN_ID);
+    // Hook into the underlying browser WebSocket for connection state events.
+    // ethers v6 exposes the raw socket on `_wsProvider.websocket`.
+    const sock = _wsProvider.websocket;
+    if (sock && typeof sock.addEventListener === 'function') {
+      sock.addEventListener('close', () => {
+        dbg.warn('[ws] provider closed, reconnecting in 3s...');
+        _wsProvider = null;
+        _transferListenerActive = false;
+        _transferListenerContract = null;
+        clearTimeout(_wsReconnectTimer);
+        _wsReconnectTimer = setTimeout(() => {
+          if (typeof _setupTransferListener === 'function') {
+            _setupTransferListener().catch(err => {
+              dbg.warn('[ws] reconnect failed:', err && err.message);
+            });
+          }
+        }, 3000);
+      });
+      sock.addEventListener('error', (err) => {
+        // close handler will fire reconnect; just log here
+        dbg.warn('[ws] socket error:', (err && err.message) || 'unknown');
+      });
+    }
+    dbg.log('[ws] provider connected:', _WSS_URL_SEPOLIA);
+    return _wsProvider;
+  } catch (err) {
+    dbg.warn('[ws] failed to create provider:', err && err.message);
+    return null;
+  }
+}
 
 async function _setupTransferListener() {
   if (_transferListenerActive) {
     dbg.log('[transfer-listener] already active, skip');
     return;
   }
-  const provider = _getReadonlyProvider() || _walletProvider;
+  // Prefer WebSocket (push-based, throttle-resistant). Fall back to HTTP polling
+  // provider if WS init fails (e.g. corporate firewall blocks WSS).
+  const provider = _getEventProvider() || _getReadonlyProvider() || _walletProvider;
   if (!provider) { dbg.warn('[transfer-listener] no provider available'); return; }
   const agent = _getTokenAgent(provider);
   if (!agent) { dbg.warn('[transfer-listener] no contract'); return; }
@@ -9013,6 +9060,28 @@ async function _setupTransferListener() {
   dbg.log('[transfer-listener] active');
 }
 window._setupTransferListener = _setupTransferListener;
+
+// Safety net for missed events (NEW 2026-05-08): if the WS dropped silently
+// or if the browser killed the connection while the tab was background, force
+// a re-sync when the tab returns to foreground. Throttled to once per 10s so
+// fast tab-switching doesn't spam RPC reads.
+let _lastVisibilitySync = 0;
+const _MIN_VIS_SYNC_MS = 10000;
+document.addEventListener('visibilitychange', async () => {
+  if (document.hidden) return;
+  const now = Date.now();
+  if (now - _lastVisibilitySync < _MIN_VIS_SYNC_MS) {
+    dbg.log('[vis] tab visible (throttled,',
+      Math.round((now - _lastVisibilitySync) / 1000), 's since last sync)');
+    return;
+  }
+  _lastVisibilitySync = now;
+  dbg.log('[vis] tab visible — force re-sync');
+  if (typeof _sepoliaSync === 'function') {
+    try { await _sepoliaSync(); }
+    catch (err) { dbg.warn('[vis] sync failed:', err && err.message); }
+  }
+});
 
 let _walletAddress = null;     // 0x... when connected, null otherwise
 let _walletProvider = null;    // ethers.BrowserProvider instance
