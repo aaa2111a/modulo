@@ -3264,18 +3264,21 @@ function buildModulo(mod) {
       e.stopPropagation();
       if (settleBtn.disabled) return;
       settleBtn.disabled = true;
-      // Tx-pending feedback: shared settle takes 10-30s on Sepolia (sign + nonce
+      // Tx-pending feedback: settle takes 10-30s on Sepolia (sign + nonce
       // read + attestSettle + signTypedData + submit + tx.wait). Without this
       // toast the user sees a frozen disabled button and assumes the click was lost.
-      // Workshop is local-only so no toast needed there.
-      const _isShared = !mod.personal;
-      const _toast = _isShared ? _showToast('Settling…', { sticky: true, sub: 'sign + submit + confirm' }) : null;
+      // 2026-05-07: workshop migrated to on-chain settle, so it also shows toasts.
+      const _toast = _showToast('Settling…', { sticky: true, sub: 'sign + submit + confirm' });
       try {
         const result = await settleModulo(mod.id);
         if (_toast) _dismissToast(_toast);
         if (!result.ok) {
           if (result.reason === 'guest-readonly') {
-            alert('Connect a wallet to settle on shared modulos. Guest sessions can only settle in the workshop.');
+            // Unreachable in practice — guest is view-only (no workshop, no
+            // inventory, no draft, no locks). The check in settleModulo()
+            // remains as silent defense-in-depth in case a future refactor
+            // introduces an upstream UI bug; no toast/alert needed here.
+            dbg.warn('[settle] guest reached settleModulo — upstream bug');
           } else if (result.reason === 'user-rejected-tx' || result.reason === 'user-rejected-sig' || result.reason === 'user-rejected-auth') {
             // Quiet — user explicitly cancelled; no need for an alert.
             // user-rejected-auth = Step 2a (settlerAuthSig, audit Chunk 3 2026-05-07)
@@ -3283,23 +3286,23 @@ function buildModulo(mod) {
             // user-rejected-tx   = Step 4  (final tx submission)
             dbg.log('[settle]', mod.id, 'cancelled by user');
           } else if (result.reason === 'need-multi-owner') {
-            if (_isShared) _showToast('Need ≥2 distinct wallets', {
-              sub: 'Settle requires locks from at least 2 different users.',
+            _showToast('Need ≥2 distinct wallets', {
+              sub: 'Shared modulo settle requires locks from at least 2 different users. (Workshop is solo, no minimum.)',
               variant: 'warn',
               ttlMs: 5000
             });
           } else {
             const _msg = (result.err && (result.err.shortMessage || result.err.reason || result.err.message)) || result.reason;
-            if (_isShared) _showToast('Settle failed', { sub: String(_msg).slice(0, 80), variant: 'error', ttlMs: 6000 });
+            _showToast('Settle failed', { sub: String(_msg).slice(0, 80), variant: 'error', ttlMs: 6000 });
             dbg.warn('[settle]', mod.id, result.reason, result.err || '');
           }
-        } else if (_isShared) {
+        } else {
           _showToast('Settle confirmed ✓', { ttlMs: 3000 });
         }
       } catch (err) {
         if (_toast) _dismissToast(_toast);
         console.error('[settle] unexpected', err);
-        if (_isShared) _showToast('Settle error', { sub: String((err && (err.shortMessage || err.message)) || err).slice(0, 80), variant: 'error', ttlMs: 6000 });
+        _showToast('Settle error', { sub: String((err && (err.shortMessage || err.message)) || err).slice(0, 80), variant: 'error', ttlMs: 6000 });
       } finally {
         settleBtn.disabled = false;
       }
@@ -9212,16 +9215,23 @@ const _settleInFlight = new Set();
 async function settleModulo(modId) {
   const mod = MODULOS.find(m => m.id === modId);
   if (!mod) return { ok: false, reason: 'no-modulo' };
-  // Guest sessions can settle their workshop (mod.personal) since it's local,
-  // but not shared modulos — those affect Firebase / activity feed and need a
-  // verifiable identity (wallet).
-  if (_isGuest() && !mod.personal)   return { ok: false, reason: 'guest-readonly' };
+  // 2026-05-07: workshop migrated from local-only to on-chain settle (mints
+  // artifact + burns tokens, same flow as shared but no distinctOwners gate
+  // and no Firebase locks). This requires a wallet for both — guests can no
+  // longer settle anywhere.
+  if (_isGuest()) return { ok: false, reason: 'guest-readonly' };
 
-  let tokensToBurn = [];
+  // ── Workshop on-chain settle ──────────────────────────────────────────────
+  // Self-contained branch — bypasses the shared-modulo Firebase lock setup
+  // entirely. Returns early on completion so the shared flow below assumes
+  // mod.personal === false.
   if (mod.personal) {
     if (mod.tokens.length === 0) return { ok: false, reason: 'no-tokens' };
-    tokensToBurn = mod.tokens.slice();
-  } else {
+    return await _workshopSettleOnChain(mod, modId);
+  }
+
+  let tokensToBurn = [];
+  {
     const locked = fbLocked[modId] || {};
     tokensToBurn = Object.keys(locked)
       .filter(t => locked[t] && locked[t].owner === SESSION_USER)
@@ -9253,26 +9263,11 @@ async function settleModulo(modId) {
     }
   }
 
-  // For workshop (local-only), mark burned BEFORE removal so inventory rebuild
-  // correctly excludes them. For shared modulos we DEFER this until after
-  // tx.wait() succeeds — otherwise a user-rejected sig or reverted tx would
+  // Shared modulo on-chain settle — on-chain dual-sig flow (workshop
+  // handled separately above). DEFER sessionBurnedTokens until after
+  // tx.wait() succeeds — a user-rejected sig or reverted tx would otherwise
   // leave tokens marked "burned" client-side until refresh (state inconsistency).
-  if (mod.personal) {
-    for (const tokenNum of tokensToBurn) {
-      sessionBurnedTokens.add(tokenNum);
-    }
-  }
-
-  if (mod.personal) {
-    // Workshop is conceptually personal/local (plan.md §3.1) — no activity
-    // feed broadcast on settle. The previous `_emitActivity('settle', ...)`
-    // call here was a Phase 1 carry-over that started failing silently after
-    // strict Firebase rules made `/activity/` CF-only-writable (2026-04-30).
-    // Removed 2026-05-03 — workshop settles stay private by design.
-    for (let i = mod.tokens.length - 1; i >= 0; i--) {
-      removeTokenFromModulo(modId, i);
-    }
-  } else {
+  {
     // Shared modulo settle — on-chain dual-sig flow (replaces 2026-05-04).
     //
     //   1. Read settler nonce from SettleArtifact.nonces(addr) on-chain
@@ -9472,6 +9467,157 @@ async function settleModulo(modId) {
 }
 
 window.settleModulo = settleModulo;
+
+// ── Workshop on-chain settle (NEW 2026-05-07) ─────────────────────────────
+// Workshop migrated from local-only to on-chain. Mints artifact + burns all
+// settler tokens currently in the workshop. Same EIP-712 dual-sig flow as
+// shared modulo settle, but:
+//   • composition + toBurn provided by frontend (no Firebase locks for workshop)
+//   • Skips distinctOwners gate (workshop is single-user by design)
+//   • Calls `attestWorkshopSettle` CF instead of `attestSettle`
+//   • moduloId on-chain = 0 (distinct from shared 1..10)
+async function _workshopSettleOnChain(mod, modId) {
+  const { functions, httpsCallable } = window.FB || {};
+  if (!functions || !httpsCallable) return { ok: false, reason: 'no-functions' };
+  if (!_walletProvider)              return { ok: false, reason: 'no-wallet-provider' };
+  if (!window.ethers)                return { ok: false, reason: 'no-ethers' };
+
+  let signer, settlerAddr;
+  try {
+    signer = await _walletProvider.getSigner();
+    settlerAddr = await signer.getAddress();
+  } catch (err) {
+    console.error('[workshop-settle] getSigner failed:', err);
+    return { ok: false, reason: 'no-signer', err };
+  }
+
+  // composition + toBurn = all tokens currently in the workshop
+  const composition = mod.tokens.slice();
+  const toBurn = composition.slice();
+
+  // Step 1: read on-chain nonce
+  const artifact = _getSettleArtifact(_walletProvider);
+  let nonce, deadline;
+  try {
+    nonce = Number(await artifact.nonces(settlerAddr));
+    deadline = Math.floor(Date.now() / 1000) + 300; // 5 min
+    dbg.log('[workshop-settle] settler:', settlerAddr, 'nonce:', nonce, 'deadline:', deadline);
+  } catch (err) {
+    console.error('[workshop-settle] read nonce failed:', err);
+    return { ok: false, reason: 'rpc-error', err };
+  }
+
+  // Step 2a: settler authorizes the attest request via EIP-712 sig
+  let settlerAuthSig;
+  try {
+    const settlerAuthDomain = {
+      name:    'Modulo Attest Auth',
+      version: '1',
+      chainId: WALLET_TARGET_CHAIN_ID,
+    };
+    const settlerAuthTypes = {
+      AttestAuth: [
+        { name: 'settler',  type: 'address' },
+        { name: 'modId',    type: 'string'  },
+        { name: 'nonce',    type: 'uint256' },
+        { name: 'deadline', type: 'uint256' },
+      ],
+    };
+    const settlerAuthValue = {
+      settler:  settlerAddr,
+      modId,
+      nonce:    BigInt(nonce),
+      deadline: BigInt(deadline),
+    };
+    settlerAuthSig = await signer.signTypedData(settlerAuthDomain, settlerAuthTypes, settlerAuthValue);
+  } catch (err) {
+    if (err && (err.code === 4001 || err.code === 'ACTION_REJECTED')) {
+      return { ok: false, reason: 'user-rejected-auth' };
+    }
+    console.error('[workshop-settle] settlerAuthSig failed:', err);
+    return { ok: false, reason: 'auth-sign-error', err };
+  }
+
+  // Step 2b: get signer attestation from CF (workshop endpoint)
+  let attestation;
+  try {
+    const attestFn = httpsCallable(functions, 'attestWorkshopSettle');
+    const res = await attestFn({ modId, settler: settlerAddr, nonce, deadline, composition, toBurn, settlerAuthSig });
+    attestation = res && res.data;
+  } catch (err) {
+    console.error('[workshop-settle] attestWorkshopSettle CF failed:', err);
+    if (err && err.code === 'functions/permission-denied')   return { ok: false, reason: 'sig-mismatch' };
+    if (err && err.code === 'functions/resource-exhausted')  return { ok: false, reason: 'rate-limited' };
+    return { ok: false, reason: 'attest-error', err };
+  }
+  if (!attestation || !attestation.ok) return { ok: false, reason: 'attest-error' };
+
+  const moduloId         = attestation.moduloId; // 0 for workshop
+  const compositionBig   = attestation.composition.map(s => BigInt(s));
+  const toBurnBig        = attestation.toBurn.map(s => BigInt(s));
+  const signerSig        = attestation.signerSig;
+  dbg.log('[workshop-settle] attestation received, composition:', compositionBig.length, 'toBurn:', toBurnBig.length);
+
+  // Step 3: settler signs the same typed data (popup #2)
+  const value = {
+    moduloId:    BigInt(moduloId),
+    composition: compositionBig,
+    toBurn:      toBurnBig,
+    settler:     settlerAddr,
+    nonce:       BigInt(nonce),
+    deadline:    BigInt(deadline),
+  };
+  let settlerSig;
+  try {
+    settlerSig = await signer.signTypedData(EIP712_DOMAIN_SETTLE, EIP712_TYPES_SETTLE, value);
+  } catch (err) {
+    if (err && (err.code === 4001 || err.code === 'ACTION_REJECTED')) return { ok: false, reason: 'user-rejected-sig' };
+    console.error('[workshop-settle] signTypedData failed:', err);
+    return { ok: false, reason: 'sign-error', err };
+  }
+
+  // Step 4: submit settle() on-chain (gas tx)
+  let tx;
+  try {
+    const settleArtifactSigner = artifact.connect(signer);
+    tx = await settleArtifactSigner.settle({
+      moduloId,
+      composition: compositionBig,
+      toBurn:      toBurnBig,
+      settler:     settlerAddr,
+      nonce,
+      deadline,
+    }, signerSig, settlerSig);
+    dbg.log('[workshop-settle] tx submitted:', tx.hash);
+  } catch (err) {
+    if (err && (err.code === 4001 || err.code === 'ACTION_REJECTED')) return { ok: false, reason: 'user-rejected-tx' };
+    console.error('[workshop-settle] tx submit failed:', err);
+    return { ok: false, reason: 'tx-submit-error', err };
+  }
+
+  // Step 5: wait for confirmation
+  let receipt;
+  try {
+    receipt = await tx.wait();
+  } catch (err) {
+    console.error('[workshop-settle] tx revert:', err);
+    return { ok: false, reason: 'tx-reverted', err };
+  }
+  dbg.log('[workshop-settle] confirmed in block', receipt.blockNumber, 'gas used:', receipt.gasUsed.toString());
+
+  // Step 6: tx confirmed — mark burned + clear workshop tokens locally.
+  // Same defer-until-success pattern as shared: if anything failed before
+  // tx.wait() (rejected sig, reverted tx), tokens stay alive in the workshop.
+  for (const tokenNum of toBurn) {
+    sessionBurnedTokens.add(tokenNum);
+  }
+  for (let i = mod.tokens.length - 1; i >= 0; i--) {
+    removeTokenFromModulo(modId, i);
+  }
+  _rebuildInventory();
+
+  return { ok: true, burnedCount: toBurn.length, txHash: tx.hash };
+}
 
 // ═══ Activity feed (plan.md §6.5, step 5) ═══
 // Emits and subscribes to global lock/settle/expire events so users feel the
