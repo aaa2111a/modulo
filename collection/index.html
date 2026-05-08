@@ -1,1 +1,2392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- CSP defence-in-depth. Collection is read-only — no Firebase, no wallet,
+     no Cloud Functions. Reads on-chain via ethers v6 UMD (jsdelivr) +
+     publicnode RPC. Token/Modulo renders via iframe srcdoc with sandboxed
+     HTML decoded from tokenURI() base64 — never src=data: (per security
+     audit 2026-05-08 P1-1: srcdoc enforces opaque origin via sandbox flag,
+     preventing escape into modulo.ubk.art origin where /app/ has wallet). -->
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'self';
+  script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net;
+  style-src 'self' 'unsafe-inline';
+  font-src 'self' data:;
+  img-src 'self' data: blob:;
+  connect-src 'self' https://ethereum-sepolia-rpc.publicnode.com;
+  frame-src 'self';
+  frame-ancestors 'none';
+  base-uri 'self';
+  form-action 'self';
+">
+<!-- Frame-buster: clickjacking defense for GitHub Pages where headers can't
+     be sent (frame-ancestors via meta is browser-ignored). -->
+<script>
+  if (window !== window.top) {
+    try { window.top.location = window.location.href; } catch (_) {}
+    document.documentElement.innerHTML =
+      '<body style="background:#000;color:#fff;font-family:monospace;' +
+      'padding:40px;text-align:center"><h2>modulo</h2>' +
+      '<p>This page cannot be embedded in a frame. Open ' +
+      '<a href="https://modulo.ubk.art" style="color:#fff" target="_top" rel="noopener noreferrer">' +
+      'modulo.ubk.art</a> directly.</p></body>';
+    throw new Error('embedded in iframe — execution halted');
+  }
+</script>
+<!-- ethers v6 UMD — readonly RPC reads (ownerOf, tokenURI, getArtifact).
+     SRI hash matches app/index.html (same version pinned). When swapping
+     to a newer version pre-mainnet, regenerate hash via:
+       curl -s https://cdn.jsdelivr.net/npm/ethers@VER/dist/ethers.umd.min.js \
+         | openssl dgst -sha384 -binary | openssl base64 -A -->
+<script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"
+        integrity="sha384-6Zl0Pc8zjSz8KvmNeXRvUQgY4ryFb+BwDvKCmLYcBME0joAaru491tQgi9B7zsMM"
+        crossorigin="anonymous"></script>
+<!-- mp4-muxer 5.1.3 UMD — MP4 export from OffscreenCanvas + WebCodecs.
+     Same SRI as app/index.html (single version pinned across the project to
+     avoid drift). Used only by Modulo expand modal MP4 export — not loaded
+     unless the user clicks the export button. -->
+<script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.3/build/mp4-muxer.js"
+        integrity="sha384-SujebcgqCNlLMRSnVkLD+3eWOzsxobv30Bct+0lV+fc1EHHEuvcePwmDgMzpnptj"
+        crossorigin="anonymous"
+        referrerpolicy="no-referrer"></script>
+<title>Collection — Modulo</title>
+<style>
+* { box-sizing:border-box; margin:0; padding:0; }
+
+:root {
+  --tbar-bg:       #c9c6c0;
+  --bg:            #dbd8d1;
+  --bg-alt:        #d8d5cd;
+  --border:        rgba(0,0,0,0.12);
+  --border-mid:    rgba(0,0,0,0.20);
+  --border-strong: rgba(0,0,0,0.32);
+  --text:          rgba(0,0,0,0.78);
+  --text-sub:      rgba(0,0,0,0.44);
+  --text-meta:     rgba(0,0,0,0.28);
+}
+
+html, body {
+  min-height:100vh;
+  background:var(--bg);
+  color:var(--text);
+  display:flex;
+  flex-direction:column;
+}
+
+/* ── Topbar ── */
+.topbar {
+  position:sticky; top:0; z-index:200;
+  height:34px;
+  background:var(--tbar-bg);
+  border-bottom:0.5px solid var(--border-mid);
+  display:grid;
+  grid-template-columns:1fr auto 1fr;
+  align-items:center;
+  padding:0 24px;
+  backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
+}
+.tbar-left {
+  font-size:11px; font-family:monospace;
+  letter-spacing:.05em; color:rgba(0,0,0,0.45);
+}
+.tbar-right { display:flex; justify-content:flex-end; }
+.tbar-back {
+  display:block;
+  width:12px; height:12px; border-radius:50%;
+  background:#ff5f57;
+}
+.tbar-back:hover { filter:brightness(0.85); }
+.tbar-night {
+  display:block;
+  width:12px; height:12px; border-radius:50%;
+  background:rgba(0,0,0,0.18);
+  border:none; cursor:pointer; padding:0;
+}
+.tbar-night:hover { filter:brightness(0.75); }
+
+/* ── Tab buttons (center) ── */
+.tbar-tabs {
+  display:flex; gap:1px;
+  background:rgba(0,0,0,0.10);
+  padding:2px;
+  border-radius:6px;
+}
+.tab-btn {
+  font-size:11px; font-family:monospace;
+  letter-spacing:.12em; text-transform:uppercase;
+  color:rgba(0,0,0,0.36);
+  background:transparent;
+  border:none; cursor:pointer;
+  padding:5px 16px;
+  border-radius:4px;
+  transition:background 0.14s, color 0.14s;
+  white-space:nowrap;
+}
+.tab-btn.active {
+  background:var(--bg);
+  color:rgba(0,0,0,0.65);
+  box-shadow:0 0 0 0.5px rgba(0,0,0,0.10);
+}
+.tab-btn:hover:not(.active) { color:rgba(0,0,0,0.54); }
+
+/* ── Grid dot background ── */
+.grid-bg {
+  background-image:radial-gradient(rgba(0,0,0,0.09) 1px, transparent 1px);
+  background-size:20px 20px;
+}
+
+/* ── Page header ── */
+.page-header {
+  padding:80px 52px 72px;
+  border-bottom:0.5px solid var(--border-mid);
+  border-bottom-right-radius:48px;
+  position:relative;
+}
+.page-header::after {
+  content:'';
+  position:absolute;
+  left:0; bottom:-0.5px;
+  width:22%; height:1px;
+  background:linear-gradient(to right, var(--bg) 0%, transparent 100%);
+  pointer-events:none;
+}
+.header-inner {
+  max-width:1500px; margin:0 auto;
+  display:grid; grid-template-columns:1fr auto;
+  align-items:end;
+  gap:40px;
+}
+.collection-inner-wide { max-width:1500px !important; }
+/* OpenSea-style action icons row (info/copy/website/X/share/more) — placeholders */
+.id-actions {
+  display:flex; align-items:center; gap:6px;
+  margin-top:14px;
+}
+.id-action-btn {
+  width:28px; height:28px;
+  display:inline-flex; align-items:center; justify-content:center;
+  border:0.5px solid var(--border-mid);
+  border-radius:6px;
+  background:var(--bg);
+  color:var(--text-sub);
+  cursor:pointer; padding:0;
+  transition:background 0.14s, color 0.14s, border-color 0.14s;
+}
+.id-action-btn:hover {
+  border-color:var(--border-strong);
+  color:var(--text);
+}
+.id-action-btn svg { display:block; width:13px; height:13px; }
+.id-title-row {
+  display:flex; align-items:baseline; gap:14px;
+}
+.id-verified {
+  font-size:18px; color:#4f8df7;
+  user-select:none;
+}
+body.night .id-action-btn { background:var(--bg); }
+.display-title {
+  font-family:'Times New Roman',Times,serif;
+  font-size:clamp(64px, 9vw, 140px);
+  font-weight:400;
+  letter-spacing:-.02em;
+  line-height:1.0;
+  color:rgba(0,0,0,1.0);
+}
+.display-sub {
+  font-size:13px; font-family:monospace;
+  letter-spacing:.04em; color:var(--text-sub);
+  margin-top:18px;
+}
+/* OpenSea-style identity meta strip below the title */
+.id-meta {
+  display:flex; flex-wrap:wrap;
+  align-items:center; gap:10px;
+  margin-top:22px;
+}
+.id-meta-item {
+  font-size:10px; font-family:monospace;
+  letter-spacing:.10em; text-transform:uppercase;
+  color:var(--text-sub);
+}
+.id-meta-sep {
+  font-size:10px; color:var(--text-meta);
+  user-select:none;
+}
+.meta-box {
+  border:0.5px solid var(--border-strong);
+  border-radius:16px;
+  background:var(--bg);
+  min-width:210px; flex-shrink:0;
+  overflow:hidden;
+  display:flex; flex-direction:column;
+}
+.meta-tbar {
+  display:flex; align-items:center; gap:8px;
+  height:32px; padding:0 14px;
+  background:var(--tbar-bg);
+  border-bottom:0.5px solid var(--border-mid);
+  flex-shrink:0;
+}
+.meta-dot {
+  width:12px; height:12px; border-radius:50%;
+  background:rgba(0,0,0,0.20); flex-shrink:0;
+}
+.meta-rows {
+  display:flex; flex-direction:column; gap:12px;
+  padding:18px 20px;
+}
+.meta-row { display:flex; flex-direction:column; gap:3px; }
+
+/* Stats box: horizontal layout (OpenSea-style — label on top, value below, columns side by side) */
+.stats-box .meta-rows {
+  flex-direction:row;
+  gap:0;
+  padding:14px 4px;
+}
+.stats-box .meta-row {
+  padding:0 18px;
+  border-right:0.5px solid var(--border);
+  min-width:88px;
+}
+.stats-box .meta-row:last-child { border-right:none; }
+.stats-box .meta-label {
+  font-size:8px;
+  letter-spacing:.16em;
+  margin-bottom:4px;
+}
+.stats-box .meta-value {
+  font-size:13px;
+  font-weight:500;
+  color:rgba(0,0,0,0.78);
+  letter-spacing:.04em;
+}
+body.night .stats-box .meta-value { color:rgba(255,255,255,0.85); }
+.meta-label {
+  font-size:8px; font-family:monospace;
+  letter-spacing:.14em; text-transform:uppercase;
+  color:var(--text-meta);
+}
+.meta-value {
+  font-size:11px; font-family:monospace;
+  letter-spacing:.05em; color:rgba(0,0,0,0.58);
+}
+
+/* ── Collection section ──
+   No L/R padding here — the bg-grad canvas is a direct child with width:100%.
+   If the section had L/R padding, the canvas would be offset inward, leaving
+   a vertical strip of body-bg on the left and overflowing on the right
+   (causing horizontal scroll). L/R padding lives on .collection-inner instead. */
+.collection-section {
+  padding:0 0 120px;
+  flex:1;
+  position:relative;
+  /* No top padding on the section — the bg-grad canvas needs to start at
+     section top (right under the header) so it covers the gap area too,
+     rather than the body bg cream showing through. The 80px breathing room
+     between header line and cards lives on .collection-inner instead. */
+}
+/* Fade overlay above the card grid — cream at top → transparent at bottom.
+   Sits over the bg-grad canvas (z:0) and below the cards (z:2). Smooths the
+   transition from header cream into the rotating canvas grey. */
+.collection-section .header-fade {
+  position:absolute;
+  top:0; left:0; right:0;
+  height:80px;
+  background:linear-gradient(to bottom, var(--bg) 0%, transparent 100%);
+  pointer-events:none;
+  z-index:1;
+}
+/* Rotating gradient canvas (matches app/index.html world bg).
+   sticky+top:0 pins it to the viewport while inside the section so the
+   gradient is sized to the screen, not the (potentially very tall) section.
+   margin-bottom:-100vh removes its layout height so following content starts
+   at the section top — canvas overlays from underneath via z-index:0. */
+.collection-section > canvas.bg-grad {
+  position:sticky; top:0;
+  display:block;
+  width:100%; height:100vh;
+  margin-bottom:-100vh;
+  pointer-events:none;
+  z-index:0;
+}
+.collection-inner {
+  max-width:1500px; margin:0 auto;
+  padding:80px 52px 0;
+  position:relative; z-index:2;
+}
+.section-label {
+  font-size:8px; font-family:monospace;
+  letter-spacing:.18em; text-transform:uppercase;
+  color:var(--text-meta);
+  border-bottom:0.5px solid var(--border-mid);
+  padding-bottom:14px;
+  margin-bottom:40px;
+}
+
+/* ── Tab panels ── */
+.tab-panel { display:none; }
+.tab-panel.active { display:block; }
+
+/* ── Modulo (artifacts) grid: 4 cols on wide, scale down on narrower ── */
+.mod-grid {
+  display:grid;
+  grid-template-columns:repeat(4, 1fr);
+  gap:14px;
+}
+
+/* ── Token grid (5 col) ── */
+.tok-grid {
+  display:grid;
+  grid-template-columns:repeat(5, 1fr);
+  gap:12px;
+}
+
+/* ── Shared card base ── */
+.mod-card, .tok-card {
+  background:var(--bg);
+  border:0.5px solid var(--border-strong);
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
+  box-shadow:
+    0 0 0 0.5px rgba(0,0,0,0.05),
+    0 2px 8px rgba(0,0,0,0.06),
+    0 8px 20px rgba(0,0,0,0.06);
+}
+.mod-card { border-radius:12px; }
+.tok-card { border-radius:10px; }
+
+/* Modulo card */
+.mod-tbar {
+  height:30px;
+  background:var(--tbar-bg);
+  border-bottom:0.5px solid var(--border-mid);
+  display:flex; align-items:center;
+  padding:0 12px; gap:8px;
+  flex-shrink:0;
+}
+.mod-dot {
+  width:8px; height:8px; border-radius:50%;
+  background:rgba(0,0,0,0.18); flex-shrink:0;
+}
+.mod-label {
+  font-size:9px; font-family:monospace;
+  letter-spacing:.10em; color:var(--text-meta);
+  text-transform:uppercase;
+}
+.mod-canvas-wrap {
+  position:relative;
+  aspect-ratio:16/9;
+  background:var(--bg);
+  overflow:hidden;
+}
+.mod-footer {
+  padding:10px 14px;
+  display:flex; justify-content:space-between; align-items:center;
+  border-top:0.5px solid var(--border);
+  flex-shrink:0;
+}
+.mod-slots {
+  font-size:9px; font-family:monospace;
+  letter-spacing:.06em; color:var(--text-meta);
+}
+.mod-price {
+  font-size:10px; font-family:monospace;
+  letter-spacing:.06em;
+  color:rgba(0,0,0,0.62);
+  font-weight:500;
+}
+body.night .mod-price { color:rgba(255,255,255,0.68); }
+
+/* Token card */
+.tok-tbar {
+  height:26px;
+  background:var(--tbar-bg);
+  border-bottom:0.5px solid var(--border-mid);
+  display:flex; align-items:center;
+  padding:0 9px; gap:6px;
+  flex-shrink:0;
+}
+.tok-dot {
+  width:6px; height:6px; border-radius:50%;
+  background:rgba(0,0,0,0.18); flex-shrink:0;
+}
+.tok-label {
+  font-size:8px; font-family:monospace;
+  letter-spacing:.08em; color:var(--text-meta);
+  text-transform:uppercase;
+}
+.tok-canvas-wrap {
+  position:relative;
+  aspect-ratio:1;
+  background:var(--bg);
+  overflow:hidden;
+}
+.tok-footer {
+  padding:7px 9px;
+  display:flex; justify-content:space-between; align-items:center;
+  border-top:0.5px solid var(--border);
+  flex-shrink:0;
+}
+.tok-seed {
+  font-size:7px; font-family:monospace;
+  letter-spacing:.06em; color:var(--text-meta);
+}
+.tok-price {
+  font-size:9px; font-family:monospace;
+  letter-spacing:.06em;
+  color:rgba(0,0,0,0.62);
+  font-weight:500;
+}
+body.night .tok-price { color:rgba(255,255,255,0.68); }
+
+/* Shared canvas style — used as skeleton placeholder until iframe mounts.
+   Iframe replaces canvas in the same wrap on _mountTokenIframe / _mountModuloIframe. */
+.mod-canvas, .tok-canvas {
+  position:absolute; inset:0;
+  width:100%; height:100%;
+  display:block;
+  image-rendering:crisp-edges;
+  image-rendering:pixelated;
+}
+
+/* Iframe rendering the on-chain HTML (decoded from tokenURI base64).
+   Sandbox="allow-scripts" (no allow-same-origin / allow-top-navigation) — origin
+   stays opaque-null, payload can't reach modulo.ubk.art DOM nor redirect top.
+   pointer-events behavior:
+     - tok-iframe: 'none' so card click flies through to (currently nothing — token
+       cards are not clickable per decision #12). Keeps tooltips stable.
+     - mod-iframe: 'none' so card click hits the .mod-card listener (opens expand)
+       instead of being absorbed by the iframe. */
+.mod-iframe, .tok-iframe {
+  position:absolute; inset:0;
+  width:100%; height:100%;
+  border:none;
+  display:block;
+  background:var(--bg);
+  pointer-events:none;
+}
+.mod-card[data-ready="1"] { cursor:zoom-in; }
+
+/* Burned / unavailable state — dimmed wrap behind the canvas placeholder */
+.tok-canvas-wrap.card-burned,
+.mod-canvas-wrap.card-burned {
+  opacity:0.4;
+  filter:saturate(0.3);
+}
+
+/* Empty grid state when totalMinted=0 / totalArtifacts=0 */
+.card-empty {
+  grid-column:1 / -1;
+  padding:60px 24px;
+  text-align:center;
+  font-size:11px; font-family:monospace;
+  letter-spacing:.10em; text-transform:uppercase;
+  color:var(--text-meta);
+  border:0.5px dashed var(--border-mid);
+  border-radius:12px;
+}
+
+/* Footer 3-col grid: rank/composition · owner · price */
+.tok-footer, .mod-footer {
+  display:grid;
+  grid-template-columns:auto 1fr auto;
+  gap:8px;
+  align-items:center;
+}
+.tok-owner, .mod-owner {
+  font-size:8px; font-family:monospace;
+  letter-spacing:.06em;
+  color:var(--text-meta);
+  text-align:center;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.mod-owner { font-size:9px; }
+
+/* ── Export options modal ─────────────────────────────────────────────
+   Centered overlay shown when user clicks ↓ MP4 in the expand tbar. List
+   of presets, each with codec + bitrate + estimated filesize. Browser-
+   unsupported presets show as disabled rows with reason tooltip. */
+#export-modal {
+  display:none;
+  position:fixed; inset:0; z-index:1600;
+  background:rgba(0,0,0,0.55);
+  backdrop-filter:blur(6px);
+  -webkit-backdrop-filter:blur(6px);
+  align-items:center; justify-content:center;
+}
+#export-modal.active { display:flex; }
+#export-modal-window {
+  width:min(92vw, 520px);
+  max-height:88vh;
+  background:var(--bg);
+  border-radius:10px;
+  overflow:hidden;
+  display:flex; flex-direction:column;
+  box-shadow:0 24px 60px rgba(0,0,0,0.50);
+}
+#export-modal-tbar {
+  height:32px;
+  background:var(--tbar-bg);
+  border-bottom:0.5px solid var(--border-mid);
+  display:flex; align-items:center;
+  padding:0 14px;
+}
+#export-modal-title {
+  font-size:11px; font-family:monospace;
+  letter-spacing:.10em; text-transform:uppercase;
+  color:var(--text-sub);
+}
+#export-modal-body {
+  padding:18px 20px 16px;
+  overflow-y:auto;
+}
+#export-modal-hint {
+  font-size:11px; font-family:monospace;
+  letter-spacing:.04em; line-height:1.5;
+  color:var(--text-sub);
+  margin-bottom:14px;
+}
+#export-modal-options {
+  display:flex; flex-direction:column; gap:8px;
+  margin-bottom:18px;
+}
+.export-opt {
+  display:flex; align-items:flex-start; gap:10px;
+  padding:10px 12px;
+  border:0.5px solid var(--border-mid);
+  border-radius:6px;
+  cursor:pointer;
+  transition:border-color 0.14s, background 0.14s;
+  background:var(--bg-alt);
+}
+.export-opt:hover:not(.disabled) { border-color:var(--border-strong); }
+.export-opt input[type="radio"] {
+  margin-top:3px; flex-shrink:0;
+}
+.export-opt-label {
+  display:flex; flex-direction:column; gap:2px;
+  flex:1; min-width:0;
+}
+.export-opt-title {
+  font-size:11px; font-family:monospace;
+  letter-spacing:.04em; color:var(--text);
+  font-weight:500;
+}
+.export-opt-sub {
+  font-size:10px; font-family:monospace;
+  letter-spacing:.03em; color:var(--text-sub);
+}
+.export-opt-size {
+  font-size:10px; font-family:monospace;
+  letter-spacing:.03em; color:var(--text-meta);
+  flex-shrink:0;
+  align-self:center;
+}
+.export-opt.disabled {
+  opacity:0.45;
+  cursor:not-allowed;
+}
+.export-opt.disabled .export-opt-sub::after {
+  content:' (unsupported)';
+  color:var(--text-meta);
+  font-style:italic;
+}
+/* Crop toggle — same row layout as .export-opt but uses a checkbox */
+#export-modal-crop {
+  display:flex; align-items:flex-start; gap:10px;
+  padding:10px 12px;
+  border:0.5px solid var(--border-mid);
+  border-radius:6px;
+  cursor:pointer;
+  transition:border-color 0.14s;
+  background:var(--bg-alt);
+  margin-bottom:18px;
+}
+#export-modal-crop:hover { border-color:var(--border-strong); }
+#export-modal-crop input[type="checkbox"] {
+  margin-top:3px; flex-shrink:0;
+}
+#export-modal-actions {
+  display:flex; justify-content:flex-end; gap:8px;
+  border-top:0.5px solid var(--border);
+  padding-top:14px;
+}
+#export-modal-cancel,
+#export-modal-go {
+  padding:6px 14px;
+  font-size:10px; font-family:monospace;
+  letter-spacing:.08em; text-transform:uppercase;
+  background:transparent;
+  border:0.5px solid var(--border-mid);
+  border-radius:4px;
+  color:var(--text);
+  cursor:pointer;
+  transition:background 0.14s, border-color 0.14s;
+}
+#export-modal-cancel:hover { background:var(--bg-alt); }
+#export-modal-go {
+  background:var(--text);
+  color:var(--bg);
+  border-color:var(--text);
+}
+#export-modal-go:hover { filter:brightness(0.9); }
+#export-modal-go:disabled { opacity:0.45; cursor:not-allowed; }
+
+/* ── Expand overlay (Modulo cards only) ──
+   Copy of app/index.html expand pattern (lines 1069-1186 + 1777-1787).
+   Differences from app/:
+     - No sidebar / sidebar-tab (collection modulos are settled artifacts,
+       not editable — there's no card-left equivalent to slide in).
+     - <iframe> in place of <canvas> — render comes from on-chain HTML
+       inside a sandboxed child document, not from a parent-doc engine.
+     - MP4 button kept visible but disabled — capture from a sandboxed
+       iframe (origin null, no allow-same-origin) is technically blocked.
+     - z-index 1500 (defensive — collection has fewer overlays than app/).
+     - background #000 on window + body to match the iframe srcdoc reset
+       injection (avoids cream/black seam at edges before content paints).
+   CSS variable mapping (app/ → collection/):
+     --tbar-border     → --border-mid
+     --row-hover       → --bg-alt
+     --sl              → --text-sub
+     --topbar-text     → --text
+     --shadow-window-hover → 0 24px 60px rgba(0,0,0,0.50) literal
+     --anim-panel-bg   → #000 literal */
+#expand-overlay {
+  display:none;
+  position:fixed; inset:0; z-index:1500;
+  align-items:center; justify-content:center;
+  pointer-events:none;
+}
+#expand-overlay.active { display:flex; }
+#expand-window {
+  pointer-events:all;
+  border-radius:10px;
+  overflow:hidden;
+  box-shadow:0 24px 60px rgba(0,0,0,0.50);
+  display:flex; flex-direction:column;
+  /* Explicit dimensions — `width:fit-content` from app/ depended on the
+     <canvas> inside having intrinsic pixel dimensions (set by JS). The
+     iframe in collection has no intrinsic size (HTML5 default 300x150),
+     so fit-content shrinks the window to ~300px. We compute width from
+     the aspect cap directly + clamp at 96vw on narrow viewports. */
+  width:min(96vw, calc((90vh - 28px) * 1.78));
+  height:90vh;
+  background:#000;
+  transform-origin:center center;
+  will-change:transform;
+}
+#expand-tbar {
+  height:28px;
+  background:var(--tbar-bg);
+  border-bottom:0.5px solid var(--border-mid);
+  display:flex; align-items:center; padding:0 10px; gap:5px;
+  flex-shrink:0;
+  transition:background 0.3s;
+}
+#expand-close {
+  width:12px; height:12px; border-radius:50%;
+  background:#ff5f57; cursor:pointer; flex-shrink:0;
+  transition:transform 0.15s;
+}
+#expand-close:hover { transform:scale(1.25); }
+#expand-fullscreen {
+  width:12px; height:12px; border-radius:50%;
+  background:#28c840; cursor:pointer; flex-shrink:0;
+  transition:transform 0.15s;
+}
+#expand-fullscreen:hover { transform:scale(1.25); }
+#expand-tbar-title {
+  font-size:11px; font-family:monospace;
+  letter-spacing:.05em; color:var(--text-sub);
+  margin-left:4px;
+}
+#expand-window.expand-fs {
+  border-radius:0; box-shadow:none; background:#000;
+  max-width:none; max-height:none;
+  width:100vw; height:100vh;
+}
+#expand-window.expand-fs #expand-tbar { display:none; }
+#export-btn {
+  margin-left:auto; padding:2px 8px;
+  font-size:9px; font-family:monospace; letter-spacing:.06em;
+  background:transparent; border:0.5px solid var(--border-mid);
+  border-radius:3px; color:var(--text);
+  cursor:pointer; transition:background 0.15s, color 0.15s, border-color 0.15s;
+  flex-shrink:0;
+}
+#export-btn:hover:not(:disabled) { background:var(--bg-alt); border-color:var(--text-sub); }
+#export-btn:disabled { opacity:0.45; cursor:default; }
+#expand-reset-btn {
+  padding:2px 8px;
+  font-size:9px; font-family:monospace; letter-spacing:.06em;
+  background:transparent; border:0.5px solid var(--border-mid);
+  border-radius:3px; color:var(--text);
+  cursor:pointer; transition:background 0.15s, color 0.15s, border-color 0.15s;
+  flex-shrink:0;
+}
+#expand-reset-btn:hover { background:var(--bg-alt); border-color:var(--text-sub); }
+/* expand body — iframe llena el espacio restante. background #000 matches the
+   srcdoc reset injection so there's no flash of cream before content paints. */
+#expand-body {
+  position:relative;
+  flex:1; min-height:0;
+  display:flex; align-items:stretch;
+  overflow:hidden;
+  background:#000;
+}
+#expand-iframe {
+  flex:1;
+  width:100%; height:100%;
+  border:none; display:block;
+  background:#000;
+}
+@media (max-width:768px), (max-height:768px) {
+  #expand-window {
+    max-width:100vw !important;
+    max-height:95vh !important;
+  }
+}
+
+/* Shared status pill */
+.card-status {
+  font-size:7px; font-family:monospace;
+  letter-spacing:.14em; text-transform:uppercase;
+  color:var(--text-meta);
+  border:0.5px solid var(--border-mid);
+  padding:2px 7px; border-radius:3px;
+}
+
+/* ── Footer ── */
+footer {
+  background:var(--tbar-bg);
+  border-top:0.5px solid var(--border-strong);
+  padding:16px 24px;
+  display:grid;
+  grid-template-columns:1fr auto;
+  align-items:center; gap:24px;
+  margin-top:auto;
+}
+.footer-copy {
+  font-size:8px; font-family:monospace;
+  letter-spacing:.08em; color:var(--text-meta);
+  text-transform:uppercase;
+}
+.footer-links { display:flex; gap:20px; }
+.footer-link {
+  font-size:8px; font-family:monospace;
+  letter-spacing:.08em; color:var(--text-meta);
+  text-decoration:none; text-transform:uppercase;
+}
+.footer-link:hover { color:rgba(0,0,0,0.55); }
+
+/* ── Page transition ── */
+#page-transition {
+  position:fixed; inset:0; z-index:2000;
+  background:#c9c6c0;
+  opacity:1;
+  pointer-events:none;
+  transition:opacity 0.55s ease;
+}
+
+/* ── Night mode ── */
+body.night {
+  --tbar-bg:       #111010;
+  --bg:            #1a1917;
+  --bg-alt:        #141312;
+  --border:        rgba(255,255,255,0.08);
+  --border-mid:    rgba(255,255,255,0.14);
+  --border-strong: rgba(255,255,255,0.24);
+  --text:          rgba(255,255,255,0.80);
+  --text-sub:      rgba(255,255,255,0.44);
+  --text-meta:     rgba(255,255,255,0.28);
+}
+body.night #page-transition  { background:#111010; }
+body.night .tbar-night       { background:rgba(255,255,255,0.22); }
+body.night .meta-dot         { background:rgba(255,255,255,0.20); }
+body.night .mod-dot          { background:rgba(255,255,255,0.18); }
+body.night .tok-dot          { background:rgba(255,255,255,0.18); }
+body.night .display-title    { color:rgba(255,255,255,1.0); }
+body.night .meta-value       { color:rgba(255,255,255,0.52); }
+body.night .tbar-tabs        { background:rgba(255,255,255,0.07); }
+body.night .tab-btn          { color:rgba(255,255,255,0.30); }
+body.night .tab-btn.active   { background:#1a1917; color:rgba(255,255,255,0.62); box-shadow:0 0 0 0.5px rgba(255,255,255,0.14); }
+body.night .tab-btn:hover:not(.active) { color:rgba(255,255,255,0.52); }
+body.night .grid-bg {
+  background-image:radial-gradient(rgba(255,255,255,0.06) 1px, transparent 1px);
+}
+body.night .mod-card, body.night .tok-card {
+  box-shadow:
+    0 0 0 0.5px rgba(255,255,255,0.04),
+    0 2px 8px rgba(0,0,0,0.30),
+    0 8px 20px rgba(0,0,0,0.28);
+}
+body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
+
+@media (max-width:1200px) { .mod-grid { grid-template-columns:repeat(3, 1fr); } }
+@media (max-width:1100px) { .tok-grid { grid-template-columns:repeat(4, 1fr); } }
+@media (max-width:900px)  { .mod-grid { grid-template-columns:repeat(2, 1fr); } .tok-grid { grid-template-columns:repeat(3, 1fr); } }
+@media (max-width:600px)  { .mod-grid { grid-template-columns:1fr; } .tok-grid { grid-template-columns:repeat(2, 1fr); } }
+@media (max-width:768px) {
+  .page-header { padding-left:24px; padding-right:24px; }
+  .collection-inner { padding:80px 24px 0; }
+  .header-inner { grid-template-columns:1fr; }
+  .stats-box { width:100%; overflow-x:auto; }
+  .stats-box .meta-rows { flex-wrap:nowrap; }
+}
+</style>
+</head>
+<body>
+
+<div id="page-transition"></div>
+
+<script>
+  const _overlay = document.getElementById('page-transition');
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    _overlay.style.opacity = '0';
+    setTimeout(() => { _overlay.style.display = 'none'; }, 600);
+  }));
+  document.addEventListener('DOMContentLoaded', () => {
+    const _back = document.querySelector('.tbar-back');
+    if (!_back) return;
+    _back.addEventListener('click', e => {
+      e.preventDefault();
+      const href = e.currentTarget.getAttribute('href');
+      _overlay.style.display = '';
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        _overlay.style.opacity = '1';
+        setTimeout(() => { window.location.href = href; }, 580);
+      }));
+    });
+  });
+</script>
+
+<!-- Topbar -->
+<nav class="topbar">
+  <div class="tbar-left">
+    <a class="tbar-back" href="../#app" title="back to home"></a>
+  </div>
+  <div class="tbar-tabs">
+    <button class="tab-btn active" data-tab="tokens">Tokens</button>
+    <button class="tab-btn"        data-tab="modulo">Modulo</button>
+  </div>
+  <div class="tbar-right">
+    <button class="tbar-night" id="night-toggle" title="toggle night mode"></button>
+  </div>
+</nav>
+
+<!-- Header (OpenSea-style data, modulo's visual language) -->
+<header class="page-header grid-bg">
+  <div class="header-inner">
+    <div>
+      <!-- Title + verified badge inline (no avatar per spec).
+           Title text updates reactively with the active tab — see tab handler. -->
+      <div class="id-title-row">
+        <h1 class="display-title" id="display-title">Tokens</h1>
+        <span class="id-verified" title="verified collection">●</span>
+      </div>
+      <!-- Identity meta strip: collection author · chain · supply · launch · category -->
+      <div class="id-meta">
+        <span class="id-meta-item">BY UBK</span>
+        <span class="id-meta-sep">·</span>
+        <span class="id-meta-item">ETHEREUM</span>
+        <span class="id-meta-sep">·</span>
+        <span class="id-meta-item" id="meta-count">— ITEMS</span>
+        <span class="id-meta-sep">·</span>
+        <span class="id-meta-item">LAUNCHING 2026</span>
+        <span class="id-meta-sep">·</span>
+        <span class="id-meta-item">GENERATIVE ART</span>
+      </div>
+      <!-- Action icons row — placeholders for copy / opensea / X / share / more -->
+      <div class="id-actions">
+        <button class="id-action-btn" title="copy contract" data-action="copy">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="4.5" y="4.5" width="8" height="9" rx="1.2"/><path d="M3 11V3.5C3 2.95 3.45 2.5 4 2.5h7"/></svg>
+        </button>
+        <button class="id-action-btn" title="OpenSea" data-action="opensea">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1"><circle cx="8" cy="8" r="6.8"/><circle cx="8" cy="4.6" r="0.7" fill="currentColor" stroke="none"/><path d="M5 9 L8 5.4 L11 9 Z" fill="currentColor" stroke="none"/><path d="M3.4 10.6 Q5 9.8 6.5 10.6 T9.5 10.6 T12.6 10.6" stroke-width="1.1"/></svg>
+        </button>
+        <button class="id-action-btn" title="X / Twitter" data-action="x">
+          <svg viewBox="0 0 16 16" fill="currentColor"><path d="M11.6 2h2.1l-4.6 5.3 5.4 7.1h-4.2l-3.3-4.4-3.8 4.4H1.1l4.9-5.7L0.9 2h4.3l3 4 3.4-4zm-.7 11.2h1.2L4.7 3.3H3.4l7.5 9.9z"/></svg>
+        </button>
+        <button class="id-action-btn" title="share" data-action="share">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M9 3l3 3-3 3M11.5 6H6.5C4.6 6 3 7.5 3 9.5V13"/></svg>
+        </button>
+        <button class="id-action-btn" title="more" data-action="more">
+          <svg viewBox="0 0 16 16" fill="currentColor"><circle cx="3.5" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="12.5" cy="8" r="1.2"/></svg>
+        </button>
+      </div>
+    </div>
+    <!-- Stats box: OpenSea market stats (placeholders until API sync) -->
+    <div class="meta-box stats-box">
+      <div class="meta-tbar">
+        <span class="meta-dot"></span>
+      </div>
+      <div class="meta-rows">
+        <div class="meta-row">
+          <span class="meta-label">Floor Price</span>
+          <span class="meta-value">— ETH</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-label">Top Offer</span>
+          <span class="meta-value">—</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-label">Total Volume</span>
+          <span class="meta-value">— ETH</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-label">Listed</span>
+          <span class="meta-value">—</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-label">Owners (unique)</span>
+          <span class="meta-value">—</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- Collection -->
+<section class="collection-section">
+  <div class="collection-inner">
+
+    <!-- Tokens panel (default active — first/leftmost tab) -->
+    <div class="tab-panel active" id="panel-tokens">
+      <div class="tok-grid" id="tok-grid"></div>
+    </div>
+
+    <!-- Modulo panel (artifacts collection — right tab) -->
+    <div class="tab-panel" id="panel-modulo">
+      <div class="mod-grid" id="mod-grid"></div>
+    </div>
+
+  </div>
+</section>
+
+<!-- Export options modal — opens when user clicks ↓ MP4 inside expand modal.
+     Lets user pick a preset (codec + bitrate) before kicking off the 20s
+     encode. Each preset shows estimated filesize. Unsupported presets
+     (browser-dependent) are disabled with a tooltip explaining why. -->
+<div id="export-modal">
+  <div id="export-modal-window">
+    <div id="export-modal-tbar">
+      <span id="export-modal-title">Export options</span>
+    </div>
+    <div id="export-modal-body">
+      <p id="export-modal-hint">Pick a preset. Higher bitrate / 4:4:4 chroma → better color fidelity at saturated regions, larger files.</p>
+      <div id="export-modal-options"></div>
+      <label id="export-modal-crop">
+        <input type="checkbox" id="export-modal-crop-input">
+        <span class="export-opt-label">
+          <span class="export-opt-title">Crop to window size</span>
+          <span class="export-opt-sub" id="export-modal-crop-sub">Match the expand modal dimensions (smaller resolution, higher bits/pixel = better quality at smaller size).</span>
+        </span>
+        <span class="export-opt-size" id="export-modal-crop-dims">— × —</span>
+      </label>
+      <div id="export-modal-actions">
+        <button id="export-modal-cancel">Cancel</button>
+        <button id="export-modal-go">Export</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Expand overlay (Modulo cards only — wired in <script> below).
+     Copy of app/ expand structure (lines 1924-1942) minus sidebar/tab.
+     MP4 button is disabled — sandboxed iframe (origin null) cannot be
+     captured via canvas.captureStream / html2canvas / MediaRecorder.
+     RESET re-mounts the iframe srcdoc (forces re-init of the on-chain
+     renderer; equivalent UX to "reset grid" in app/). -->
+<div id="expand-overlay">
+  <div id="expand-window">
+    <div id="expand-tbar">
+      <div id="expand-close" title="close"></div>
+      <div id="expand-fullscreen" title="fullscreen"></div>
+      <span id="expand-tbar-title"></span>
+      <button id="export-btn" title="export 20s MP4 of this artifact (H.264, 2700×1500)">↓ MP4</button>
+      <button id="expand-reset-btn">RESET</button>
+    </div>
+    <div id="expand-body">
+      <iframe id="expand-iframe" sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>
+    </div>
+  </div>
+</div>
+
+<!-- Footer -->
+<footer>
+  <span class="footer-copy">© 2026 Modulo by ubk — all tokens on-chain</span>
+  <div class="footer-links">
+    <a class="footer-link" href="https://x.com/unbearableKnife" target="_blank" rel="noopener noreferrer">X / Twitter</a>
+    <a class="footer-link" href="../">Home</a>
+  </div>
+</footer>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// On-chain wiring — Sepolia (T-1 mainnet swap-list below)
+// ─────────────────────────────────────────────────────────────────────────────
+// SWAP LIST PRE-MAINNET (T-1 runbook): change ALL 6 strings below + the SRI
+// hash above (if ethers version bumps) + the CSP `connect-src` URL above.
+// No other constants in this file are network-dependent.
+const TOKEN_AGENT_ADDRESS     = '0xdE4AC7c11c0B3dbDcE4d60F2B14F659a553f8b8a';
+const SETTLE_ARTIFACT_ADDRESS = '0xa33C38cBCFF9C3BDB9818e80B49e74890A92d699';
+const CHAIN_ID                = 11155111;
+const RPC_URL                 = 'https://ethereum-sepolia-rpc.publicnode.com';
+const ETHERSCAN_BASE          = 'https://sepolia.etherscan.io';
+const OPENSEA_BASE            = 'https://testnets.opensea.io';
+
+// Minimal ABIs — only the methods this page calls. Verified against
+// Code/contracts/src/{TokenAgent,SettleArtifact}.sol on 2026-05-08.
+// ArtifactData struct shape MUST match SettleArtifact.sol:72-79 exactly;
+// drift here = decoded bytes mismatch + revert at .getArtifact() call.
+const TOKEN_AGENT_ABI = [
+  'function totalMinted() view returns (uint256)',
+  'function ownerOf(uint256) view returns (address)',
+  'function tokenURI(uint256) view returns (string)',
+];
+
+const SETTLE_ARTIFACT_ABI = [
+  'function totalArtifacts() view returns (uint256)',
+  'function ownerOf(uint256) view returns (address)',
+  'function tokenURI(uint256) view returns (string)',
+  'function getArtifact(uint256) view returns (tuple(uint256 moduloId, uint256[] tokenIds, uint256[] seeds, uint16[] ranks, address settler, uint64 settledAt))',
+];
+
+// Readonly RPC provider (single instance). No wallet, no signer — view calls
+// only. ethers v6 JsonRpcProvider polls block-tip every 4s by default; we
+// don't subscribe to events here so polling is idle except during fetches.
+let _provider = null, _tokenAgent = null, _settleArtifact = null;
+function _initOnChain() {
+  if (!window.ethers) {
+    console.error('[chain] ethers UMD not loaded — collection will show no on-chain data');
+    return false;
+  }
+  try {
+    _provider = new window.ethers.JsonRpcProvider(RPC_URL, CHAIN_ID);
+    _tokenAgent     = new window.ethers.Contract(TOKEN_AGENT_ADDRESS,     TOKEN_AGENT_ABI,     _provider);
+    _settleArtifact = new window.ethers.Contract(SETTLE_ARTIFACT_ADDRESS, SETTLE_ARTIFACT_ABI, _provider);
+    return true;
+  } catch (err) {
+    console.error('[chain] init failed:', err);
+    return false;
+  }
+}
+function _shortAddr(a) {
+  if (!a || typeof a !== 'string' || a.length < 10) return '0x0000…0000';
+  return a.slice(0, 6) + '…' + a.slice(-4);
+}
+
+// Per-id Promise cache. IntersectionObserver may re-fire mount on rapid
+// scroll/tab toggle — without this, same id triggers duplicate RPC calls.
+// Map<id, Promise<{owner, tokenURI, [compositionLen]}>>. Burned/nonexistent
+// tokens cache as resolved-null so we don't retry.
+const _tokenFetchCache = new Map();
+const _artifactFetchCache = new Map();
+
+// Owner caches populated upfront via _filterAliveIds — avoids redundant
+// ownerOf calls in _fetchTokenData/_fetchArtifactData. Maps id → owner address.
+const _tokenOwners = new Map();
+const _artifactOwners = new Map();
+
+// Live counts (alive only, burned excluded) — populated post-filter.
+// Used by the meta-count label which switches with the active tab.
+let _aliveTokenCount = 0;
+let _aliveArtifactCount = 0;
+
+// Pre-fetch ownerOf for all IDs in [1, total], filter out burned (revert),
+// cache owners for downstream lookups. Returns sorted array of alive ids.
+async function _filterAliveIds(contract, ownerCache, total) {
+  if (total === 0) return [];
+  const tasks = [];
+  for (let id = 1; id <= total; id++) {
+    tasks.push(
+      contract.ownerOf(id).then(
+        owner => { ownerCache.set(id, owner); return id; },
+        () => null
+      )
+    );
+  }
+  const results = await Promise.all(tasks);
+  return results.filter(id => id !== null);
+}
+
+async function _fetchTokenData(id) {
+  if (_tokenFetchCache.has(id)) return _tokenFetchCache.get(id);
+  const p = (async () => {
+    try {
+      // Owner already cached upfront by _filterAliveIds — skip the redundant call
+      const owner = _tokenOwners.get(id);
+      const uri = await _tokenAgent.tokenURI(id);
+      return { owner, tokenURI: uri };
+    } catch (_) {
+      return null;
+    }
+  })();
+  _tokenFetchCache.set(id, p);
+  return p;
+}
+
+async function _fetchArtifactData(id) {
+  if (_artifactFetchCache.has(id)) return _artifactFetchCache.get(id);
+  const p = (async () => {
+    try {
+      const owner = _artifactOwners.get(id);
+      const [uri, art] = await Promise.all([
+        _settleArtifact.tokenURI(id),
+        _settleArtifact.getArtifact(id),
+      ]);
+      // art is a Result tuple — access by name (ethers v6 supports both)
+      const compositionLen = Number(art.tokenIds.length);
+      return { owner, tokenURI: uri, compositionLen };
+    } catch (_) {
+      return null;
+    }
+  })();
+  _artifactFetchCache.set(id, p);
+  return p;
+}
+
+// Decode the data:text/html;base64,... URI returned by tokenURI() into raw
+// HTML for iframe srcdoc. Per security audit 2026-05-08 P1-1: srcdoc beats
+// src=data: because origin is opaque-via-sandbox-flag (not URL scheme), so
+// CSP frame-src 'self' covers about:srcdoc cleanly without permitting data:
+// across the page. Decoding fails fast on malformed URIs.
+function _decodeTokenURI(uri) {
+  if (typeof uri !== 'string') return null;
+  const comma = uri.indexOf(',');
+  if (comma < 0) return null;
+  try { return atob(uri.slice(comma + 1)); }
+  catch (_) { return null; }
+}
+
+// Inject a minimal CSS reset at the start of <head> so the iframe document's
+// default body margin (browser default ~8px) doesn't show as white strips
+// around the canvas. The on-chain HTML was authored for direct render (data:
+// URI as full marketplace page), where the body margin is invisible because
+// canvas + body bg both fill the viewport. In our iframe srcdoc embedding,
+// that margin becomes a visible cream/white band around the canvas inside
+// the expand window — Le reported this 2026-05-08.
+//
+// IMPORTANT: this does NOT modify the on-chain bytes. The contract's
+// tokenURI() output is unchanged. We're only adjusting how we consume the
+// HTML locally for iframe display. Marketplaces (OpenSea etc.) render the
+// data: URI directly as a page and won't see this injection.
+function _prepareSrcdoc(html) {
+  if (!html) return '';
+  // Aggressive reset with !important — defeats specificity of the on-chain
+  // HTML's own CSS (which may set body bg to white, body padding/margins,
+  // or canvas borders). Without !important the on-chain rules win because
+  // they come AFTER the prepended reset in source order.
+  // Le reported white bars at fullscreen edges 2026-05-08 — likely the
+  // body bg from the on-chain CSS bleeding through where the canvas
+  // doesn't fill the iframe viewport (aspect ratio mismatch in FS mode).
+  const reset =
+    '<style>' +
+      'html,body{' +
+        'margin:0!important;' +
+        'padding:0!important;' +
+        'border:0!important;' +
+        'overflow:hidden!important;' +
+        'background:#000!important;' +
+        'width:100%!important;' +
+        'height:100%!important;' +
+      '}' +
+      'canvas{background:#000!important;outline:none!important}' +
+    '</style>';
+  // Inject AFTER any existing <style> tags in <head> so our !important rules
+  // are last in source order (CSS cascade tiebreaker — same specificity, last
+  // wins). If no </head> found, prepend (defensive — should never happen).
+  const headEndIdx = html.indexOf('</head>');
+  if (headEndIdx < 0) {
+    const headIdx = html.indexOf('<head>');
+    if (headIdx < 0) return reset + html;
+    return html.slice(0, headIdx + 6) + reset + html.slice(headIdx + 6);
+  }
+  return html.slice(0, headEndIdx) + reset + html.slice(headEndIdx);
+}
+
+// ── Shared palette (mutated by night toggle) ───────────────────────────────────
+const _COL = [219, 216, 209];
+const _BLK = [15,  15,  15];
+const _DAY_COL = [219, 216, 209];
+const _DAY_BLK = [15,  15,  15];
+const _NGT_COL = [26,  25,  23];
+const _NGT_BLK = [206, 201, 188];
+
+// ── Night mode ─────────────────────────────────────────────────────────────────
+function _setNight(on) {
+  document.body.classList.toggle('night', on);
+  const col = on ? _NGT_COL : _DAY_COL;
+  const blk = on ? _NGT_BLK : _DAY_BLK;
+  _COL[0]=col[0]; _COL[1]=col[1]; _COL[2]=col[2];
+  _BLK[0]=blk[0]; _BLK[1]=blk[1]; _BLK[2]=blk[2];
+  localStorage.setItem('tc-night', on ? '1' : '0');
+}
+document.getElementById('night-toggle').addEventListener('click', () => {
+  _setNight(!document.body.classList.contains('night'));
+});
+if (localStorage.getItem('tc-night') === '1') _setNight(true);
+
+// ── Tab switch + title sync ────────────────────────────────────────────────────
+// Title in the header mirrors the active tab name ("Tokens" or "Modulo") because
+// these are two distinct on-chain collections, not subtabs of one.
+const _displayTitle = document.getElementById('display-title');
+const _TAB_TITLES = { tokens: 'Tokens', modulo: 'Modulo' };
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const target = btn.dataset.tab;
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + target));
+    if (_displayTitle && _TAB_TITLES[target]) _displayTitle.textContent = _TAB_TITLES[target];
+    if (typeof _setMetaCount === 'function') _setMetaCount(target);
+  });
+});
+
+// ── rAF-throttled resize dispatcher ───────────────────────────────────────────
+const _resizeFns = [];
+let _rP = false;
+window.addEventListener('resize', () => {
+  if (_rP) return; _rP = true;
+  requestAnimationFrame(() => { _rP = false; _resizeFns.forEach(f => f()); });
+}, { passive:true });
+
+// ── Rotating gradient bg (matches app/index.html world) ─────────────────────
+(function() {
+  const sec = document.querySelector('.collection-section');
+  const canvas = document.createElement('canvas');
+  canvas.className = 'bg-grad';
+  sec.insertBefore(canvas, sec.firstChild);
+  // Fade overlay above the card grid: cream (header bg) at top → transparent
+  // at bottom over 80px (matches .collection-inner padding-top). Painted on
+  // top of the canvas, behind the cards. Smooths the visual transition from
+  // header cream into the rotating canvas grey behind the cards.
+  const fade = document.createElement('div');
+  fade.className = 'header-fade';
+  sec.insertBefore(fade, canvas.nextSibling);
+  const ctx = canvas.getContext('2d');
+
+  // Gradient endpoints — picked to give a visible transition between the section
+  // grey and the header's cream/white. Day stops match _BG (the canonical grey)
+  // and --bg (the page/header bg). Night stops mirror this contrast in dark mode.
+  // Grey/light stops use rgba(...,0.50) — 50% transparency lets the body bg show
+  // through, softening the grey visually (composite ≈ #B6B3AC over cream).
+  const _GRAD_DAY_GREY  = 'rgba(141, 138, 132, 0.50)';  // #8D8A84 @ 50% alpha
+  const _GRAD_DAY_CREAM = '#dbd8d1';                    // matches --bg / header bg
+  const _GRAD_NGT_LIGHT = 'rgba(58, 57, 55, 0.50)';     // #3a3937 @ 50% alpha
+  const _GRAD_NGT_DARK  = '#1a1917';                    // matches night --bg
+
+  let _dpr = 1, W, H;
+  function resize() {
+    _dpr = window.devicePixelRatio || 1;
+    // Sized to viewport — the canvas is sticky-positioned so it always
+    // covers the visible portion of the section, never the full section.
+    W = Math.round(sec.getBoundingClientRect().width);
+    H = Math.round(window.innerHeight);
+    canvas.width  = W * _dpr;
+    canvas.height = H * _dpr;
+    canvas.style.width  = W + 'px';
+    canvas.style.height = H + 'px';
+  }
+  resize();
+  _resizeFns.push(resize);
+
+  let angle = 280 * Math.PI / 180;
+  // Full rotation (2π) every 9.1s @ 60fps (was 7s — slowed 30% per request)
+  const SPD = (2 * Math.PI) / (9.1 * 60);
+
+  function render() {
+    angle += SPD;
+    ctx.setTransform(_dpr, 0, 0, _dpr, 0, 0);
+    // clearRect is required: the grey stop has alpha < 1 so without clearing
+    // each frame, the gradient would composite over the previous frame and
+    // accumulate to opaque grey over time (defeats the transparency).
+    ctx.clearRect(0, 0, W, H);
+    const cx = W / 2, cy = H / 2;
+    const len = Math.sqrt(W * W + H * H) / 2;
+    const x0 = cx + Math.cos(angle + Math.PI) * len;
+    const y0 = cy + Math.sin(angle + Math.PI) * len;
+    const x1 = cx + Math.cos(angle) * len;
+    const y1 = cy + Math.sin(angle) * len;
+    // Smoother transition: spread the grey→cream blend across 65% of the
+    // gradient line (was 40%) so the boundary between transition zone and
+    // solid cream isn't visually abrupt. Cream still dominates the remaining
+    // 35% as a solid block.
+    const g = ctx.createLinearGradient(x0, y0, x1, y1);
+    if (document.body.classList.contains('night')) {
+      g.addColorStop(0,    _GRAD_NGT_LIGHT);
+      g.addColorStop(0.65, _GRAD_NGT_DARK);
+      g.addColorStop(1,    _GRAD_NGT_DARK);
+    } else {
+      g.addColorStop(0,    _GRAD_DAY_GREY);
+      g.addColorStop(0.65, _GRAD_DAY_CREAM);
+      g.addColorStop(1,    _GRAD_DAY_CREAM);
+    }
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  const FI = 1000 / 60;
+  let last = 0, visible = true;
+  const io = new IntersectionObserver(e => { visible = e[0].isIntersecting; }, { threshold:0 });
+  io.observe(sec);
+
+  function loop(ts) {
+    if (visible && !document.hidden && ts - last >= FI) {
+      render();
+      last = ts;
+    }
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+})();
+
+// ── DT cellular automaton helpers ─────────────────────────────────────────────
+function _dtIdx(c, r, cols, rows) {
+  return ((r + rows) % rows) * cols + ((c + cols) % cols);
+}
+const _DIRS = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1],[1,-1],[-1,1]];
+function _dtStep(grid, next, cols, rows) {
+  next.set(grid);
+  const rx = Math.floor(Math.random() * cols);
+  const ry = Math.floor(Math.random() * rows);
+  const rw = 1 + Math.floor(Math.random() * 4);
+  const rh = 1 + Math.floor(Math.random() * 3);
+  for (let dy = 0; dy < rh; dy++) for (let dx = 0; dx < rw; dx++) {
+    const c = rx + dx, r = ry + dy;
+    const ones =
+      grid[_dtIdx(c-1,r,cols,rows)] + grid[_dtIdx(c+1,r,cols,rows)] +
+      grid[_dtIdx(c,r-1,cols,rows)] + grid[_dtIdx(c,r+1,cols,rows)];
+    next[_dtIdx(c,r,cols,rows)] = ones >= 2 ? 1 : 0;
+  }
+  const sx = Math.floor(Math.random() * cols);
+  const sy = Math.floor(Math.random() * rows);
+  const sw = 2 + Math.floor(Math.random() * 6);
+  const sh = 2 + Math.floor(Math.random() * 4);
+  const [ddx, ddy] = _DIRS[Math.floor(Math.random() * _DIRS.length)];
+  for (let dy = 0; dy < sh; dy++) for (let dx = 0; dx < sw; dx++)
+    next[_dtIdx(sx+dx,sy+dy,cols,rows)] = grid[_dtIdx(sx+dx-ddx,sy+dy-ddy,cols,rows)];
+  if (Math.random() < 0.3) {
+    const nc = Math.floor(Math.random() * cols);
+    const nr = Math.floor(Math.random() * rows);
+    next[_dtIdx(nc,nr,cols,rows)] = Math.random() < 0.18 ? 1 : 0;
+  }
+  grid.set(next);
+}
+function _dtDensity(grid) {
+  const total = grid.length;
+  let blacks = 0;
+  for (let i = 0; i < total; i++) if (grid[i]) blacks++;
+  const ratio = blacks / total;
+  if (ratio > 0.55)
+    for (let i = 0; i < total; i++) { if (grid[i] && Math.random() < 0.15) grid[i] = 0; }
+  else if (ratio < 0.10)
+    for (let i = 0; i < total; i++) { if (!grid[i] && Math.random() < 0.08) grid[i] = 1; }
+}
+
+// ── Spawn a canvas DT animation ───────────────────────────────────────────────
+function _spawnCanvas(canvas, pix, observeEl) {
+  const ctx = canvas.getContext('2d');
+  let W, H, cols, rows, grid, next, img, buf;
+
+  function resize() {
+    const wrap = canvas.parentElement;
+    const r = wrap.getBoundingClientRect();
+    W = Math.round(r.width)  || 300;
+    H = Math.round(r.height) || 300;
+    canvas.width  = W;
+    canvas.height = H;
+    cols = Math.max(1, Math.floor(W / pix));
+    rows = Math.max(1, Math.floor(H / pix));
+    grid = new Uint8Array(cols * rows);
+    next = new Uint8Array(cols * rows);
+    img  = ctx.createImageData(W, H);
+    buf  = img.data;
+    for (let i = 0; i < grid.length; i++)
+      grid[i] = Math.random() < 0.22 ? 1 : 0;
+  }
+
+  function render() {
+    const c0=_COL[0], c1=_COL[1], c2=_COL[2];
+    const b0=_BLK[0], b1=_BLK[1], b2=_BLK[2];
+    for (let i = 0; i < buf.length; i += 4) {
+      buf[i]=c0; buf[i+1]=c1; buf[i+2]=c2; buf[i+3]=255;
+    }
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (!grid[r * cols + c]) continue;
+        for (let py = 0; py < pix; py++) for (let px = 0; px < pix; px++) {
+          const i = ((r*pix+py)*W + (c*pix+px)) * 4;
+          buf[i]=b0; buf[i+1]=b1; buf[i+2]=b2; buf[i+3]=255;
+        }
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+
+  resize();
+  _resizeFns.push(resize);
+
+  const FI = 1000 / 20;
+  let last = 0, visible = false;
+
+  const io = new IntersectionObserver(entries => {
+    visible = entries[0].isIntersecting;
+  }, { rootMargin:'80px', threshold:0 });
+  io.observe(observeEl);
+
+  function loop(ts) {
+    if (visible && !document.hidden && ts - last >= FI) {
+      _dtStep(grid, next, cols, rows);
+      _dtStep(grid, next, cols, rows);
+      _dtDensity(grid);
+      render();
+      last = ts;
+    }
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// On-chain card hydration — iframe srcdoc lazy mount/unmount
+// ─────────────────────────────────────────────────────────────────────────────
+// Strategy (per security audit 2026-05-08 P2-1 + P2-2):
+//   - Skeleton cards rendered immediately (no RPC at boot).
+//   - IntersectionObserver mounts the iframe when card enters viewport
+//     (rootMargin:'80px') AND unmounts (iframe.srcdoc='') when it exits
+//     well past viewport (rootMargin:'-200px'). 100 token iframes × ~40 KB
+//     decoded srcdoc = ~4 MB DOM string in the worst case — un-hydrating
+//     out-of-viewport keeps mobile Safari from freezing.
+//   - Per-id Promise cache (above) dedupes RPC bursts when scroll re-mounts.
+//   - Iframe sandbox="allow-scripts" only — NO allow-same-origin (origin
+//     stays opaque-null, can't reach modulo.ubk.art) and NO allow-top-
+//     navigation (can't redirect parent for phishing).
+
+function _attachOnChainObserver(card, mountFn, unmountFn) {
+  let mounted = false;
+  // Single observer with one rootMargin — mount when entering +200px buffer,
+  // unmount when leaving same buffer. An earlier 2-observer attempt (mount
+  // at +80px, unmount at -200px past edge) had a dead zone: scrolling 50-150px
+  // past viewport tripped the unmount observer but never triggered the mount
+  // observer's state change on return, leaving cards permanently blank.
+  // Single-IO eliminates the dead zone at the cost of slightly more eager
+  // unmount (still 200px past edge — not aggressive).
+  const io = new IntersectionObserver(entries => {
+    const intersecting = entries[0].isIntersecting;
+    if (intersecting && !mounted) { mounted = true; mountFn(); }
+    else if (!intersecting && mounted) { mounted = false; unmountFn(); }
+  }, { rootMargin: '200px', threshold: 0 });
+  io.observe(card);
+}
+
+function _mountTokenIframe(card, id) {
+  const wrap = card.querySelector('.tok-canvas-wrap');
+  const slot = card.querySelector('.tok-seed');
+  if (!wrap) return;
+  if (!_tokenAgent) {
+    slot.textContent = 'no rpc';
+    return;
+  }
+  _fetchTokenData(id).then(data => {
+    if (!data) {
+      slot.textContent = 'burned';
+      wrap.classList.add('card-burned');
+      return;
+    }
+    const html = _decodeTokenURI(data.tokenURI);
+    if (!html) {
+      slot.textContent = 'decode error';
+      return;
+    }
+    // Replace canvas with iframe (canvas already in DOM as placeholder)
+    const existing = wrap.querySelector('iframe');
+    let iframe = existing || document.createElement('iframe');
+    iframe.className = 'tok-iframe';
+    iframe.setAttribute('sandbox', 'allow-scripts');
+    iframe.setAttribute('loading', 'lazy');
+    iframe.setAttribute('referrerpolicy', 'no-referrer');
+    iframe.setAttribute('aria-label', 'token #' + id);
+    iframe.srcdoc = _prepareSrcdoc(html);
+    if (!existing) {
+      const canvas = wrap.querySelector('canvas');
+      if (canvas) canvas.remove();
+      wrap.appendChild(iframe);
+    }
+    slot.textContent = '0x' + id.toString(16).padStart(4, '0').toUpperCase();
+    const ownerEl = card.querySelector('.tok-owner');
+    if (ownerEl) ownerEl.textContent = _shortAddr(data.owner);
+  });
+}
+
+function _unmountTokenIframe(card) {
+  const iframe = card.querySelector('iframe.tok-iframe');
+  if (iframe) iframe.srcdoc = ''; // free child document; iframe element kept
+}
+
+function _mountModuloIframe(card, id) {
+  const wrap = card.querySelector('.mod-canvas-wrap');
+  const slotsEl = card.querySelector('.mod-slots');
+  if (!wrap) return;
+  if (!_settleArtifact) {
+    slotsEl.textContent = 'no rpc';
+    return;
+  }
+  _fetchArtifactData(id).then(data => {
+    if (!data) {
+      slotsEl.textContent = 'unavailable';
+      wrap.classList.add('card-burned');
+      return;
+    }
+    const html = _decodeTokenURI(data.tokenURI);
+    if (!html) {
+      slotsEl.textContent = 'decode error';
+      return;
+    }
+    const existing = wrap.querySelector('iframe');
+    let iframe = existing || document.createElement('iframe');
+    iframe.className = 'mod-iframe';
+    iframe.setAttribute('sandbox', 'allow-scripts');
+    iframe.setAttribute('loading', 'lazy');
+    iframe.setAttribute('referrerpolicy', 'no-referrer');
+    iframe.setAttribute('aria-label', 'modulo #' + id);
+    iframe.srcdoc = _prepareSrcdoc(html);
+    if (!existing) {
+      const canvas = wrap.querySelector('canvas');
+      if (canvas) canvas.remove();
+      wrap.appendChild(iframe);
+    }
+    slotsEl.textContent = data.compositionLen + ' tokens';
+    const ownerEl = card.querySelector('.mod-owner');
+    if (ownerEl) ownerEl.textContent = _shortAddr(data.owner);
+    // Click-to-expand wired only after data is ready (so modal can re-use srcdoc)
+    card.dataset.ready = '1';
+  });
+}
+
+function _unmountModuloIframe(card) {
+  const iframe = card.querySelector('iframe.mod-iframe');
+  if (iframe) iframe.srcdoc = '';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Build cards from on-chain counts (alive only — burned filtered upfront)
+// ─────────────────────────────────────────────────────────────────────────────
+const _metaCountEl = document.getElementById('meta-count');
+function _setMetaCount(tab) {
+  if (!_metaCountEl) return;
+  const n = tab === 'modulo' ? _aliveArtifactCount : _aliveTokenCount;
+  _metaCountEl.textContent = n + (n === 1 ? ' ITEM' : ' ITEMS');
+}
+
+async function _buildCards() {
+  const ok = _initOnChain();
+  const tokGrid = document.getElementById('tok-grid');
+  const modGrid = document.getElementById('mod-grid');
+
+  if (!ok) {
+    tokGrid.innerHTML = '<div class="card-empty">on-chain reader unavailable — refresh</div>';
+    modGrid.innerHTML = '<div class="card-empty">on-chain reader unavailable — refresh</div>';
+    return;
+  }
+
+  // Loading placeholder while we fetch counts + filter alive ids. ~3-5s on
+  // publicnode for ~100 tokens. Counts shown stay '— ITEMS' until ready.
+  tokGrid.innerHTML = '<div class="card-empty">reading on-chain state…</div>';
+  modGrid.innerHTML = '<div class="card-empty">reading on-chain state…</div>';
+
+  let tokenCount = 0, artifactCount = 0;
+  try {
+    [tokenCount, artifactCount] = await Promise.all([
+      _tokenAgent.totalMinted().then(n => Number(n)),
+      _settleArtifact.totalArtifacts().then(n => Number(n)),
+    ]);
+  } catch (err) {
+    console.error('[chain] count fetch failed:', err);
+  }
+
+  // Pre-fetch ownerOf for every minted id in parallel — burned tokens revert
+  // and fall out of the alive list. Caches owners for downstream lookups.
+  const [aliveTokenIds, aliveArtifactIds] = await Promise.all([
+    _filterAliveIds(_tokenAgent,     _tokenOwners,    tokenCount),
+    _filterAliveIds(_settleArtifact, _artifactOwners, artifactCount),
+  ]);
+
+  _aliveTokenCount    = aliveTokenIds.length;
+  _aliveArtifactCount = aliveArtifactIds.length;
+  // Active tab at boot is 'tokens' (default in the markup) — set its count
+  _setMetaCount(document.querySelector('.tab-btn.active')?.dataset.tab || 'tokens');
+
+  // ── Token cards (alive only) ──────────────────────────────────────────────
+  tokGrid.innerHTML = '';
+  if (aliveTokenIds.length === 0) {
+    tokGrid.innerHTML = '<div class="card-empty">no tokens minted yet</div>';
+  } else {
+    for (const id of aliveTokenIds) {
+      const label = '#' + String(id).padStart(3, '0');
+      const card = document.createElement('div');
+      card.className = 'tok-card';
+      card.innerHTML =
+        '<div class="tok-tbar">' +
+          '<span class="tok-dot"></span>' +
+          '<span class="tok-label">' + label + '</span>' +
+        '</div>' +
+        '<div class="tok-canvas-wrap">' +
+          '<canvas class="tok-canvas"></canvas>' +
+        '</div>' +
+        '<div class="tok-footer">' +
+          '<span class="tok-seed">…</span>' +
+          '<span class="tok-owner">…</span>' +
+          '<span class="tok-price">— ETH</span>' +
+        '</div>';
+      tokGrid.appendChild(card);
+      _spawnCanvas(card.querySelector('.tok-canvas'), 5, card);
+      _attachOnChainObserver(card,
+        () => _mountTokenIframe(card, id),
+        () => _unmountTokenIframe(card));
+    }
+  }
+
+  // ── Modulo cards (alive only) ─────────────────────────────────────────────
+  modGrid.innerHTML = '';
+  if (aliveArtifactIds.length === 0) {
+    modGrid.innerHTML = '<div class="card-empty">no modulos settled yet</div>';
+  } else {
+    for (const id of aliveArtifactIds) {
+      const label = 'MODULO #' + id;
+      const card = document.createElement('div');
+      card.className = 'mod-card';
+      card.dataset.modId = String(id);
+      card.innerHTML =
+        '<div class="mod-tbar">' +
+          '<span class="mod-dot"></span>' +
+          '<span class="mod-label">' + label + '</span>' +
+        '</div>' +
+        '<div class="mod-canvas-wrap">' +
+          '<canvas class="mod-canvas"></canvas>' +
+        '</div>' +
+        '<div class="mod-footer">' +
+          '<span class="mod-slots">…</span>' +
+          '<span class="mod-owner">…</span>' +
+          '<span class="mod-price">— ETH</span>' +
+        '</div>';
+      modGrid.appendChild(card);
+      _spawnCanvas(card.querySelector('.mod-canvas'), 8, card);
+      _attachOnChainObserver(card,
+        () => _mountModuloIframe(card, id),
+        () => _unmountModuloIframe(card));
+      card.addEventListener('click', e => {
+        if (card.dataset.ready !== '1') return;
+        if (e.target.closest('.mod-footer span')) return; // don't expand on footer text click
+        _openExpand(card, id);
+      });
+    }
+  }
+}
+
+_buildCards();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Header action buttons (copy contract + Etherscan + OpenSea testnet)
+// ─────────────────────────────────────────────────────────────────────────────
+document.querySelectorAll('.id-action-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const action = btn.dataset.action;
+    if (action === 'copy') {
+      try {
+        await navigator.clipboard.writeText(TOKEN_AGENT_ADDRESS);
+        const orig = btn.title;
+        btn.title = 'copied!';
+        setTimeout(() => { btn.title = orig; }, 1500);
+      } catch (_) {}
+    } else if (action === 'opensea') {
+      window.open(OPENSEA_BASE + '/assets/sepolia/' + TOKEN_AGENT_ADDRESS, '_blank', 'noopener,noreferrer');
+    } else if (action === 'etherscan' || action === 'share') {
+      // Reuse the existing 'share' icon as Etherscan link (icon is generic enough).
+      window.open(ETHERSCAN_BASE + '/address/' + TOKEN_AGENT_ADDRESS, '_blank', 'noopener,noreferrer');
+    }
+    // 'x' and 'more' kept as no-ops (already-existing placeholder buttons)
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Artifact engine factory — inline copy of the on-chain renderer
+// ─────────────────────────────────────────────────────────────────────────────
+// SOURCE: Code/contracts/html-placeholders/modulo-artifact-v1.html
+// ⚠️ SYNC MANUALLY when the placeholder changes (e.g. before EthFS re-upload).
+// Pre-mainnet TODO: extract to tools/extract-engine.js build script (audit
+// 2026-05-08 P2-4) so PRs visualize divergence between EthFS canonical and
+// this inline copy. Until then: any edit to the placeholder → re-paste here.
+//
+// The factory wraps the placeholder script for offscreen MP4 export. Skips
+// the global rAF loop and IntersectionObserver (caller drives frames). The
+// runtime engine is identical to what runs inside the iframe sandbox during
+// display, so the MP4 byte stream matches the live render frame-for-frame
+// from a deterministic seed (`_compSeed` XOR-fold of token seeds + artifactId).
+//
+// BigInt normalization upfront (audit P2-1): ethers v6 returns BigInt for
+// `getArtifact()` fields; the engine uses `| 0` everywhere which throws on
+// BigInt. We coerce all numeric fields to plain `Number` before the engine
+// sees them.
+function _normalizeComposition(raw) {
+  const num = v => (typeof v === 'bigint' ? Number(v) : Number(v)) | 0;
+  return {
+    artifactId: num(raw.artifactId),
+    moduloId:   num(raw.moduloId),
+    tokens:     raw.tokens.map(t => ({
+      tokenId:    num(t.tokenId),
+      rank:       num(t.rank),
+      seed:       String(t.seed),
+      hasMode:    !!t.hasMode,
+      hasSize:    !!t.hasSize,
+      hasRS:      !!t.hasRS,
+      hasRD:      !!t.hasRD,
+      hasBios:    !!t.hasBios,
+      hasDX:      !!t.hasDX,
+      modes:      Array.isArray(t.modes) ? t.modes.map(num) : [],
+      dx:         Array.isArray(t.dx)    ? t.dx.map(num)    : [],
+      rv:         Array.isArray(t.rv)    ? t.rv.map(num)    : [],
+      size:       num(t.size),
+      rectSize:   num(t.rectSize),
+      rectDim:    num(t.rectDim),
+      biosOn:     !!t.biosOn,
+      colorIndex: num(t.colorIndex),
+      speed:      num(t.speed),
+    })),
+  };
+}
+
+// Extract the COMPOSITION JSON literal from the decoded tokenURI HTML.
+// HTMLBuilder.sol:65 substitutes `__MODULO_COMPOSITION__` with a JSON object
+// inside `const COMPOSITION=...;`. We regex back the JSON, parse, normalize.
+function _extractComposition(decodedHtml) {
+  if (!decodedHtml) return null;
+  const m = decodedHtml.match(/const COMPOSITION\s*=\s*(\{[\s\S]*?\});/);
+  if (!m) return null;
+  try {
+    return _normalizeComposition(JSON.parse(m[1]));
+  } catch (err) {
+    console.error('[export] composition parse failed:', err);
+    return null;
+  }
+}
+
+// Engine factory — direct port of html-placeholders/modulo-artifact-v1.html.
+// Differences from the placeholder:
+//   - takes `canvas` + `composition` as parameters instead of reading
+//     `__MODULO_COMPOSITION__` literal + `document.getElementById('render')`
+//   - skips `addEventListener('resize')` (offscreen canvas, fixed size)
+//   - skips `_globalObserver.observe` + `startGlobalLoop` (caller drives frames)
+//   - returns `animObj` directly (caller owns the loop)
+// Everything between the `===== ENGINE START =====` and `===== ENGINE END =====`
+// markers is verbatim from the placeholder, except the COMPOSITION assignment
+// at the top and the `startAnim`/`startGlobalLoop` calls at the bottom.
+function _createArtifactEngine(canvas, rawComposition) {
+  // ===== ENGINE START =====
+  const COMPOSITION = rawComposition;
+  const MODE_NAMES = ['feedback','shift','noise','modulo','wave','jungle','sector','blocks'];
+  const SIZE_INT_TO_STR = ['sm','md','lg'];
+  const RS_INT_TO_STR   = ['sm','md','lg','xl'];
+  const RD_INT_TO_STR   = ['lo','md','hi','mx'];
+  const DX_KEY_BY_INDEX = ['x','plus','h','sq','num','numi','m','o'];
+  const RV_NAME_BY_INDEX = ['core','mecha','hysteria','metro','side-b','earthquake','retro','ladder'];
+  function _seedFromBytes32(hex) {
+    const h = (hex || '').slice(2);
+    let s = 0;
+    for (let i = 0; i < 8; i++) s ^= parseInt(h.slice(i*8, i*8+8), 16) | 0;
+    return s | 0;
+  }
+  function mulberry32(seed) {
+    return function() {
+      seed |= 0; seed = seed + 1831565813 | 0;
+      let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+  // Composition seed — XOR-fold each token seed, XOR with artifactId
+  let _compSeed = (COMPOSITION.artifactId | 0);
+  for (let i = 0; i < COMPOSITION.tokens.length; i++) {
+    _compSeed ^= _seedFromBytes32(COMPOSITION.tokens[i].seed);
+  }
+  const _rng = mulberry32(_compSeed | 0);
+  const COLS_DATA = [['#6363ff','#a040ff','#ff003a','#ff8c00','#ffbd2e','#28c840','#ff4080','#ff63ff','#1100ff','#63ff63','#57686e','#2a0b18','#23242a','#ab0a5f','#0f1021','#000000','#bfbcce','#8b8b8b']];
+  const DX_PATTERNS = {
+    x:[[0,0],[0,5],[1,1],[1,4],[2,2],[2,3],[3,2],[3,3],[4,1],[4,4],[5,0],[5,5]],
+    plus:[[0,2],[0,3],[1,2],[1,3],[2,0],[2,1],[2,2],[2,3],[2,4],[2,5],[3,0],[3,1],[3,2],[3,3],[3,4],[3,5],[4,2],[4,3],[5,2],[5,3]],
+    h:[[2,0],[2,1],[2,2],[2,3],[2,4],[2,5],[3,0],[3,1],[3,2],[3,3],[3,4],[3,5]],
+    sq:[[0,0],[0,1],[0,2],[0,3],[0,4],[0,5],[5,0],[5,1],[5,2],[5,3],[5,4],[5,5],[1,0],[2,0],[3,0],[4,0],[1,5],[2,5],[3,5],[4,5]],
+    tri:[[1,2],[1,3],[2,1],[2,2],[2,3],[2,4],[3,1],[3,2],[3,3],[3,4],[4,0],[4,1],[4,2],[4,3],[4,4],[4,5]],
+    circle:[[0,1],[0,2],[0,3],[0,4],[1,0],[1,5],[2,0],[2,5],[3,0],[3,5],[4,0],[4,5],[5,1],[5,2],[5,3],[5,4]],
+    diamond:[[0,2],[0,3],[1,1],[1,4],[2,0],[2,5],[3,0],[3,5],[4,1],[4,4],[5,2],[5,3]],
+    checker:[[0,0],[0,1],[0,4],[0,5],[1,0],[1,1],[1,4],[1,5],[2,2],[2,3],[3,2],[3,3],[4,0],[4,1],[4,4],[4,5],[5,0],[5,1],[5,4],[5,5]],
+    legoStud:[[1,2],[1,3],[2,1],[2,4],[3,1],[3,4],[4,2],[4,3]],
+  };
+  const _DX_MULTI = ['tri','circle','diamond','checker'];
+  const DX_DIGIT_PATTERNS = [[[2,4],[2,5],[2,6],[3,3],[3,7],[4,3],[4,7],[5,3],[5,7],[6,3],[6,7],[7,3],[7,7],[8,4],[8,5],[8,6]],[[2,5],[3,4],[3,5],[4,5],[5,5],[6,5],[7,5],[8,4],[8,5],[8,6]],[[2,4],[2,5],[2,6],[3,3],[3,7],[4,7],[5,6],[6,5],[7,4],[8,3],[8,4],[8,5],[8,6],[8,7]],[[2,4],[2,5],[2,6],[3,3],[3,7],[4,7],[5,5],[5,6],[6,7],[7,3],[7,7],[8,4],[8,5],[8,6]],[[2,6],[3,5],[3,6],[4,4],[4,6],[5,3],[5,6],[6,3],[6,4],[6,5],[6,6],[6,7],[7,6],[8,6]],[[2,3],[2,4],[2,5],[2,6],[2,7],[3,3],[4,3],[5,3],[5,4],[5,5],[5,6],[6,7],[7,7],[8,3],[8,4],[8,5],[8,6]],[[2,4],[2,5],[2,6],[3,3],[4,3],[5,3],[5,4],[5,5],[5,6],[6,3],[6,7],[7,3],[7,7],[8,4],[8,5],[8,6]],[[2,3],[2,4],[2,5],[2,6],[2,7],[3,7],[4,6],[5,5],[6,4],[7,4],[8,4]],[[2,4],[2,5],[2,6],[3,3],[3,7],[4,3],[4,7],[5,4],[5,5],[5,6],[6,3],[6,7],[7,3],[7,7],[8,4],[8,5],[8,6]],[[2,4],[2,5],[2,6],[3,3],[3,7],[4,3],[4,7],[5,4],[5,5],[5,6],[5,7],[6,7],[7,7],[8,4],[8,5],[8,6]]];
+  const DX_DIGIT_PATTERNS_INV = DX_DIGIT_PATTERNS.map(p => {
+    let set = new Set(p.map(([r,c]) => r*12+c)), inv = [];
+    for (let r = 0; r < 12; r++) for (let c = 0; c < 12; c++) if (!set.has(r*12+c)) inv.push([r,c]);
+    return inv;
+  });
+  const BIOS_DATA = [{title:'save & exit setup',msg:'save configuration and exit?',btns:['yes','no']},{title:'boot order',msg:'set boot device?',btns:['ok','no']},{title:'load defaults',msg:'load optimal defaults?',btns:['yes','no']},{title:'clear cmos',msg:'reset all settings?',btns:['yes','no']},{title:'exit without saving',msg:'discard changes?',btns:['yes','no']}];
+  const SIZE_SCALES = {sm:0.4, md:1, lg:2};
+  const SHIFT_BASE_SCALES = {sm:0.15, md:0.4, lg:0.8};
+  const SHIFT_ZONE_SCALES = {sm:1, md:2, lg:2.5};
+  const RS_PARAMS = {sm:{min:4,max:20},md:{min:10,max:30},lg:{min:20,max:50},xl:{min:40,max:80}};
+  const RD_PARAMS = {lo:{offMin:5e3,offMax:12e3,onMin:500,onMax:1500},md:{offMin:1e3,offMax:6e3,onMin:1500,onMax:6500},hi:{offMin:200,offMax:1e3,onMin:3e3,onMax:8e3},mx:{offMin:50,offMax:200,onMin:5e3,onMax:12e3}};
+  const sId = 'r';
+  const MODULOS = [{id: sId, personal: false, tokens: COMPOSITION.tokens.map(t => t.tokenId)}];
+  const tokenModes = {}, tokenSizes = {}, tokenRectSizes = {}, tokenRectDensities = {}, biosStates = {}, tokenDitherPatterns = {}, tokenRectVariants = {};
+  const TOKEN_DATA = {};
+  tokenModes[sId] = {}; tokenSizes[sId] = {}; tokenRectSizes[sId] = {}; tokenRectDensities[sId] = {};
+  biosStates[sId] = {}; tokenDitherPatterns[sId] = {}; tokenRectVariants[sId] = {};
+  COMPOSITION.tokens.forEach((t, i) => {
+    TOKEN_DATA[t.tokenId] = {rank: t.rank, palette: 0, sel: t.colorIndex, speed: t.speed};
+    if (t.hasMode && t.modes && t.modes.length) tokenModes[sId][i] = MODE_NAMES[t.modes[0]] || 'feedback';
+    if (t.hasSize) tokenSizes[sId][i] = SIZE_INT_TO_STR[t.size] || 'md';
+    if (t.hasRS)   tokenRectSizes[sId][i] = RS_INT_TO_STR[t.rectSize] || 'md';
+    if (t.hasRD)   tokenRectDensities[sId][i] = RD_INT_TO_STR[t.rectDim] || 'md';
+    if (t.hasBios) biosStates[sId][i] = !!t.biosOn;
+    if (t.hasDX && t.dx && t.dx.length) tokenDitherPatterns[sId][i] = DX_KEY_BY_INDEX[t.dx[0]] || 'x';
+    if (t.rv && t.rv.length) tokenRectVariants[sId][i] = RV_NAME_BY_INDEX[t.rv[0]] || null;
+  });
+  const _tokenOpsArr = COMPOSITION.tokens.map(t => Math.max(1, Math.round((t.speed || 49) / 7)));
+  const _sumTokenOps = _tokenOpsArr.reduce((a, b) => a + b, 0) || 14;
+
+  function getTokenDitherPattern(modId, i) { return tokenDitherPatterns[modId] && tokenDitherPatterns[modId][i] != null ? tokenDitherPatterns[modId][i] : null; }
+  function getTokenSize(modId, i) { return tokenSizes[modId] && tokenSizes[modId][i] != null ? tokenSizes[modId][i] : null; }
+  function getTokenMode(modId, i) { return tokenModes[modId] ? (tokenModes[modId][i] ?? null) : null; }
+  function getBiosState(modId, i) { return biosStates[modId] ? biosStates[modId][i] : void 0; }
+  function getBiosOn(modId, i) { return getBiosState(modId, i) === true; }
+  function moduloDistinctRectSizes(mod) { let s = new Set(); mod.tokens.forEach((_, i) => { let v = tokenRectSizes[mod.id] && tokenRectSizes[mod.id][i]; v != null && s.add(v); }); return [...s]; }
+  function moduloDistinctRectVariants(mod) { let s = new Set(); mod.tokens.forEach((_, i) => { let v = tokenRectVariants[mod.id] && tokenRectVariants[mod.id][i]; v != null && s.add(v); }); return [...s]; }
+  function moduloDistinctRectDensities(mod) { let s = new Set(); mod.tokens.forEach((_, i) => { let v = tokenRectDensities[mod.id] && tokenRectDensities[mod.id][i]; v != null && s.add(v); }); return [...s]; }
+  function moduloDistinctModes(mod) { let s = new Set(); mod.tokens.forEach((_, i) => { let m = getTokenMode(mod.id, i); m !== null && s.add(m); }); return [...s]; }
+  function getSizeForMode(mod, mn) { for (let i = 0; i < mod.tokens.length; i++) if (getTokenMode(mod.id, i) === mn) { let sz = getTokenSize(mod.id, i); if (sz !== null) return sz; } return null; }
+  function getModuloDxPattern(mod) { for (let i = 0; i < mod.tokens.length; i++) { let v = getTokenDitherPattern(mod.id, i); if (v !== null) return v; } return null; }
+  function getSelIdx(modId, i) { let mod = MODULOS.find(c => c.id === modId), td = TOKEN_DATA[mod ? mod.tokens[i] : void 0], palLen = td ? COLS_DATA[td.palette].length : 1; return td ? Math.min(Math.max(0, td.sel), palLen - 1) : 0; }
+
+  // === Per-modulo animation state (was inside startAnim in placeholder) ===
+  const mod = MODULOS[0];
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  ctx.imageSmoothingEnabled = false;
+
+  let grid = new Uint8Array(450 * 250), next = new Uint8Array(450 * 250);
+  let PAL = [], _palThresholds = [];
+  function _recomputeThresholds(N) { _palThresholds = Array(N); let wSum = 0, weights = Array(N); for (let k = 0; k < N; k++) { let w = (N - k) ** 1.5; weights[k] = w; wSum += w; } let acc = 0; for (let k = 0; k < N; k++) { acc += weights[k] / wSum; _palThresholds[k] = acc; } }
+  function _pickWeighted() { let r = _rng(), N = _palThresholds.length; for (let k = 0; k < N; k++) if (r < _palThresholds[k]) return k; return N - 1; }
+  let _txtPalIdx = 0, _txtPalIdx2 = 0;
+  function _pickTxtColors() { _txtPalIdx = Math.floor(_rng() * PAL.length); _txtPalIdx2 = PAL.length > 1 ? (_txtPalIdx + 1 + Math.floor(_rng() * (PAL.length - 1))) % PAL.length : _txtPalIdx; }
+  let _prevPalN = -1;
+  function updatePalette() {
+    PAL = mod.tokens.map((t, si) => ({t, si, rank: TOKEN_DATA[t] && TOKEN_DATA[t].rank || 9999}))
+      .sort((a, b) => a.rank - b.rank)
+      .map(({t, si}) => { let hex = COLS_DATA[TOKEN_DATA[t] ? TOKEN_DATA[t].palette : 0][getSelIdx(mod.id, si)]; return [parseInt(hex.slice(1,3),16), parseInt(hex.slice(3,5),16), parseInt(hex.slice(5,7),16)]; });
+    if (PAL.length === 0) PAL = [[0, 0, 0]];
+    let _N = PAL.length;
+    if (_N !== _prevPalN) { _recomputeThresholds(_N); for (let i = 0; i < grid.length; i++) grid[i] = _pickWeighted(); _prevPalN = _N; }
+    _pickTxtColors();
+  }
+  updatePalette();
+  function idx(c, r) { return (r + 250) % 250 * 450 + (c + 450) % 450; }
+  let _sizeScale = 1, _shiftBaseScale = 0.15, _shiftZoneScale = 1, _sizeScaleTarget = 1, _shiftBaseScaleTarget = 0.15, _shiftZoneScaleTarget = 1;
+  function _lerpScale(cur, tg, fr) { if (cur === tg) return cur; let d = (tg - cur) / fr; return Math.abs(tg - cur) < Math.abs(d) ? tg : cur + d; }
+  function makeRect() { return {x: Math.floor(_rng()*450), y: Math.floor(_rng()*250), w: 2 + Math.floor(_rng() * Math.max(1, Math.round(12 * _sizeScale))), h: 2 + Math.floor(_rng() * Math.max(1, Math.round(6 * _sizeScale)))}; }
+  let _SHIFT_ZONE_R2 = 54 ** 2, _shiftZones = [], _shiftZoneTimer = 0;
+  function _refreshShiftZones() { let n = 3 + Math.floor(_rng() * 2); _shiftZones = Array.from({length: n}, () => ({cx: Math.floor(_rng()*450), cy: Math.floor(_rng()*250)})); }
+  _refreshShiftZones();
+  function animNoise() { let r = makeRect(); for (let dy = 0; dy < r.h; dy++) for (let dx = 0; dx < r.w; dx++) next[idx(r.x + dx, r.y + dy)] = _pickWeighted(); }
+  function animShift() { let rx = Math.floor(_rng()*450), ry = Math.floor(_rng()*250), inZone = _shiftZones.some(z => { let dx = rx - z.cx, dy = ry - z.cy; return dx*dx + dy*dy < _SHIFT_ZONE_R2; }), sc = inZone ? _shiftZoneScale : _shiftBaseScale, r = {x: rx, y: ry, w: 2 + Math.floor(_rng() * Math.max(1, Math.round(12*sc))), h: 2 + Math.floor(_rng() * Math.max(1, Math.round(6*sc)))}, horiz = _rng() < 0.5, dist = inZone ? 1 + Math.floor(_rng() * (horiz ? 2 : 3)) : 1, dir = (_rng() < 0.5 ? 1 : -1) * dist; for (let dy = 0; dy < r.h; dy++) for (let dx = 0; dx < r.w; dx++) next[idx(r.x+dx, r.y+dy)] = grid[horiz ? idx(r.x+dx+dir, r.y+dy) : idx(r.x+dx, r.y+dy+dir)]; if (++_shiftZoneTimer > 1200) { _shiftZoneTimer = 0; _refreshShiftZones(); } }
+  function animJungle() { let rx = Math.floor(_rng()*450), ry = Math.floor(_rng()*250), inZone = _shiftZones.some(z => { let dx = rx - z.cx, dy = ry - z.cy; return dx*dx + dy*dy < _SHIFT_ZONE_R2; }), sc = inZone ? _shiftZoneScale : _shiftBaseScale, r = {x: rx, y: ry, w: 2 + Math.floor(_rng() * Math.max(1, Math.round(12*sc))), h: 2 + Math.floor(_rng() * Math.max(1, Math.round(6*sc)))}, dirH = (_rng() < 0.5 ? 1 : -1) * (1 + Math.floor(_rng() * (inZone ? 3 : 2))), dirV = (_rng() < 0.5 ? 1 : -1) * (1 + Math.floor(_rng() * (inZone ? 4 : 2))); for (let dy = 0; dy < r.h; dy++) for (let dx = 0; dx < r.w; dx++) next[idx(r.x+dx, r.y+dy)] = grid[idx(r.x+dx+dirH, r.y+dy+dirV)]; if (++_shiftZoneTimer > 1200) { _shiftZoneTimer = 0; _refreshShiftZones(); } }
+  function animModulo() { if (PAL.length < 2) return; let r = makeRect(), step = 1 + Math.floor(_rng() * (PAL.length - 1)); for (let dy = 0; dy < r.h; dy++) for (let dx = 0; dx < r.w; dx++) { let i = idx(r.x+dx, r.y+dy); if (_rng() < 0.5) next[i] = (grid[i] + step) % PAL.length; } }
+  let _waveT = 0;
+  function animWave() { _waveT += 0.003; let r = makeRect(), zoneAmp = Math.max(0, Math.sin(r.x*0.018 + _waveT*0.4) * Math.sin(r.y*0.022 + _waveT*0.25)) ** 1.5, amp = 1 + Math.round(11*zoneAmp); for (let dy = 0; dy < r.h; dy++) { let cy = r.y + dy, wcy = cy % 250, speedMod = 1 + Math.sin(wcy*0.03)*0.5, offset = Math.round(Math.sin(wcy*0.08 + _waveT*speedMod) * amp); for (let dx = 0; dx < r.w; dx++) next[idx(r.x+dx, cy)] = grid[idx(r.x+dx-offset, cy)]; } if (PAL.length >= 2 && _rng() < 0.005) { let sx = Math.floor(_rng()*450), baseY = Math.floor(_rng()*250), sh = 8 + Math.floor(_rng()*20), halfW = 1 + Math.floor(_rng()*2); for (let h = 0; h < sh; h++) { let taper = 1 - h/sh, wHere = Math.max(1, Math.round(halfW*taper)), y = (baseY - h + 250) % 250; for (let w = -wHere; w <= wHere; w++) { let x = (sx + w + 450) % 450; if (_rng() < 0.8) next[idx(x, y)] = _pickWeighted(); } } } }
+  function animFeedback() { let r = makeRect(); for (let dy = 0; dy < r.h; dy++) for (let dx = 0; dx < r.w; dx++) { let cx = r.x + dx, cy = r.y + dy; if (_rng() < 0.05) { next[idx(cx, cy)] = _pickWeighted(); continue; } let nb = [grid[idx(cx-1,cy)], grid[idx(cx+1,cy)], grid[idx(cx,cy-1)], grid[idx(cx,cy+1)]], count = Array(PAL.length).fill(0); for (let n of nb) if (n < PAL.length) count[n]++; let max = 0, best = grid[idx(cx,cy)]; for (let v = 0; v < PAL.length; v++) if (count[v] > max) { max = count[v]; best = v; } next[idx(cx,cy)] = best; } }
+  const _BAYER2 = [[0,2],[3,1]]; let _sectorT = 0;
+  function animSector() { if (_rng() < 0.65) return; _sectorT += 0.012; let roll = _rng(); if (roll < 0.6) { let shape = _rng(), amp = 2 + Math.round(8 * _sizeScale); if (shape < 0.04) { let x = Math.floor(_rng()*450), y = Math.floor(_rng()*250), wRand = Math.pow(_rng(), 1.6), w = 2 + Math.floor(wRand * Math.max(1, Math.round(19*_sizeScale))), h = 1 + (_rng() < 0.4 ? 1 : 0), wcy = y % 250, off = Math.round(Math.sin(wcy*0.11 + _sectorT*1.4)*amp + (_rng()-0.5)*4); for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) next[idx(x+dx, y+dy)] = grid[idx(x+dx+off, y+dy)]; } else if (shape < 0.6) { let y = Math.floor(_rng()*250), wcy = y % 250, segCount = 2 + Math.floor(_rng()*6); for (let s = 0; s < segCount; s++) { if (_rng() < 0.35) continue; let x = Math.floor(_rng()*450), tier = _rng(), w; if (tier < 0.3) w = 1 + Math.floor(_rng()*1); else if (tier < 0.75) w = 2 + Math.floor(_rng() * Math.max(1, Math.round(4*_sizeScale))); else w = 5 + Math.floor(_rng() * Math.max(1, Math.round(14*_sizeScale))); let off = Math.round(Math.sin(wcy*0.11 + _sectorT*1.4)*amp + (_rng()-0.5)*6), h = 1 + Math.floor(_rng()*3); for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) next[idx(x+dx, y+dy)] = grid[idx(x+dx+off, y+dy)]; } } else { let x = Math.floor(_rng()*450), y = Math.floor(_rng()*250), square = _rng() < 0.5, tier = _rng(), baseSz; if (tier < 0.25) baseSz = 1 + Math.floor(_rng()*2); else if (tier < 0.65) baseSz = 3 + Math.floor(_rng()*4); else if (tier < 0.92) baseSz = 7 + Math.floor(_rng() * Math.max(1, Math.round(7*_sizeScale))); else baseSz = 13 + Math.floor(_rng() * Math.max(1, Math.round(13*_sizeScale))); let w = square ? baseSz : baseSz + Math.floor(_rng() * Math.max(2, baseSz)), h = square ? baseSz : Math.max(2, Math.floor(baseSz * (0.3 + _rng()*0.9))), off = Math.round((_rng()-0.5) * 2 * amp); for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) next[idx(x+dx, y+dy)] = grid[idx(x+dx+off, y+dy)]; } } else if (roll < 0.85) { let cx = Math.floor(_rng()*450), halfW = 1 + Math.floor(_rng() * Math.max(1, Math.round(2*_sizeScale))), yStart = Math.floor(_rng()*250), tier = _rng(), len; if (tier < 0.4) len = 2 + Math.floor(_rng()*4); else if (tier < 0.85) len = 5 + Math.floor(_rng()*8); else if (tier < 0.96) len = 12 + Math.floor(_rng()*13); else len = 30 + Math.floor(_rng() * Math.max(1, Math.round(20*_sizeScale))); let srcY = (yStart + (_rng() < 0.5 ? -20 : 20) + 250) % 250; for (let h = 0; h < len; h++) { let cy = (yStart + h) % 250; for (let w = -halfW; w <= halfW; w++) next[idx(cx+w, cy)] = grid[idx(cx+w, srcY)]; } } else { if (PAL.length < 2) return; let r = makeRect(), N = PAL.length, last = N - 1; for (let dy = 0; dy < r.h; dy++) for (let dx = 0; dx < r.w; dx++) { let i = idx(r.x+dx, r.y+dy), v = grid[i], bayer = _BAYER2[dy & 1][dx & 1] / 4 - 0.375, norm = v / last, jit = (_rng() - 0.5) * 0.25, q = Math.max(0, Math.min(1, norm + bayer * (1/N) + jit)); next[i] = Math.round(q * last); } } }
+  const BLOCKS_TUNING = {skipPct: 50, feedbackMix: 73, pBands: 87, pPeaks: 13, bandMaxH: 16, bandWaveAmp: 7, peakMaxH: 17, peakBaseW: 2, erosionMaxW: 18, erosionMaxH: 10};
+  let _blocksT = 0;
+  function _localFeedbackAt(ox, oy) { let w = 2 + Math.floor(_rng() * Math.max(1, Math.round(12*_sizeScale))), h = 2 + Math.floor(_rng() * Math.max(1, Math.round(6*_sizeScale))), sx = ox - (w >> 1), sy = oy - (h >> 1); for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) { let cx = sx + dx, cy = sy + dy, nb = [grid[idx(cx-1,cy)], grid[idx(cx+1,cy)], grid[idx(cx,cy-1)], grid[idx(cx,cy+1)]], count = Array(PAL.length).fill(0); for (let n of nb) if (n < PAL.length) count[n]++; let max = 0, best = grid[idx(cx,cy)]; for (let v = 0; v < PAL.length; v++) if (count[v] > max) { max = count[v]; best = v; } next[idx(cx,cy)] = best; } }
+  function _runFeedbackModeOpAt(ox, oy) { let r = _rng(); if (r < 0.7) _localFeedbackAt(ox, oy); else if (r < 0.8) animShift(); else if (r < 0.9) animNoise(); else animModulo(); }
+  function animBlocks() { let T = BLOCKS_TUNING, ox = Math.floor(_rng()*450), oy = Math.floor(_rng()*250); if (T.feedbackMix > 0) { let tBlend = (ox/450 + oy/250) / 2, v = Math.pow(T.feedbackMix/100, 0.4), prob = v <= 0.5 ? (2*v*tBlend) : (tBlend*(2-2*v) + (2*v-1)); if (_rng() < prob) { _runFeedbackModeOpAt(ox, oy); return; } } if (_rng() < T.skipPct/100) return; _blocksT += 0.008; if (PAL.length < 2) return; let last = PAL.length - 1, pB = T.pBands/100, pP = T.pPeaks/100, roll = _rng(), _pickLit = () => { let N = PAL.length; if (N <= 2) return last; let r = Math.pow(_rng(), 2.2); return 1 + Math.floor(r * last); }; if (roll < pB) { let cy = oy, tier = _rng(), h; if (tier < 0.6) h = 2 + Math.floor(_rng() * Math.max(1, Math.round((T.bandMaxH * 0.25) * _sizeScale))); else if (tier < 0.93) h = Math.round(T.bandMaxH * 0.31) + Math.floor(_rng() * Math.max(1, Math.round((T.bandMaxH * 0.31) * _sizeScale))); else h = Math.round(T.bandMaxH * 0.56) + Math.floor(_rng() * Math.max(1, Math.round((T.bandMaxH * 0.44) * _sizeScale))); let bx = ox, wTier = _rng(), bw, isMd = _sizeScale >= 0.99 && _sizeScale <= 1.01; if (wTier < 0.55) bw = 4 + Math.floor(_rng() * (isMd ? 17 : 12)); else if (wTier < 0.92) bw = (isMd ? 16 : 13) + Math.floor(_rng() * (isMd ? 7 : 6)); else bw = (isMd ? 28 : 23) + Math.floor(_rng() * (isMd ? 2 : 3)); let ampY = 1 + Math.floor(_rng() * Math.max(1, T.bandWaveAmp)), freq = 0.025 + _rng()*0.05, phase = _blocksT*1.2 + _rng()*6.28, halfH = h/2, v = _pickLit(); for (let dx = 0; dx < bw; dx++) { let wave = Math.sin((bx+dx)*freq + phase) * ampY, top = Math.round(cy + wave - halfH); for (let dy = 0; dy < h; dy++) next[idx(bx+dx, top+dy)] = v; } } else if (roll < pB + pP) { let cx = ox, baseY = oy, tier = _rng(), height; if (tier < 0.55) height = 4 + Math.floor(_rng() * Math.max(1, Math.round(T.peakMaxH * 0.16))); else if (tier < 0.92) height = Math.round(T.peakMaxH * 0.26) + Math.floor(_rng() * Math.max(1, Math.round(T.peakMaxH * 0.29))); else height = Math.round(T.peakMaxH * 0.52) + Math.floor(_rng() * Math.max(1, Math.round(T.peakMaxH * 0.48 * _sizeScale))); let baseHalfW = 1 + Math.floor(_rng() * Math.max(1, T.peakBaseW)), v = _pickLit(); for (let h = 0; h < height; h++) { let taper = 1 - h/height, halfW = Math.max(0, Math.floor(baseHalfW*taper)); for (let w = -halfW; w <= halfW; w++) next[idx(cx+w, baseY-h)] = v; } } else { let cx = ox, cy = oy, w = 2 + Math.floor(_rng() * Math.max(1, Math.round(T.erosionMaxW * _sizeScale))), h = 2 + Math.floor(_rng() * Math.max(1, Math.round(T.erosionMaxH * _sizeScale))); for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) next[idx(cx+dx, cy+dy)] = 0; } }
+
+  const DIRS = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1],[1,-1],[-1,1]];
+  let rectShifts = [], _rsDistinct = moduloDistinctRectSizes(mod), _rsCycleIdx = 0, _rsCycleFrames = 0, _rsSize = _rsDistinct[0] || 'md';
+  let _rdDistinct = moduloDistinctRectDensities(mod), _rdCycleIdx = 0, _rdCycleFrames = 0, _rdDensity = _rdDistinct[0] || 'md';
+  let _rvDistinct = moduloDistinctRectVariants(mod), _rvCycleIdx = 0, _rvCycleFrames = 0, _activeRectVariant = _rvDistinct[0] || 'core';
+  let _activeDxPattern = getModuloDxPattern(mod);
+  function _makeRect1() { let p = RS_PARAMS[_rsSize] || RS_PARAMS.md, cw = p.min + Math.floor(_rng()*(p.max-p.min)), ch = p.min + Math.floor(_rng()*(p.max-p.min)), cx = Math.floor(_rng() * Math.max(1, 450-cw)), cy = Math.floor(_rng() * Math.max(1, 250-ch)), [ddx, ddy] = DIRS[Math.floor(_rng()*DIRS.length)]; return {cx, cy, cw, ch, dx: ddx, dy: ddy, tiles: null}; }
+  function _makeRect6() { let p = RS_PARAMS[_rsSize] || RS_PARAMS.md, cw = Math.min(450, Math.round((p.min + Math.floor(_rng()*(p.max-p.min)))*1.3)), ch = Math.min(250, Math.round((p.min + Math.floor(_rng()*(p.max-p.min)))*1.3)), cx = Math.floor(_rng() * Math.max(1, 450-cw)), cy = Math.floor(_rng() * Math.max(1, 250-ch)), [ddx, ddy] = DIRS[Math.floor(_rng()*DIRS.length)]; return {cx, cy, cw, ch, dx: ddx, dy: ddy, tiles: null, walkRate: 0.10}; }
+  function _makeRect7() { let p = RS_PARAMS[_rsSize] || RS_PARAMS.md, cw = Math.min(450, Math.round((p.min + Math.floor(_rng()*(p.max-p.min)))*1.4)), ch = Math.min(250, Math.round((p.min + Math.floor(_rng()*(p.max-p.min)))*1.4)), cx = Math.floor(_rng() * Math.max(1, 450-cw)), cy = Math.floor(_rng() * Math.max(1, 250-ch)), tw = Math.max(2, Math.round(cw * (0.35 + _rng()*0.15))), th = Math.max(2, Math.round(ch * (0.35 + _rng()*0.15))), stepX = Math.max(1, Math.floor((cw - tw) / 2)), stepY = Math.max(1, Math.floor((ch - th) / 2)), rects, shape = Math.floor(_rng()*4); if (shape === 0) rects = [{x: cx, y: cy, w: tw, h: th},{x: cx+stepX, y: cy+stepY, w: tw, h: th},{x: cx+stepX*2, y: cy+stepY*2, w: tw, h: th}]; else if (shape === 1) rects = [{x: cx, y: cy+stepY*2, w: tw, h: th},{x: cx+stepX, y: cy+stepY, w: tw, h: th},{x: cx+stepX*2, y: cy, w: tw, h: th}]; else if (shape === 2) rects = [{x: cx+stepX*2, y: cy, w: tw, h: th},{x: cx+stepX, y: cy+stepY, w: tw, h: th},{x: cx, y: cy+stepY*2, w: tw, h: th}]; else rects = [{x: cx+stepX*2, y: cy+stepY*2, w: tw, h: th},{x: cx+stepX, y: cy+stepY, w: tw, h: th},{x: cx, y: cy, w: tw, h: th}]; let phaseOffsets = [0, 3, 5], tiles = rects.map((r, i) => { let ph = phaseOffsets[i], [pdx, pdy] = DIRS[ph]; return {x: r.x, y: r.y, w: r.w, h: r.h, dx: pdx, dy: pdy, phaseIdx: ph, phaseTimer: 0}; }); return {cx, cy, cw, ch, dx: 1, dy: 0, tiles}; }
+  function _makeRect8() { let p = RS_PARAMS[_rsSize] || RS_PARAMS.md, cw = p.min + Math.floor(_rng()*(p.max-p.min)), ch = p.min + Math.floor(_rng()*(p.max-p.min)), cx = Math.floor(_rng() * Math.max(1, 450-cw)), cy = Math.floor(_rng() * Math.max(1, 250-ch)), horiz = _rng() < 0.5, sign = _rng() < 0.5 ? 1 : -1, tiles = []; if (horiz) { let nBands = Math.min(ch, 4 + Math.floor(_rng()*3)), bandH = Math.max(1, Math.floor(ch/nBands)); for (let k = 0; k < nBands; k++) { let yk = cy + k*bandH, hk = k === nBands-1 ? cy + ch - yk : bandH, mag = 1 + Math.floor(k/2); tiles.push({x: cx, y: yk, w: cw, h: hk, dx: sign*mag, dy: 0}); } } else { let nBands = Math.min(cw, 4 + Math.floor(_rng()*3)), bandW = Math.max(1, Math.floor(cw/nBands)); for (let k = 0; k < nBands; k++) { let xk = cx + k*bandW, wk = k === nBands-1 ? cx + cw - xk : bandW, mag = 1 + Math.floor(k/2); tiles.push({x: xk, y: cy, w: wk, h: ch, dx: 0, dy: sign*mag}); } } return {cx, cy, cw, ch, dx: sign, dy: 0, tiles}; }
+  function _makeRect9() { let p = RS_PARAMS[_rsSize] || RS_PARAMS.md, cw = Math.min(450, Math.round((p.min + Math.floor(_rng()*(p.max-p.min)))*1.3)), ch = Math.min(250, Math.round((p.min + Math.floor(_rng()*(p.max-p.min)))*1.3)), cx = Math.floor(_rng() * Math.max(1, 450-cw)), cy = Math.floor(_rng() * Math.max(1, 250-ch)), nSubs = 3 + Math.floor(_rng()*2), tiles = []; for (let i = 0; i < nSubs; i++) { let tw = Math.max(2, Math.round(cw * (0.25 + _rng()*0.35))), th = Math.max(2, Math.round(ch * (0.25 + _rng()*0.35))), tx = cx + Math.floor(_rng() * Math.max(1, cw-tw)), ty = cy + Math.floor(_rng() * Math.max(1, ch-th)), [tdx, tdy] = DIRS[Math.floor(_rng()*DIRS.length)]; tiles.push({x: tx, y: ty, w: tw, h: th, dx: tdx, dy: tdy, resetIn: 40 + Math.floor(_rng()*41), _box: {cx, cy, cw, ch}}); } return {cx, cy, cw, ch, dx: 1, dy: 0, tiles}; }
+  function _pickDirSet() { let n = 1 + Math.floor(_rng()*3), pool = DIRS.slice(), picks = []; for (let i = 0; i < n && pool.length; i++) picks.push(pool.splice(Math.floor(_rng()*pool.length), 1)[0]); return picks; }
+  function _makeRect2() { let p = RS_PARAMS[_rsSize] || RS_PARAMS.md, cw = Math.min(450, Math.round((p.min + Math.floor(_rng()*(p.max-p.min)))*1.4)), ch = Math.min(250, Math.round((p.min + Math.floor(_rng()*(p.max-p.min)))*1.4)), cx = Math.floor(_rng() * Math.max(1, 450-cw)), cy = Math.floor(_rng() * Math.max(1, 250-ch)), tw = Math.max(2, Math.round(cw * (0.35 + _rng()*0.15))), th = Math.max(2, Math.round(ch * (0.35 + _rng()*0.15))), stepX = Math.max(1, Math.floor((cw - tw) / 2)), stepY = Math.max(1, Math.floor((ch - th) / 2)), tiles, shape = Math.floor(_rng()*4); if (shape === 0) tiles = [{x: cx, y: cy, w: tw, h: th},{x: cx+stepX, y: cy+stepY, w: tw, h: th},{x: cx+stepX*2, y: cy+stepY*2, w: tw, h: th}]; else if (shape === 1) tiles = [{x: cx, y: cy+stepY*2, w: tw, h: th},{x: cx+stepX, y: cy+stepY, w: tw, h: th},{x: cx+stepX*2, y: cy, w: tw, h: th}]; else if (shape === 2) tiles = [{x: cx+stepX*2, y: cy, w: tw, h: th},{x: cx+stepX, y: cy+stepY, w: tw, h: th},{x: cx, y: cy+stepY*2, w: tw, h: th}]; else tiles = [{x: cx+stepX*2, y: cy+stepY*2, w: tw, h: th},{x: cx+stepX, y: cy+stepY, w: tw, h: th},{x: cx, y: cy, w: tw, h: th}]; let nTiles = 1 + Math.floor(_rng()*3); tiles = tiles.slice(0, nTiles); let rerollIn = 5 + Math.floor(_rng()*11); return {cx, cy, cw, ch, dx: 1, dy: 0, tiles, rerollIn, dirs: _pickDirSet()}; }
+  function _makeRect4() { let p = RS_PARAMS[_rsSize] || RS_PARAMS.md, cw = p.min + Math.floor(_rng()*(p.max-p.min)), ch = p.min + Math.floor(_rng()*(p.max-p.min)), cx = Math.floor(_rng() * Math.max(1, 450-cw)), cy = Math.floor(_rng() * Math.max(1, 250-ch)), CARDINAL = [[1,0],[-1,0],[0,1],[0,-1]], [wdx, wdy] = CARDINAL[Math.floor(_rng()*4)], tiles = [], N_BANDS = 4; if (wdx !== 0) { let waveW = Math.max(2, Math.floor(cw*0.4)), impactW = Math.max(1, Math.floor(cw*0.2)), sprayW = Math.max(2, cw - waveW - impactW), waveX, impactX, sprayX; if (wdx > 0) { waveX = cx; impactX = cx + waveW; sprayX = cx + waveW + impactW; } else { sprayX = cx; impactX = cx + sprayW; waveX = cx + sprayW + impactW; } tiles.push({x: waveX, y: cy, w: waveW, h: ch, dx: wdx, dy: 0}); tiles.push({x: impactX, y: cy, w: impactW, h: ch, dx: -wdx, dy: 0}); let bandH = Math.max(1, Math.floor(ch/N_BANDS)); for (let k = 0; k < N_BANDS; k++) { let yk = cy + k*bandH, hk = k === N_BANDS-1 ? cy + ch - yk : bandH; tiles.push({x: sprayX, y: yk, w: sprayW, h: hk, dx: 0, dy: k%2===0 ? 1 : -1}); } } else { let waveH = Math.max(2, Math.floor(ch*0.4)), impactH = Math.max(1, Math.floor(ch*0.2)), sprayH = Math.max(2, ch - waveH - impactH), waveY, impactY, sprayY; if (wdy > 0) { waveY = cy; impactY = cy + waveH; sprayY = cy + waveH + impactH; } else { sprayY = cy; impactY = cy + sprayH; waveY = cy + sprayH + impactH; } tiles.push({x: cx, y: waveY, w: cw, h: waveH, dx: 0, dy: wdy}); tiles.push({x: cx, y: impactY, w: cw, h: impactH, dx: 0, dy: -wdy}); let bandW = Math.max(1, Math.floor(cw/N_BANDS)); for (let k = 0; k < N_BANDS; k++) { let xk = cx + k*bandW, wk = k === N_BANDS-1 ? cx + cw - xk : bandW; tiles.push({x: xk, y: sprayY, w: wk, h: sprayH, dx: k%2===0 ? 1 : -1, dy: 0}); } } return {cx, cy, cw, ch, dx: wdx, dy: wdy, tiles}; }
+  function _makeRect3() { let p = RS_PARAMS[_rsSize] || RS_PARAMS.md, bw = Math.min(450, Math.round((p.min + Math.floor(_rng()*(p.max-p.min)))*2.112)), bh = Math.min(250, Math.round((p.min + Math.floor(_rng()*(p.max-p.min)))*1.584)), bx = Math.floor(_rng() * Math.max(1, 450-bw)), by = Math.floor(_rng() * Math.max(1, 250-bh)), FREQ_PAIRS = [[2,3],[3,5],[2,5],[3,4],[4,7]], [f1, f2] = FREQ_PAIRS[Math.floor(_rng()*FREQ_PAIRS.length)], ph1 = _rng()*Math.PI*2, ph2 = _rng()*Math.PI*2, ampBase = bh * (0.22 + _rng()*0.08), nTiles = 6 + Math.floor(_rng()*4), tw = Math.max(3, Math.round(bw * (0.198 + _rng()*0.132))), thBase = Math.max(3, Math.round(bh * (0.242 + _rng()*0.132))), thMin = Math.max(2, Math.round(thBase*0.25)), tiles = []; for (let i = 0; i < nTiles; i++) { let t = i / Math.max(1, nTiles-1), w1 = Math.sin(t*f1*Math.PI*2 + ph1), w2 = Math.sin(t*f2*Math.PI*2 + ph2), compound = (w1+w2)*0.5, th = Math.round(thMin + (thBase-thMin)*Math.abs(compound)), tx = bx + Math.round(t * (bw-tw)), ty = by + Math.round(bh*0.5 + compound*ampBase - th*0.5), [tdx, tdy] = DIRS[Math.floor(_rng()*DIRS.length)]; tiles.push({x: Math.max(bx, Math.min(bx+bw-tw, tx)), y: Math.max(by, Math.min(by+bh-th, ty)), w: tw, h: th, dx: tdx, dy: tdy}); } return {cx: bx, cy: by, cw: bw, ch: bh, dx: 1, dy: 0, tiles}; }
+  const RECT_SHIFT_VARIANTS = {core: _makeRect1, mecha: _makeRect6, hysteria: _makeRect7, metro: _makeRect8, 'side-b': _makeRect9, earthquake: _makeRect2, retro: _makeRect4, ladder: _makeRect3};
+  function makeRandomRect() { let fn = RECT_SHIFT_VARIANTS[_activeRectVariant] || RECT_SHIFT_VARIANTS.core; return fn(); }
+  function _rdFrameCount(field) { let dp = RD_PARAMS[_rdDensity] || RD_PARAMS.md, ms = dp[field+'Min'] + _rng()*(dp[field+'Max'] - dp[field+'Min']); return Math.max(1, Math.round(ms / (1000/60))); }
+  function buildRectShifts() { rectShifts = []; for (let i = 0; i < 10; i++) rectShifts.push({...makeRandomRect(), active: false, countdown: _rdFrameCount('off')}); }
+  buildRectShifts();
+  let _rectsPaused = false;
+  const CONVERGE_FRAMES = 15;
+  function tickRects() { if (_rectsPaused) return; if (_rvDistinct.length === 0) { for (let i = 0; i < rectShifts.length; i++) if (rectShifts[i].active) { rectShifts[i].active = false; rectShifts[i].countdown = _rdFrameCount('off'); rectShifts[i]._converging = 0; } return; } for (let i = 0; i < rectShifts.length; i++) { let rs = rectShifts[i]; rs.countdown--; if (rs.active && rs.countdown <= CONVERGE_FRAMES && !rs._converging) { rs._converging = 1; let d = DIRS[Math.floor(_rng()*DIRS.length)]; rs.dx = d[0]; rs.dy = d[1]; if (rs.dirs) rs.dirs = [[d[0], d[1]]]; if (rs.tiles) for (let t of rs.tiles) { t.dx = d[0]; t.dy = d[1]; } } if (rs.active && rs.rerollIn !== void 0 && !rs._converging) { rs.rerollIn--; if (rs.rerollIn <= 0) { rs.dirs = _pickDirSet(); rs.rerollIn = 5 + Math.floor(_rng()*11); } } if (rs.active && rs.walkRate !== void 0 && !rs._converging) { if (rs.pingPongLeft > 0) { rs.pingPongLeft--; if (rs.pingPongLeft === 0) rs.dirs = null; } else { if (_rng() < rs.walkRate) { if (_rng() < 0.5) rs.dx = Math.max(-1, Math.min(1, rs.dx + (_rng()<0.5 ? -1 : 1))); else rs.dy = Math.max(-1, Math.min(1, rs.dy + (_rng()<0.5 ? -1 : 1))); if (rs.dx === 0 && rs.dy === 0) { if (_rng() < 0.5) rs.dx = _rng()<0.5 ? 1 : -1; else rs.dy = _rng()<0.5 ? 1 : -1; } } if (rs.pingPongIn === void 0) rs.pingPongIn = 90 + Math.floor(_rng()*120); rs.pingPongIn--; if (rs.pingPongIn <= 0) { let pp = Math.floor(_rng()*4)*2; rs.dirs = [DIRS[pp], DIRS[pp+1]]; rs.pingPongLeft = 5 + Math.floor(_rng()*10); rs.pingPongIn = 90 + Math.floor(_rng()*120); } } } if (rs.active && rs.tiles && !rs._converging) { for (let t of rs.tiles) { if (t.phaseIdx !== void 0) { t.phaseTimer = (t.phaseTimer || 0) + 1; if (t.phaseTimer >= 15) { t.phaseTimer = 0; if (!t.boomerangDone) { t.phaseIdx = (t.phaseIdx + 1) % DIRS.length; t.boomerangDone = 1; } else { let inv = t.phaseIdx ^ 1, nx; do { nx = Math.floor(_rng()*DIRS.length); } while (nx === inv || nx === t.phaseIdx); t.phaseIdx = nx; } t.dx = DIRS[t.phaseIdx][0]; t.dy = DIRS[t.phaseIdx][1]; } } if (t.resetIn !== void 0 && t._box) { t.resetIn--; if (t.resetIn <= 0) { let b = t._box, tw = Math.max(2, Math.round(b.cw * (0.25 + _rng()*0.35))), th = Math.max(2, Math.round(b.ch * (0.25 + _rng()*0.35))); t.x = b.cx + Math.floor(_rng() * Math.max(1, b.cw-tw)); t.y = b.cy + Math.floor(_rng() * Math.max(1, b.ch-th)); t.w = tw; t.h = th; let d = DIRS[Math.floor(_rng()*DIRS.length)]; t.dx = d[0]; t.dy = d[1]; t.resetIn = 40 + Math.floor(_rng()*41); } } } } if (rs.countdown <= 0) { if (rs.active) { rs.active = false; rs.countdown = _rdFrameCount('off'); rs._converging = 0; } else { rectShifts[i] = {...makeRandomRect(), active: true, countdown: _rdFrameCount('on'), _converging: 0}; if (rectShifts[i].rerollIn !== void 0) rectShifts[i].countdown = Math.max(60, rectShifts[i].countdown - 240); } } } }
+  let anyActive = () => rectShifts.some(rs => rs.active);
+  let _ditherNoise = new Float32Array(450 * 250), _ditherNext = new Float32Array(450 * 250);
+  for (let i = 0; i < _ditherNoise.length; i++) _ditherNoise[i] = _rng();
+  function _churnDither() { let count = Math.ceil(_ditherNoise.length * 0.008); for (let i = 0; i < count; i++) _ditherNoise[Math.floor(_rng() * _ditherNoise.length)] = _rng(); }
+  function applyRectShifts() { if (!anyActive()) return; next.set(grid); _ditherNext.set(_ditherNoise); for (let s = 0; s < rectShifts.length; s++) { let rs = rectShifts[s]; if (!rs.active) continue; if (rs.tiles) { let rdx = rs.dx, rdy = rs.dy; if (rs.dirs && rs.dirs.length) { let d = rs.dirs[Math.floor(_rng()*rs.dirs.length)]; rdx = d[0]; rdy = d[1]; } for (let t of rs.tiles) { let tdx = t.dx !== void 0 ? t.dx : rdx, tdy = t.dy !== void 0 ? t.dy : rdy; for (let r = t.y; r < t.y + t.h; r++) { let rr = r % 250; for (let c = t.x; c < t.x + t.w; c++) { let cc = c % 450, sr = (rr - tdy + 250) % 250, sc = (cc - tdx + 450) % 450; next[rr*450 + cc] = grid[sr*450 + sc]; _ditherNext[rr*450 + cc] = _ditherNoise[sr*450 + sc]; } } } } else { let rdx = rs.dx, rdy = rs.dy; if (rs.dirs && rs.dirs.length) { let d = rs.dirs[Math.floor(_rng()*rs.dirs.length)]; rdx = d[0]; rdy = d[1]; } for (let r = rs.cy; r < rs.cy + rs.ch; r++) for (let c = rs.cx; c < rs.cx + rs.cw; c++) { let sr = (r - rdy + 250) % 250, sc = (c - rdx + 450) % 450; next[r*450 + c] = grid[sr*450 + sc]; _ditherNext[r*450 + c] = _ditherNoise[sr*450 + sc]; } } } grid.set(next); _ditherNoise.set(_ditherNext); }
+
+  // BIOS text
+  const _BMPFONT = {' ':['000','000','000','000','000'],a:['0110','1001','1111','1001','1001'],c:['0111','1000','1000','1000','0111'],d:['1110','1001','1001','1001','1110'],e:['1111','1000','1110','1000','1111'],f:['111','100','110','100','100'],h:['1001','1001','1111','1001','1001'],i:['111','010','010','010','111'],j:['011','001','001','101','011'],l:['10','10','10','10','11'],n:['1001','1101','1011','1001','1001'],o:['0110','1001','1001','1001','0110'],p:['1110','1001','1110','1000','1000'],q:['0111','1001','0111','0001','0001'],r:['110','101','110','100','100'],s:['0111','1000','0110','0001','1110'],t:['111','010','010','010','011'],u:['1001','1001','1001','1001','0110'],v:['101','101','101','010','010'],z:['1111','0001','0110','1000','1111'],g:['0111','1000','1011','1001','0111'],m:['11011','10101','10101','10001','10001'],w:['10001','10001','10101','01010','01010'],y:['1001','1001','0111','0001','0110'],b:['100','110','101','101','110'],k:['101','110','100','110','101'],x:['10001','01010','00100','01010','10001'],'&':['010','101','010','10101','01101'],'?':['110','001','010','000','010']};
+  const DITHER_DENSITY = 0.025;
+  let _txtFrame = 0, _biosCycleIdx = 0, _txtInst = [null];
+  function _rasterWord(word) { let glyphs = [...word.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()].map(ch => _BMPFONT[ch] || _BMPFONT[' ']), fw = glyphs.reduce((s, g, i) => s + g[0].length + (i < glyphs.length-1 ? 1 : 0), 0), imgData = new Uint8ClampedArray(fw*5*4), x = 0; for (let gi = 0; gi < glyphs.length; gi++) { let g = glyphs[gi], gw = g[0].length; for (let r = 0; r < 5; r++) for (let c = 0; c < gw; c++) if (g[r][c] === '1') imgData[(r*fw + x + c)*4 + 3] = 255; x += gw + 1; } return {imgData, fw, fh: 5}; }
+  function pickText(slotIdx) { if (slotIdx === void 0) slotIdx = Math.floor(_rng() * mod.tokens.length); let t = mod.tokens[slotIdx], entry = BIOS_DATA[t % BIOS_DATA.length]; _txtInst[0] = {sx: Math.floor(_rng()*307), sy: Math.floor(_rng()*192), gcols: 142, grows: 57, s: 1, palIdx: _txtPalIdx, palIdx2: _txtPalIdx2, rTitle: _rasterWord(entry.title), rMsg: _rasterWord(entry.msg), rBtn0: _rasterWord(entry.btns[0]), rBtn1: _rasterWord(entry.btns[1])}; _stampBiosToGrid(); }
+  function _stampBiosToGrid() { for (let i = 0; i < _txtInst.length; i++) { let inst = _txtInst[i]; if (!inst) continue; let {sx, sy, gcols, grows, s, palIdx, palIdx2, rTitle, rMsg, rBtn0, rBtn1} = inst, setCell = (gc, gr, pi) => { if (gc >= 0 && gc < 450 && gr >= 0 && gr < 250) grid[gr*450 + gc] = pi; }, fillBox = (gx, gy, gw, gh, pi) => { for (let gr = gy; gr < gy + gh; gr++) for (let gc = gx; gc < gx + gw; gc++) setCell(gc, gr, pi); }, stampGlyph = (raster, gx, gy, pi) => { let {imgData, fw, fh} = raster; for (let fr = 0; fr < fh; fr++) for (let fc = 0; fc < fw; fc++) if (imgData[(fr*fw + fc)*4 + 3] > 128) setCell(gx + fc, gy + fr, pi); }, lh = 5*s, msgY = sy + 16, sepY = sy + 36, btnY = sy + 44; fillBox(Math.max(0, sx-1), Math.max(0, sy-1), gcols+2, grows+2, palIdx); fillBox(sx, sy, gcols, grows, palIdx); fillBox(sx, sy+1, 1, grows-2, palIdx2); fillBox(sx + gcols-1, sy+1, 1, grows-2, palIdx2); fillBox(sx, sy + grows-1, gcols, 1, palIdx2); setCell(sx, sy, palIdx2); setCell(sx + gcols-1, sy, palIdx2); let titleX = sx + 1 + Math.floor((gcols - 2 - rTitle.fw) / 2); if (titleX - 2 > sx + 1) fillBox(sx+1, sy, titleX-sx-2, 1, palIdx2); let dashRx = titleX + rTitle.fw + 1; if (dashRx < sx + gcols - 1) fillBox(dashRx, sy, sx+gcols-1-dashRx, 1, palIdx2); stampGlyph(rTitle, titleX, sy, palIdx2); stampGlyph(rMsg, sx + 1 + Math.floor((gcols - 2 - rMsg.fw) / 2), msgY, palIdx2); fillBox(sx, sepY, gcols, 1, palIdx2); let btn0BW = rBtn0.fw + 2, totalBW = btn0BW + 6 + rBtn1.fw, btn0X = sx + 1 + Math.floor((gcols - 2 - totalBW) / 2), btn1X = btn0X + btn0BW + 6; fillBox(btn0X, btnY, btn0BW, lh, palIdx2); stampGlyph(rBtn0, btn0X+1, btnY, palIdx); stampGlyph(rBtn1, btn1X, btnY, palIdx2); } }
+  function _applyDither(buf, W, visCols, visRows, offC, offR) { if (!_activeDxPattern) return; if (_activeDxPattern === 'o') { const O_DENSITY = 0.90, O_R = 106, O_G = 98, O_B = 98, ALPHA = 0.40, INV = 1 - ALPHA; let pattern = DX_PATTERNS.legoStud; for (let r = 0; r < visRows; r++) for (let c = 0; c < visCols; c++) { let gi = (offR + r)*450 + (offC + c); if (_ditherNoise[gi] > O_DENSITY) continue; let baseRow = r*6, baseCol = c*6; for (let k = 0; k < pattern.length; k++) { let i2 = ((baseRow + pattern[k][0])*W + (baseCol + pattern[k][1]))*4; buf[i2] = (O_R*ALPHA + buf[i2]*INV) | 0; buf[i2+1] = (O_G*ALPHA + buf[i2+1]*INV) | 0; buf[i2+2] = (O_B*ALPHA + buf[i2+2]*INV) | 0; buf[i2+3] = 255; } } return; } if (PAL.length <= 0) return; let ci = Math.min(1, PAL.length - 1); if (ci === 0) return; let [R, G, B] = PAL[ci]; if (_activeDxPattern === 'num' || _activeDxPattern === 'numi') { let maxRow = visRows*6, maxCol = W, NUM_DENSITY = DITHER_DENSITY * 1.95; for (let r = 0; r < visRows-1; r += 2) for (let c = 0; c < visCols-1; c += 2) { let gi = (offR + r)*450 + (offC + c); if (_ditherNoise[gi] > NUM_DENSITY) continue; if (grid[gi] !== 0) continue; if (grid[(offR+r)*450 + (offC+c+1)] !== 0) continue; if (grid[(offR+r+1)*450 + (offC+c)] !== 0) continue; if (grid[(offR+r+1)*450 + (offC+c+1)] !== 0) continue; let digit = ((offR+r)*7 + (offC+c)*13) % 10, pattern = _activeDxPattern === 'numi' ? DX_DIGIT_PATTERNS_INV[digit] : DX_DIGIT_PATTERNS[digit], baseRow = r*6, baseCol = c*6; for (let k = 0; k < pattern.length; k++) { let pr = baseRow + pattern[k][0], pc = baseCol + pattern[k][1]; if (pr >= maxRow || pc >= maxCol) continue; let i2 = (pr*W + pc)*4; buf[i2] = R; buf[i2+1] = G; buf[i2+2] = B; buf[i2+3] = 255; } } } else if (_activeDxPattern === 'm') { let N = _DX_MULTI.length, bandWidth = DITHER_DENSITY / N; for (let r = 0; r < visRows; r++) for (let c = 0; c < visCols; c++) { let gi = (offR + r)*450 + (offC + c); if (grid[gi] !== 0) continue; if (_ditherNoise[gi] > DITHER_DENSITY) continue; let shapeIdx = Math.min(N-1, Math.floor(_ditherNoise[gi] / bandWidth)), pattern = DX_PATTERNS[_DX_MULTI[shapeIdx]], baseRow = r*6, baseCol = c*6; for (let k = 0; k < pattern.length; k++) { let i2 = ((baseRow + pattern[k][0])*W + (baseCol + pattern[k][1]))*4; buf[i2] = R; buf[i2+1] = G; buf[i2+2] = B; buf[i2+3] = 255; } } } else { let pattern = DX_PATTERNS[_activeDxPattern] || DX_PATTERNS.x; for (let r = 0; r < visRows; r++) for (let c = 0; c < visCols; c++) { let gi = (offR + r)*450 + (offC + c); if (grid[gi] !== 0) continue; if (_ditherNoise[gi] > DITHER_DENSITY) continue; let baseRow = r*6, baseCol = c*6; for (let k = 0; k < pattern.length; k++) { let i2 = ((baseRow + pattern[k][0])*W + (baseCol + pattern[k][1]))*4; buf[i2] = R; buf[i2+1] = G; buf[i2+2] = B; buf[i2+3] = 255; } } } }
+  const MODE_PROBS = {feedback:[0.7,0.1,0.1,0.1,0,0,0,0],shift:[0,1,0,0,0,0,0,0],noise:[0.1,0.1,0.7,0.1,0,0,0,0],modulo:[0.3,0.25,0.2,0.25,0,0,0,0],wave:[0,0,0,0,1,0,0,0],jungle:[0,0,0,0,0,1,0,0],sector:[0,0,0,0,0,0,1,0],blocks:[0,0,0,0,0,0,0,1]};
+  let _cycleModes = moduloDistinctModes(mod), _cycleIdx = 0, _cycleFrames = 0, _dtMode = _cycleModes[0] || 'feedback';
+  { let _sz = getSizeForMode(mod, _dtMode); _sizeScale = _sizeScaleTarget = SIZE_SCALES[_sz] || 1; _shiftBaseScale = _shiftBaseScaleTarget = SHIFT_BASE_SCALES[_sz] || 0.4; _shiftZoneScale = _shiftZoneScaleTarget = SHIFT_ZONE_SCALES[_sz] || 1; }
+  let _xfadeT = 60, _xfadeFrom = _dtMode, _xfadeTo = _dtMode, _breathFrame = 0;
+  function step(ops) { next.set(grid); let pFb, pSh, pNo, pMo, pWv, pOr, pGl, pBl; if (_xfadeT < 60 && _cycleModes.length > 1) { let alpha = _xfadeT / 60, fP = MODE_PROBS[_xfadeFrom] || MODE_PROBS.feedback, tP = MODE_PROBS[_xfadeTo] || MODE_PROBS.feedback; [pFb, pSh, pNo, pMo, pWv, pOr, pGl, pBl] = fP.map((p, i) => p*(1-alpha) + tP[i]*alpha); _xfadeT++; } else { [pFb, pSh, pNo, pMo, pWv, pOr, pGl, pBl] = MODE_PROBS[_dtMode] || MODE_PROBS.feedback; if (_dtMode === 'noise') { if (_breathFrame < 225) { let t = _breathFrame / 300; pNo = 0.5 * (1 - Math.sin(Math.PI * 2 * t) ** 2); pFb += 0.7 - pNo; _breathFrame++; } else if (_breathFrame < 300) { pNo = 0.3 * ((_breathFrame - 225) / 75); pFb += 0.7 - pNo; _breathFrame++; } else { _breathFrame = 0; pNo = 0.5; pFb += 0.2; } } } let cFb = pFb, cSh = pFb + pSh, cNo = cSh + pNo, cMo = cNo + pMo, cWv = cMo + pWv, cJg = cWv + pOr, cGl = cJg + pGl, cBl = cGl + pBl; for (let i = 0; i < (ops || 8); i++) { let r = _rng(); if (r < cFb) animFeedback(); else if (r < cSh) animShift(); else if (r < cNo) animNoise(); else if (r < cMo) animModulo(); else if (r < cWv) animWave(); else if (r < cJg) animJungle(); else if (r < cGl) animSector(); else if (r < cBl) animBlocks(); } grid.set(next); _sizeScale = _lerpScale(_sizeScale, _sizeScaleTarget, 60); _shiftBaseScale = _lerpScale(_shiftBaseScale, _shiftBaseScaleTarget, 60); _shiftZoneScale = _lerpScale(_shiftZoneScale, _shiftZoneScaleTarget, 60); _cycleFrames++; if (_cycleModes.length > 1 && _cycleFrames === 270 && _xfadeT >= 60) { _xfadeFrom = _dtMode; _xfadeTo = _cycleModes[(_cycleIdx + 1) % _cycleModes.length]; _xfadeT = 0; } if (_cycleFrames >= 300) _cycleFrames = 0; if (_cycleModes.length > 1 && _cycleFrames === 0) { _cycleIdx = (_cycleIdx + 1) % _cycleModes.length; _dtMode = _cycleModes[_cycleIdx]; let _sz = getSizeForMode(mod, _dtMode); _sizeScaleTarget = SIZE_SCALES[_sz] || 1; _shiftBaseScaleTarget = SHIFT_BASE_SCALES[_sz] || 0.4; _shiftZoneScaleTarget = SHIFT_ZONE_SCALES[_sz] || 1; _breathFrame = 0; } if (_rsDistinct.length > 1) { _rsCycleFrames++; if (_rsCycleFrames >= 300) { _rsCycleFrames = 0; _rsCycleIdx = (_rsCycleIdx + 1) % _rsDistinct.length; _rsSize = _rsDistinct[_rsCycleIdx]; } } if (_rdDistinct.length > 1) { _rdCycleFrames++; if (_rdCycleFrames >= 300) { _rdCycleFrames = 0; _rdCycleIdx = (_rdCycleIdx + 1) % _rdDistinct.length; _rdDensity = _rdDistinct[_rdCycleIdx]; } } if (_rvDistinct.length > 1) { _rvCycleFrames++; if (_rvCycleFrames >= 300) { _rvCycleFrames = 0; _rvCycleIdx = (_rvCycleIdx + 1) % _rvDistinct.length; _activeRectVariant = _rvDistinct[_rvCycleIdx]; } } _churnDither(); _txtFrame++; if (_txtFrame % 300 === 0) { let onIdxs = mod.tokens.map((t, i) => i).filter(i => getBiosOn(mod.id, i)); if (onIdxs.length === 1) pickText(onIdxs[0]); else if (onIdxs.length > 1) { _biosCycleIdx = (_biosCycleIdx + 1) % onIdxs.length; pickText(onIdxs[_biosCycleIdx]); } } }
+  function paintTo(target, tctx) { let W = target.width, H = target.height, visCols = Math.floor(W/6), visRows = Math.floor(H/6), offC = Math.floor((450 - visCols) / 2), offR = Math.floor((250 - visRows) / 2), img = tctx.createImageData(W, H), buf = img.data; for (let r = 0; r < visRows; r++) for (let c = 0; c < visCols; c++) { let [R, G, B] = PAL[grid[(offR + r)*450 + (offC + c)]] || PAL[0]; for (let py = 0; py < 6; py++) for (let px = 0; px < 6; px++) { let i = ((r*6 + py)*W + (c*6 + px))*4; buf[i] = R; buf[i+1] = G; buf[i+2] = B; buf[i+3] = 255; } } _applyDither(buf, W, visCols, visRows, offC, offR); tctx.putImageData(img, 0, 0); }
+  function render() { paintTo(canvas, ctx); }
+  // ===== ENGINE END =====
+
+  return {step, render, paintTo, applyRects: applyRectShifts, tickRects, dtOps: _sumTokenOps};
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MP4 export — mirrors app/index.html exportMP4 but feeds frames from the
+// inline engine factory above instead of moduloAnimObjs[]. 1200 frames @ 60fps
+// = 20s, output via mp4-muxer ArrayBufferTarget.
+// Pre-flight: WebCodecs availability + isConfigSupported async check (audit
+// 2026-05-08 P2-3) + re-entrancy guard (P2-5).
+//
+// Preset menu: Le requested 2026-05-08 — pop a modal with several codec/
+// bitrate options so we can A/B test color fidelity (H.264 4:2:0 chroma at
+// default 40Mbps shows mild desaturation at saturated cell boundaries vs the
+// raw iframe RGB). Each preset declares estimated filesize so users see the
+// trade-off before committing to a 20s encode.
+// ─────────────────────────────────────────────────────────────────────────────
+const W_EXPORT = 2700, H_EXPORT = 1500, FPS_EXPORT = 60, TOTAL_FRAMES = FPS_EXPORT * 20; // 20s
+
+const EXPORT_PRESETS = [
+  {
+    id: 'default',
+    label: 'Default — 40 Mbps H.264 4:2:0',
+    sub: 'Same settings as app/. Baseline fidelity.',
+    estSize: '~100 MB',
+    codec: 'avc1.640033', // H.264 High @ Level 5.1, 4:2:0 chroma
+    bitrate: 40_000_000,
+  },
+  {
+    id: 'high',
+    label: 'High — 100 Mbps H.264 4:2:0',
+    sub: 'Better color preservation at cell boundaries.',
+    estSize: '~250 MB',
+    codec: 'avc1.640033',
+    bitrate: 100_000_000,
+  },
+  {
+    id: 'max',
+    label: 'Max — 200 Mbps H.264 4:2:0',
+    sub: 'Maximum H.264 4:2:0 fidelity.',
+    estSize: '~500 MB',
+    codec: 'avc1.640033',
+    bitrate: 200_000_000,
+  },
+  {
+    id: 'chroma444',
+    label: 'Chroma 4:4:4 — 100 Mbps H.264',
+    sub: 'Best color (no chroma subsampling). Chrome only.',
+    estSize: '~250 MB',
+    codec: 'avc1.f40033', // H.264 4:4:4 — Chrome experimental
+    bitrate: 100_000_000,
+  },
+];
+
+let _exportInFlight = false;
+let _exportPresetSelected = 'default';
+let _exportCropMode = false;
+
+// Compute the actual crop dimensions (clamped to multiples of PIXEL=6 for
+// integer cell count, and capped at the full grid 2700×1500). Source is
+// the expand-body element rect — the visible iframe area minus tbar.
+const _PIXEL_EXPORT = 6;
+function _computeCropDims() {
+  const bodyEl = document.getElementById('expand-body');
+  if (!bodyEl) return { W: W_EXPORT, H: H_EXPORT };
+  const r = bodyEl.getBoundingClientRect();
+  const W = Math.max(_PIXEL_EXPORT, Math.min(W_EXPORT, Math.floor(r.width  / _PIXEL_EXPORT) * _PIXEL_EXPORT));
+  const H = Math.max(_PIXEL_EXPORT, Math.min(H_EXPORT, Math.floor(r.height / _PIXEL_EXPORT) * _PIXEL_EXPORT));
+  return { W, H };
+}
+
+// Probe each preset against VideoEncoder.isConfigSupported on first open.
+// Cache result so we don't re-probe on subsequent opens within the session.
+let _exportPresetSupportCache = null;
+async function _probeExportPresets() {
+  if (_exportPresetSupportCache) return _exportPresetSupportCache;
+  if (!window.VideoEncoder) {
+    _exportPresetSupportCache = EXPORT_PRESETS.map(p => ({ ...p, supported: false }));
+    return _exportPresetSupportCache;
+  }
+  const out = [];
+  for (const p of EXPORT_PRESETS) {
+    try {
+      const res = await VideoEncoder.isConfigSupported({
+        codec: p.codec,
+        width: W_EXPORT,
+        height: H_EXPORT,
+        bitrate: p.bitrate,
+        framerate: FPS_EXPORT,
+        bitrateMode: 'constant',
+        latencyMode: 'quality',
+        hardwareAcceleration: 'prefer-software',
+      });
+      out.push({ ...p, supported: !!(res && res.supported) });
+    } catch (_) {
+      out.push({ ...p, supported: false });
+    }
+  }
+  _exportPresetSupportCache = out;
+  return out;
+}
+
+async function _openExportModal(modId) {
+  if (_exportInFlight) return;
+  if (!window.VideoEncoder || !window.Mp4Muxer) {
+    alert(!window.VideoEncoder ? 'WebCodecs not supported (try Chrome 94+).' : 'mp4-muxer not loaded.');
+    return;
+  }
+  const modal   = document.getElementById('export-modal');
+  const optsEl  = document.getElementById('export-modal-options');
+  const goBtn   = document.getElementById('export-modal-go');
+
+  optsEl.textContent = 'Probing browser support…';
+  modal.classList.add('active');
+  goBtn.disabled = true;
+
+  const probed = await _probeExportPresets();
+
+  // Pick a sensible default if the previously-selected preset is unsupported
+  if (!probed.find(p => p.id === _exportPresetSelected && p.supported)) {
+    const firstSupported = probed.find(p => p.supported);
+    _exportPresetSelected = firstSupported ? firstSupported.id : 'default';
+  }
+
+  optsEl.replaceChildren();
+  probed.forEach(p => {
+    const row = document.createElement('label');
+    row.className = 'export-opt' + (p.supported ? '' : ' disabled');
+    row.innerHTML =
+      '<input type="radio" name="export-preset" value="' + p.id + '"' +
+        (p.supported ? '' : ' disabled') +
+        (p.id === _exportPresetSelected && p.supported ? ' checked' : '') + '>' +
+      '<div class="export-opt-label">' +
+        '<span class="export-opt-title">' + p.label + '</span>' +
+        '<span class="export-opt-sub">' + p.sub + '</span>' +
+      '</div>' +
+      '<span class="export-opt-size">' + p.estSize + '</span>';
+    if (p.supported) {
+      row.querySelector('input').addEventListener('change', e => {
+        _exportPresetSelected = e.target.value;
+      });
+    }
+    optsEl.appendChild(row);
+  });
+  goBtn.disabled = !probed.some(p => p.supported);
+
+  // Update the crop dims label with the current expand-body size
+  const dims = _computeCropDims();
+  const dimsEl = document.getElementById('export-modal-crop-dims');
+  if (dimsEl) dimsEl.textContent = dims.W + ' × ' + dims.H;
+  const cropInput = document.getElementById('export-modal-crop-input');
+  if (cropInput) cropInput.checked = _exportCropMode;
+}
+
+function _closeExportModal() {
+  document.getElementById('export-modal').classList.remove('active');
+}
+
+async function _exportMP4(modId, presetId, cropMode) {
+  if (_exportInFlight) return;
+  _exportInFlight = true;
+  const preset = EXPORT_PRESETS.find(p => p.id === presetId) || EXPORT_PRESETS[0];
+  // Snapshot crop dims at export start — if the user resizes the window
+  // mid-encode, the output stays at the dims captured here. Cleaner than
+  // mid-export reflow.
+  const dims = cropMode ? _computeCropDims() : { W: W_EXPORT, H: H_EXPORT };
+  const W = dims.W, H = dims.H;
+  const btn = document.getElementById('export-btn');
+  const origText = btn ? btn.textContent : '↓ MP4';
+  if (btn) btn.disabled = true;
+
+  try {
+    const cfg = {
+      codec: preset.codec,
+      width: W,
+      height: H,
+      bitrate: preset.bitrate,
+      framerate: FPS_EXPORT,
+      bitrateMode: 'constant',
+      latencyMode: 'quality',
+      hardwareAcceleration: 'prefer-software',
+    };
+    const support = await VideoEncoder.isConfigSupported(cfg);
+    if (!support || !support.supported) {
+      alert('Selected codec not supported by this browser.');
+      return;
+    }
+
+    const data = await _fetchArtifactData(modId);
+    if (!data) { alert('Artifact data unavailable.'); return; }
+    const html = _decodeTokenURI(data.tokenURI);
+    const composition = _extractComposition(html);
+    if (!composition) { alert('Could not parse composition from tokenURI.'); return; }
+
+    const offscreen = new OffscreenCanvas(W, H);
+    const octx = offscreen.getContext('2d');
+    octx.imageSmoothingEnabled = false;
+
+    const engine = _createArtifactEngine(offscreen, composition);
+    if (!engine) { alert('Engine init failed.'); return; }
+
+    const target = new Mp4Muxer.ArrayBufferTarget();
+    const muxer = new Mp4Muxer.Muxer({
+      target,
+      video: { codec: 'avc', width: W, height: H, frameRate: FPS_EXPORT },
+      fastStart: 'in-memory',
+    });
+    const encoder = new VideoEncoder({
+      output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+      error: e => console.error('[export]', e),
+    });
+    encoder.configure(cfg);
+
+    for (let f = 0; f < TOTAL_FRAMES; f++) {
+      engine.step(engine.dtOps);
+      engine.applyRects();
+      engine.tickRects && engine.tickRects();
+      engine.paintTo(offscreen, octx);
+
+      const frame = new VideoFrame(offscreen, {
+        timestamp: Math.round(f * 1_000_000 / FPS_EXPORT),
+        duration: Math.round(1_000_000 / FPS_EXPORT),
+      });
+      encoder.encode(frame, { keyFrame: true });
+      frame.close();
+
+      if (f % 30 === 0 && btn) {
+        const pct = Math.round(f / TOTAL_FRAMES * 100);
+        btn.textContent = '▪ ' + pct + '%';
+        await new Promise(r => setTimeout(r, 0));
+      }
+    }
+
+    await encoder.flush();
+    encoder.close();
+    muxer.finalize();
+
+    const blob = new Blob([target.buffer], { type: 'video/mp4' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'modulo-' + modId + '-' + preset.id + (cropMode ? '-crop' : '') + '.mp4';
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error('[export] failed:', err);
+    alert('Export failed. See console.');
+  } finally {
+    _exportInFlight = false;
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = origText;
+    }
+  }
+}
+
+// Modal wiring — open on ↓ MP4 click, close on Cancel/backdrop, run export on Go.
+document.getElementById('export-modal-cancel').addEventListener('click', _closeExportModal);
+document.getElementById('export-modal').addEventListener('click', e => {
+  if (e.target.id === 'export-modal') _closeExportModal();
+});
+document.getElementById('export-modal-crop-input').addEventListener('change', e => {
+  _exportCropMode = e.target.checked;
+});
+document.getElementById('export-modal-go').addEventListener('click', () => {
+  if (_expandOpenId === null) return;
+  const modId = _expandOpenId;
+  const cropMode = _exportCropMode;
+  _closeExportModal();
+  _exportMP4(modId, _exportPresetSelected, cropMode);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Expand modal — Modulo cards only. FLIP animation copied from app/ openExpand
+// + closeExpand (lines 6604-6779), adapted: no canvas/sidebar/restoreCardLeft,
+// no inventory close (collection has none), no resetGrid (RESET re-mounts the
+// iframe srcdoc instead — equivalent UX for sandboxed on-chain renderer).
+// ─────────────────────────────────────────────────────────────────────────────
+const _expandOverlay = document.getElementById('expand-overlay');
+const _expandFrame   = document.getElementById('expand-iframe');
+const _expandWindow  = document.getElementById('expand-window');
+let   _expandOpenId  = null;
+let   _expandCardEl  = null;
+let   _expandClosing = false;
+
+function _openExpand(card, modId) {
+  if (_expandOpenId !== null) return;
+  _expandOpenId = modId;
+  _expandCardEl = card || null;
+  document.getElementById('expand-tbar-title').textContent = 'MODULO #' + modId;
+
+  // Inherit the card's pre-prepared srcdoc (already includes the CSS reset
+  // injection from _prepareSrcdoc — no double-prepare needed).
+  const cardIframe = card.querySelector('iframe.mod-iframe');
+  if (cardIframe && cardIframe.srcdoc) _expandFrame.srcdoc = cardIframe.srcdoc;
+
+  if (!card) {
+    _expandWindow.style.transition = 'none';
+    _expandWindow.style.transform  = '';
+    _expandWindow.style.opacity    = '1';
+    _expandOverlay.classList.add('active');
+    return;
+  }
+
+  // FLIP animation: measure cardRect BEFORE overlay activates (otherwise reflow
+  // shifts cardRect). Use offsetWidth/offsetHeight for true card dimensions
+  // (getBoundingClientRect returns only visible portion when card is partly
+  // off-screen). cardRect/finalRect are read on the parent <div>s — never
+  // crosses the iframe sandbox boundary (iframe element geometry belongs to
+  // parent doc; only the iframe content document is opaque).
+  const cardRect    = card.getBoundingClientRect();
+  const cardActualW = card.offsetWidth;
+  const cardActualH = card.offsetHeight;
+  const cardCenterX = cardRect.left + cardRect.width  * 0.5;
+  const cardCenterY = cardRect.top  + cardRect.height * 0.5;
+
+  _expandWindow.style.transition = 'none';
+  _expandWindow.style.transform  = '';
+  _expandWindow.style.opacity    = '1';
+  _expandOverlay.classList.add('active');
+  void _expandWindow.offsetHeight; // force reflow so finalRect reflects active state
+
+  const finalRect = _expandWindow.getBoundingClientRect();
+  const sx = cardActualW / finalRect.width;
+  const sy = cardActualH / finalRect.height;
+  const dx = cardCenterX - (finalRect.left + finalRect.width  * 0.5);
+  const dy = cardCenterY - (finalRect.top  + finalRect.height * 0.5);
+
+  _expandWindow.style.transform = `translate(${dx}px,${dy}px) scale(${sx},${sy})`;
+  _expandWindow.style.opacity   = '0.15';
+
+  _expandWindow.getBoundingClientRect();
+  _expandWindow.style.transition = 'transform 0.42s cubic-bezier(0.22,1,0.36,1), opacity 0.2s ease';
+  _expandWindow.style.transform  = '';
+  _expandWindow.style.opacity    = '1';
+}
+
+function _closeExpand() {
+  if (_expandOpenId === null || _expandClosing) return;
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  _expandOpenId = null;
+
+  if (_expandCardEl) {
+    const cardEl    = _expandCardEl;
+    _expandCardEl   = null;
+
+    void cardEl.offsetHeight; // force reflow so cardRect is fresh
+    const finalRect = _expandWindow.getBoundingClientRect();
+    const cardRect  = cardEl.getBoundingClientRect();
+
+    const sx = cardRect.width  / finalRect.width;
+    const sy = cardRect.height / finalRect.height;
+    const dx = (cardRect.left + cardRect.width  * 0.5) - (finalRect.left + finalRect.width  * 0.5);
+    const dy = (cardRect.top  + cardRect.height * 0.5) - (finalRect.top  + finalRect.height * 0.5);
+
+    _expandWindow.style.transition = 'transform 0.28s cubic-bezier(0.55,0,1,0.45), opacity 0.2s ease';
+    _expandWindow.style.transform  = `translate(${dx}px,${dy}px) scale(${sx},${sy})`;
+    _expandWindow.style.opacity    = '0';
+    _expandClosing = true;
+
+    // Wait for the longer transition (transform 0.28s) before tearing down.
+    // Fallback timeout covers prefers-reduced-motion / hidden tab / extension interference.
+    const _teardown = () => {
+      _expandClosing = false;
+      _expandWindow.removeEventListener('transitionend', _onTransitionEnd);
+      clearTimeout(_teardownTimer);
+      _expandOverlay.classList.remove('active');
+      _expandWindow.style.transition = 'none';
+      _expandWindow.style.transform  = '';
+      _expandWindow.style.opacity    = '1';
+      _expandFrame.srcdoc = ''; // free child document
+    };
+    const _onTransitionEnd = e => { if (e.propertyName === 'transform') _teardown(); };
+    const _teardownTimer = setTimeout(_teardown, 350);
+    _expandWindow.addEventListener('transitionend', _onTransitionEnd);
+  } else {
+    _expandClosing = false;
+    _expandOverlay.classList.remove('active');
+    _expandFrame.srcdoc = '';
+  }
+}
+
+document.getElementById('expand-close').addEventListener('click', _closeExpand);
+document.getElementById('expand-fullscreen').addEventListener('click', () => {
+  if (_expandOpenId === null) return;
+  if (!document.fullscreenElement) _expandWindow.requestFullscreen().catch(() => {});
+  else document.exitFullscreen().catch(() => {});
+});
+document.addEventListener('fullscreenchange', () => {
+  if (_expandOpenId === null) return;
+  _expandWindow.classList.toggle('expand-fs', !!document.fullscreenElement);
+});
+// Double-click while in fullscreen exits FS — equivalent to Escape, useful
+// for touch devices and mouse users who don't have an obvious affordance.
+_expandWindow.addEventListener('dblclick', () => {
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+});
+// RESET — force re-mount of the iframe srcdoc. Re-assigning the SAME string
+// is fast-pathed by Blink/WebKit (no reload). Blank the srcdoc, then re-set
+// on next frame so the browser tears down and re-creates the child document.
+// This is the equivalent UX of app/'s "reset grid" for the sandboxed
+// on-chain renderer (we cannot call resetGrid() across the sandbox boundary).
+document.getElementById('expand-reset-btn').addEventListener('click', () => {
+  if (_expandOpenId === null) return;
+  const html = _expandFrame.srcdoc;
+  if (!html) return;
+  _expandFrame.srcdoc = '';
+  requestAnimationFrame(() => { _expandFrame.srcdoc = html; });
+});
+// MP4 button: opens the export options modal. User picks a codec/bitrate
+// preset, then the encode pipeline runs (OffscreenCanvas + inline engine
+// factory + WebCodecs + mp4-muxer). Same engine the iframe runs (deterministic
+// from _compSeed) → MP4 byte stream represents the canonical artifact render.
+document.getElementById('export-btn').addEventListener('click', () => {
+  if (_expandOpenId !== null) _openExportModal(_expandOpenId);
+});
+
+_expandOverlay.addEventListener('click', e => {
+  // Backdrop click closes (but not clicks inside the window itself)
+  if (e.target === _expandOverlay) _closeExpand();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && _expandOpenId !== null && !document.fullscreenElement) _closeExpand();
+});
+</script>
+</body>
+</html>
 
