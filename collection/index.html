@@ -622,8 +622,12 @@ body.night .tok-price { color:rgba(255,255,255,0.68); }
        not editable — there's no card-left equivalent to slide in).
      - <iframe> in place of <canvas> — render comes from on-chain HTML
        inside a sandboxed child document, not from a parent-doc engine.
-     - MP4 button kept visible but disabled — capture from a sandboxed
-       iframe (origin null, no allow-same-origin) is technically blocked.
+     - MP4 button uses inline engine port (`_createArtifactEngine` + `_exportMP4`,
+       ~1834/2191) rather than capturing the sandboxed iframe canvas. Cross-origin
+       canvas read from sandbox=allow-scripts is browser-blocked by design; we
+       sidestep that by running the engine in parent context offscreen, producing
+       identical frames to app/ given identical composition. Bitstream parity
+       with app/ verified 2026-05-08+ (no colorSpace tag — same untagged baseline).
      - z-index 1500 (defensive — collection has fewer overlays than app/).
      - background #000 on window + body to match the iframe srcdoc reset
        injection (avoids cream/black seam at edges before content paints).
@@ -976,8 +980,11 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
 
 <!-- Expand overlay (Modulo cards only — wired in <script> below).
      Copy of app/ expand structure (lines 1924-1942) minus sidebar/tab.
-     MP4 button is disabled — sandboxed iframe (origin null) cannot be
-     captured via canvas.captureStream / html2canvas / MediaRecorder.
+     MP4 button uses inline engine port (_createArtifactEngine + _exportMP4,
+     ~1834/2191) rather than capturing the sandboxed iframe canvas. The
+     iframe sandbox blocks canvas.captureStream/html2canvas/MediaRecorder
+     by design; we sidestep that by running the engine in parent context
+     offscreen — same render path as app/ moduloAnimObjs[modId] flow.
      RESET re-mounts the iframe srcdoc (forces re-init of the on-chain
      renderer; equivalent UX to "reset grid" in app/). -->
 <div id="expand-overlay">
@@ -1167,20 +1174,30 @@ function _prepareSrcdoc(html) {
   // report intersecting=true so the loop paints unconditionally.
   // Trade-off: 16 engines × 60fps × 2700×1500 paint = CPU heavy on mobile.
   // Acceptable for desktop; consider postMessage bridge if mobile complains.
+  // Stub robusto (audit 2026-05-09):
+  //   - SYNC dispatch (no microtask) — el engine hace `new IO(cb); io.observe(t)`
+  //     y immediatamente después lee su closure. Microtask async creaba race con
+  //     state parcial del closure → throw silencioso en iframe, render aleatorio.
+  //   - Retorna `inst` object — funciona con y sin `new`.
+  //   - Pasa `inst` como 2do arg (signature real de IO).
+  //   - try/catch alrededor del cb() — un throw del engine no rompe el resto.
   const ioStub =
     '<script>' +
       '(function(){' +
-        'window.IntersectionObserver=function(cb){' +
-          'this.observe=function(t){' +
-            'Promise.resolve().then(function(){' +
-              'cb([{target:t,isIntersecting:true,intersectionRatio:1,' +
-                  'boundingClientRect:t.getBoundingClientRect(),' +
-                  'time:performance.now()}])' +
-            '})' +
+        'window.IntersectionObserver=function(cb,opts){' +
+          'var inst={' +
+            'observe:function(t){' +
+              'try{' +
+                'cb([{target:t,isIntersecting:true,intersectionRatio:1,' +
+                    'boundingClientRect:t.getBoundingClientRect&&t.getBoundingClientRect()||{},' +
+                    'intersectionRect:{},rootBounds:null,time:0}],inst)' +
+              '}catch(e){}' +
+            '},' +
+            'unobserve:function(){},' +
+            'disconnect:function(){},' +
+            'takeRecords:function(){return[]}' +
           '};' +
-          'this.unobserve=function(){};' +
-          'this.disconnect=function(){};' +
-          'this.takeRecords=function(){return[]};' +
+          'return inst;' +
         '};' +
       '})();' +
     '<' + '/script>';
@@ -1489,18 +1506,22 @@ function _mountTokenIframe(card, id) {
     // first 1-2 iframes "visible" → rest never activate. We do manual lazy
     // mount via `_attachOnChainObserver` already (rootMargin 800px), so
     // native lazy is redundant + harmful here.
+    //
+    // Always-recreate (audit 2026-05-09 Opción 3): remove any existing iframe
+    // before creating a new one. Reusing the iframe element via srcdoc reset
+    // can leave stale child-document state from prior mount; fresh element
+    // guarantees clean child document on every mount.
     const existing = wrap.querySelector('iframe');
-    let iframe = existing || document.createElement('iframe');
+    if (existing) existing.remove();
+    const iframe = document.createElement('iframe');
     iframe.className = 'tok-iframe';
     iframe.setAttribute('sandbox', 'allow-scripts');
     iframe.setAttribute('referrerpolicy', 'no-referrer');
     iframe.setAttribute('aria-label', 'token #' + id);
     iframe.srcdoc = _prepareSrcdoc(html);
-    if (!existing) {
-      const canvas = wrap.querySelector('canvas');
-      if (canvas) canvas.remove();
-      wrap.appendChild(iframe);
-    }
+    const canvas = wrap.querySelector('canvas');
+    if (canvas) canvas.remove();
+    wrap.appendChild(iframe);
     slot.textContent = '0x' + id.toString(16).padStart(4, '0').toUpperCase();
     const ownerEl = card.querySelector('.tok-owner');
     if (ownerEl) ownerEl.textContent = _shortAddr(data.owner);
@@ -1533,20 +1554,20 @@ function _mountModuloIframe(card, id) {
       slotsEl.textContent = 'decode error';
       return;
     }
-    // NO `loading="lazy"` — same rationale as _mountTokenIframe above.
-    // Manual lazy via _attachOnChainObserver covers viewport gating already.
+    // NO `loading="lazy"` + always-recreate — same rationale as
+    // _mountTokenIframe above. Audit 2026-05-09 Opción 3: fresh iframe
+    // element on every mount avoids stale child-document state.
     const existing = wrap.querySelector('iframe');
-    let iframe = existing || document.createElement('iframe');
+    if (existing) existing.remove();
+    const iframe = document.createElement('iframe');
     iframe.className = 'mod-iframe';
     iframe.setAttribute('sandbox', 'allow-scripts');
     iframe.setAttribute('referrerpolicy', 'no-referrer');
     iframe.setAttribute('aria-label', 'modulo #' + id);
     iframe.srcdoc = _prepareSrcdoc(html);
-    if (!existing) {
-      const canvas = wrap.querySelector('canvas');
-      if (canvas) canvas.remove();
-      wrap.appendChild(iframe);
-    }
+    const canvas = wrap.querySelector('canvas');
+    if (canvas) canvas.remove();
+    wrap.appendChild(iframe);
     slotsEl.textContent = data.compositionLen + ' tokens';
     const ownerEl = card.querySelector('.mod-owner');
     if (ownerEl) ownerEl.textContent = _shortAddr(data.owner);
@@ -2246,21 +2267,16 @@ async function _exportMP4(modId, presetId, cropMode) {
       engine.tickRects && engine.tickRects();
       paintFn(offscreen, octx);
 
+      // VideoFrame without colorSpace hint — matches app/index.html exactly.
+      // Earlier "T1 quick win" attempt at fullRange:true (2026-05-08) wrote
+      // video_full_range_flag=1 in the H.264 VUI parameters, which players
+      // either ignored or mishandled → washed/desaturated colors vs app
+      // baseline (Le confirmed visually 2026-05-08+). Reverted to match
+      // app's untagged bitstream which players treat consistently as
+      // limited-range BT.709. security-auditor verdict + Le ground truth.
       const frame = new VideoFrame(offscreen, {
         timestamp: Math.round(f * 1_000_000 / FPS_EXPORT),
         duration: Math.round(1_000_000 / FPS_EXPORT),
-        // T1 quick win (Grok + security-checklist consensus 2026-05-08): explicit
-        // colorSpace with fullRange:true preserves values near 0 and 255 (saturated
-        // reds, pure whites/blacks) that limited-range BT.709 (default) clips into
-        // 16-235. Canvas content is sRGB; declaring it explicitly tells the encoder
-        // to use full-range RGB→YUV conversion. Mitigates "washed colors" reported
-        // 2026-05-08 in the H.264 4:2:0 chroma path.
-        colorSpace: {
-          primaries: 'bt709',
-          transfer:  'iec61966-2-1',  // sRGB transfer function
-          matrix:    'bt709',
-          fullRange: true,
-        },
       });
       encoder.encode(frame, { keyFrame: true });
       frame.close();
