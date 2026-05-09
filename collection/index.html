@@ -276,42 +276,13 @@ body.night .stats-box .meta-value { color:rgba(255,255,255,0.85); }
 }
 
 /* ── Collection section ──
-   No L/R padding here — the bg-grad canvas is a direct child with width:100%.
-   If the section had L/R padding, the canvas would be offset inward, leaving
-   a vertical strip of body-bg on the left and overflowing on the right
-   (causing horizontal scroll). L/R padding lives on .collection-inner instead. */
+   Plain bg (matches body --bg). Rotating gradient bg + header-fade overlay
+   were removed 2026-05-08 — too busy behind the card grid, especially with
+   on-chain iframes already animating per card. */
 .collection-section {
   padding:0 0 120px;
   flex:1;
   position:relative;
-  /* No top padding on the section — the bg-grad canvas needs to start at
-     section top (right under the header) so it covers the gap area too,
-     rather than the body bg cream showing through. The 80px breathing room
-     between header line and cards lives on .collection-inner instead. */
-}
-/* Fade overlay above the card grid — cream at top → transparent at bottom.
-   Sits over the bg-grad canvas (z:0) and below the cards (z:2). Smooths the
-   transition from header cream into the rotating canvas grey. */
-.collection-section .header-fade {
-  position:absolute;
-  top:0; left:0; right:0;
-  height:80px;
-  background:linear-gradient(to bottom, var(--bg) 0%, transparent 100%);
-  pointer-events:none;
-  z-index:1;
-}
-/* Rotating gradient canvas (matches app/index.html world bg).
-   sticky+top:0 pins it to the viewport while inside the section so the
-   gradient is sized to the screen, not the (potentially very tall) section.
-   margin-bottom:-100vh removes its layout height so following content starts
-   at the section top — canvas overlays from underneath via z-index:0. */
-.collection-section > canvas.bg-grad {
-  position:sticky; top:0;
-  display:block;
-  width:100%; height:100vh;
-  margin-bottom:-100vh;
-  pointer-events:none;
-  z-index:0;
 }
 .collection-inner {
   max-width:1500px; margin:0 auto;
@@ -380,7 +351,12 @@ body.night .stats-box .meta-value { color:rgba(255,255,255,0.85); }
 }
 .mod-canvas-wrap {
   position:relative;
-  aspect-ratio:16/9;
+  /* 9:5 (= 1.8) matches the on-chain engine's grid ratio (GRID_COLS=450,
+     GRID_ROWS=250 → 450/250 = 1.8). Was 16:9 (1.778) — close but not exact;
+     the small mismatch combined with PIXEL=6 floor() rounding inside the
+     iframe produced visible letterbox strips. Exact 9:5 + the canvas-fill
+     CSS injection in _prepareSrcdoc eliminates them. */
+  aspect-ratio:9/5;
   background:var(--bg);
   overflow:hidden;
 }
@@ -1180,13 +1156,38 @@ function _decodeTokenURI(uri) {
 // data: URI directly as a page and won't see this injection.
 function _prepareSrcdoc(html) {
   if (!html) return '';
+  // IntersectionObserver stub (audit 2026-05-08 dead-zone fix): the on-chain
+  // engine creates an IO inside the iframe to gate the render loop on canvas
+  // visibility. When the iframe is mounted in a parent panel that recently
+  // transitioned display:none → display:block, the iframe's IO fires its
+  // initial callback with isIntersecting=false (parent layout still stale at
+  // observe time), and Chrome does NOT re-fire on parent visibility changes.
+  // Result: animObj.isVisibleFn() stays false → loop runs but skips paint →
+  // canvas stuck at frame 0. We override IO inside the iframe to always
+  // report intersecting=true so the loop paints unconditionally.
+  // Trade-off: 16 engines × 60fps × 2700×1500 paint = CPU heavy on mobile.
+  // Acceptable for desktop; consider postMessage bridge if mobile complains.
+  const ioStub =
+    '<script>' +
+      '(function(){' +
+        'window.IntersectionObserver=function(cb){' +
+          'this.observe=function(t){' +
+            'Promise.resolve().then(function(){' +
+              'cb([{target:t,isIntersecting:true,intersectionRatio:1,' +
+                  'boundingClientRect:t.getBoundingClientRect(),' +
+                  'time:performance.now()}])' +
+            '})' +
+          '};' +
+          'this.unobserve=function(){};' +
+          'this.disconnect=function(){};' +
+          'this.takeRecords=function(){return[]};' +
+        '};' +
+      '})();' +
+    '<' + '/script>';
   // Aggressive reset with !important — defeats specificity of the on-chain
   // HTML's own CSS (which may set body bg to white, body padding/margins,
   // or canvas borders). Without !important the on-chain rules win because
   // they come AFTER the prepended reset in source order.
-  // Le reported white bars at fullscreen edges 2026-05-08 — likely the
-  // body bg from the on-chain CSS bleeding through where the canvas
-  // doesn't fill the iframe viewport (aspect ratio mismatch in FS mode).
   const reset =
     '<style>' +
       'html,body{' +
@@ -1198,18 +1199,34 @@ function _prepareSrcdoc(html) {
         'width:100%!important;' +
         'height:100%!important;' +
       '}' +
-      'canvas{background:#000!important;outline:none!important}' +
+      // Force the canvas inside the iframe to fill the body 100% — the
+      // on-chain HTML uses `width:auto; max-width:100%; max-height:100%`
+      // which leaves letterbox strips when the canvas drawing buffer
+      // (snapped to PIXEL=6 multiples) is slightly smaller than the body.
+      // Le reported black strips around the painted area 2026-05-08; this
+      // override stretches the canvas to fill the wrap. `image-rendering:
+      // pixelated` keeps bordes pixel-perfect during the slight stretch.
+      'canvas{' +
+        'background:#000!important;' +
+        'outline:none!important;' +
+        'width:100%!important;' +
+        'height:100%!important;' +
+        'max-width:none!important;' +
+        'max-height:none!important;' +
+        'image-rendering:pixelated!important;' +
+      '}' +
     '</style>';
-  // Inject AFTER any existing <style> tags in <head> so our !important rules
-  // are last in source order (CSS cascade tiebreaker — same specificity, last
-  // wins). If no </head> found, prepend (defensive — should never happen).
+  // Inject order: ioStub FIRST (must override IO before engine script runs),
+  // then reset. Both prepended to <head> or to start if no <head> tag.
+  // Reset is AFTER any existing <style> tags so its !important rules win.
+  const inject = ioStub + reset;
   const headEndIdx = html.indexOf('</head>');
   if (headEndIdx < 0) {
     const headIdx = html.indexOf('<head>');
-    if (headIdx < 0) return reset + html;
-    return html.slice(0, headIdx + 6) + reset + html.slice(headIdx + 6);
+    if (headIdx < 0) return inject + html;
+    return html.slice(0, headIdx + 6) + inject + html.slice(headIdx + 6);
   }
-  return html.slice(0, headEndIdx) + reset + html.slice(headEndIdx);
+  return html.slice(0, headEndIdx) + inject + html.slice(headEndIdx);
 }
 
 // ── Shared palette (mutated by night toggle) ───────────────────────────────────
@@ -1246,6 +1263,37 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + target));
     if (_displayTitle && _TAB_TITLES[target]) _displayTitle.textContent = _TAB_TITLES[target];
     if (typeof _setMetaCount === 'function') _setMetaCount(target);
+    // Mount sweep — IO observers attached to cards inside a `display:none`
+    // panel get their initial callback with isIntersecting=false and Chrome
+    // does NOT re-fire when the parent transitions to `display:block`. Cards
+    // built while their panel was hidden stay forever in placeholder. We
+    // walk the now-visible panel's cards and trigger mount manually for any
+    // that haven't been hydrated yet. Idempotent guards inside _mount*Iframe
+    // dedupe vs the IO callback potentially also firing post-layout.
+    //
+    // requestAnimationFrame defer (audit 2026-05-08): the `display:block`
+    // class toggle is synchronous in JS but layout commit is batched.
+    // Calling mount* synchronously here would attach iframes while the
+    // browser still has stale layout (cards at default position 0,0),
+    // tripping native lazy/visibility heuristics for 14 of 16 cards. rAF
+    // pushes the sweep to AFTER layout commit → iframes attach with
+    // correct geometry → all activate properly.
+    const _sweepMount = () => {
+      if (target === 'modulo') {
+        document.querySelectorAll('.mod-card').forEach(card => {
+          if (card.dataset.ready === '1') return;
+          const id = Number(card.dataset.modId);
+          if (id && typeof _mountModuloIframe === 'function') _mountModuloIframe(card, id);
+        });
+      } else if (target === 'tokens') {
+        document.querySelectorAll('.tok-card').forEach(card => {
+          if (card.dataset.ready === '1') return;
+          const id = Number(card.dataset.tokId);
+          if (id && typeof _mountTokenIframe === 'function') _mountTokenIframe(card, id);
+        });
+      }
+    };
+    requestAnimationFrame(_sweepMount);
   });
 });
 
@@ -1257,95 +1305,10 @@ window.addEventListener('resize', () => {
   requestAnimationFrame(() => { _rP = false; _resizeFns.forEach(f => f()); });
 }, { passive:true });
 
-// ── Rotating gradient bg (matches app/index.html world) ─────────────────────
-(function() {
-  const sec = document.querySelector('.collection-section');
-  const canvas = document.createElement('canvas');
-  canvas.className = 'bg-grad';
-  sec.insertBefore(canvas, sec.firstChild);
-  // Fade overlay above the card grid: cream (header bg) at top → transparent
-  // at bottom over 80px (matches .collection-inner padding-top). Painted on
-  // top of the canvas, behind the cards. Smooths the visual transition from
-  // header cream into the rotating canvas grey behind the cards.
-  const fade = document.createElement('div');
-  fade.className = 'header-fade';
-  sec.insertBefore(fade, canvas.nextSibling);
-  const ctx = canvas.getContext('2d');
-
-  // Gradient endpoints — picked to give a visible transition between the section
-  // grey and the header's cream/white. Day stops match _BG (the canonical grey)
-  // and --bg (the page/header bg). Night stops mirror this contrast in dark mode.
-  // Grey/light stops use rgba(...,0.50) — 50% transparency lets the body bg show
-  // through, softening the grey visually (composite ≈ #B6B3AC over cream).
-  const _GRAD_DAY_GREY  = 'rgba(141, 138, 132, 0.50)';  // #8D8A84 @ 50% alpha
-  const _GRAD_DAY_CREAM = '#dbd8d1';                    // matches --bg / header bg
-  const _GRAD_NGT_LIGHT = 'rgba(58, 57, 55, 0.50)';     // #3a3937 @ 50% alpha
-  const _GRAD_NGT_DARK  = '#1a1917';                    // matches night --bg
-
-  let _dpr = 1, W, H;
-  function resize() {
-    _dpr = window.devicePixelRatio || 1;
-    // Sized to viewport — the canvas is sticky-positioned so it always
-    // covers the visible portion of the section, never the full section.
-    W = Math.round(sec.getBoundingClientRect().width);
-    H = Math.round(window.innerHeight);
-    canvas.width  = W * _dpr;
-    canvas.height = H * _dpr;
-    canvas.style.width  = W + 'px';
-    canvas.style.height = H + 'px';
-  }
-  resize();
-  _resizeFns.push(resize);
-
-  let angle = 280 * Math.PI / 180;
-  // Full rotation (2π) every 9.1s @ 60fps (was 7s — slowed 30% per request)
-  const SPD = (2 * Math.PI) / (9.1 * 60);
-
-  function render() {
-    angle += SPD;
-    ctx.setTransform(_dpr, 0, 0, _dpr, 0, 0);
-    // clearRect is required: the grey stop has alpha < 1 so without clearing
-    // each frame, the gradient would composite over the previous frame and
-    // accumulate to opaque grey over time (defeats the transparency).
-    ctx.clearRect(0, 0, W, H);
-    const cx = W / 2, cy = H / 2;
-    const len = Math.sqrt(W * W + H * H) / 2;
-    const x0 = cx + Math.cos(angle + Math.PI) * len;
-    const y0 = cy + Math.sin(angle + Math.PI) * len;
-    const x1 = cx + Math.cos(angle) * len;
-    const y1 = cy + Math.sin(angle) * len;
-    // Smoother transition: spread the grey→cream blend across 65% of the
-    // gradient line (was 40%) so the boundary between transition zone and
-    // solid cream isn't visually abrupt. Cream still dominates the remaining
-    // 35% as a solid block.
-    const g = ctx.createLinearGradient(x0, y0, x1, y1);
-    if (document.body.classList.contains('night')) {
-      g.addColorStop(0,    _GRAD_NGT_LIGHT);
-      g.addColorStop(0.65, _GRAD_NGT_DARK);
-      g.addColorStop(1,    _GRAD_NGT_DARK);
-    } else {
-      g.addColorStop(0,    _GRAD_DAY_GREY);
-      g.addColorStop(0.65, _GRAD_DAY_CREAM);
-      g.addColorStop(1,    _GRAD_DAY_CREAM);
-    }
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, W, H);
-  }
-
-  const FI = 1000 / 60;
-  let last = 0, visible = true;
-  const io = new IntersectionObserver(e => { visible = e[0].isIntersecting; }, { threshold:0 });
-  io.observe(sec);
-
-  function loop(ts) {
-    if (visible && !document.hidden && ts - last >= FI) {
-      render();
-      last = ts;
-    }
-    requestAnimationFrame(loop);
-  }
-  requestAnimationFrame(loop);
-})();
+// (Rotating gradient bg + header-fade overlay removed 2026-05-08 — section
+//  bg is plain --bg now. The IIFE that injected the canvas + fade div lived
+//  here; deleted because the rotating gradient was visually busy behind the
+//  per-card on-chain iframes.)
 
 // ── DT cellular automaton helpers ─────────────────────────────────────────────
 function _dtIdx(c, r, cols, rows) {
@@ -1396,7 +1359,15 @@ function _spawnCanvas(canvas, pix, observeEl) {
   let W, H, cols, rows, grid, next, img, buf;
 
   function resize() {
+    // Defensive guard (audit 2026-05-08): when iframe replaces this canvas
+    // via _mountModuloIframe / _mountTokenIframe, canvas.remove() detaches
+    // it from DOM → canvas.parentElement becomes null. This resize fn stays
+    // referenced in _resizeFns, so the next window.resize event would hit
+    // null.getBoundingClientRect() and break the entire forEach chain (no
+    // try/catch around it). Subsequent resize fns in _resizeFns wouldn't
+    // run, potentially affecting other components. Bail early when detached.
     const wrap = canvas.parentElement;
+    if (!wrap) return;
     const r = wrap.getBoundingClientRect();
     W = Math.round(r.width)  || 300;
     H = Math.round(r.height) || 300;
@@ -1471,22 +1442,27 @@ function _spawnCanvas(canvas, pix, observeEl) {
 
 function _attachOnChainObserver(card, mountFn, unmountFn) {
   let mounted = false;
-  // Single observer with one rootMargin — mount when entering +200px buffer,
-  // unmount when leaving same buffer. An earlier 2-observer attempt (mount
-  // at +80px, unmount at -200px past edge) had a dead zone: scrolling 50-150px
-  // past viewport tripped the unmount observer but never triggered the mount
-  // observer's state change on return, leaving cards permanently blank.
-  // Single-IO eliminates the dead zone at the cost of slightly more eager
-  // unmount (still 200px past edge — not aggressive).
+  // Single observer, rootMargin '800px' — mount when card enters viewport +
+  // 800px buffer, unmount when leaving same buffer. Bumped from 200px on
+  // 2026-05-08: at typical desktop viewports (720-900px) cards just below
+  // the fold (rectTop ~ vpH+5..200) sat in the dead zone — IO never fired
+  // mount, so users saw the placeholder canvas DT (which can look solid
+  // black at low-density frames) instead of the real on-chain render. With
+  // 800px buffer, virtually all cards visible after a brief scroll pre-mount.
+  // Memory cost: ~16 mod-iframes × 42KB srcdoc = ~670 KB worst case
+  // (acceptable on desktop; mobile may need to re-tune downward).
+  // An earlier 2-observer attempt (mount at +80px, unmount at -200px past
+  // edge) had a dead zone — single-IO eliminates that.
   const io = new IntersectionObserver(entries => {
     const intersecting = entries[0].isIntersecting;
     if (intersecting && !mounted) { mounted = true; mountFn(); }
     else if (!intersecting && mounted) { mounted = false; unmountFn(); }
-  }, { rootMargin: '200px', threshold: 0 });
+  }, { rootMargin: '800px', threshold: 0 });
   io.observe(card);
 }
 
 function _mountTokenIframe(card, id) {
+  if (card.dataset.ready === '1') return; // idempotent guard (audit 2026-05-08)
   const wrap = card.querySelector('.tok-canvas-wrap');
   const slot = card.querySelector('.tok-seed');
   if (!wrap) return;
@@ -1505,12 +1481,18 @@ function _mountTokenIframe(card, id) {
       slot.textContent = 'decode error';
       return;
     }
-    // Replace canvas with iframe (canvas already in DOM as placeholder)
+    // Replace canvas with iframe (canvas already in DOM as placeholder).
+    // NOTE: NO `loading="lazy"` — Le's audit 2026-05-08 found native lazy
+    // interferes when iframes are inserted in the same tick a parent panel
+    // transitions from display:none to display:block. Browser lazy detection
+    // uses pre-layout intersection (cards at default top:0,left:0) → only
+    // first 1-2 iframes "visible" → rest never activate. We do manual lazy
+    // mount via `_attachOnChainObserver` already (rootMargin 800px), so
+    // native lazy is redundant + harmful here.
     const existing = wrap.querySelector('iframe');
     let iframe = existing || document.createElement('iframe');
     iframe.className = 'tok-iframe';
     iframe.setAttribute('sandbox', 'allow-scripts');
-    iframe.setAttribute('loading', 'lazy');
     iframe.setAttribute('referrerpolicy', 'no-referrer');
     iframe.setAttribute('aria-label', 'token #' + id);
     iframe.srcdoc = _prepareSrcdoc(html);
@@ -1522,6 +1504,7 @@ function _mountTokenIframe(card, id) {
     slot.textContent = '0x' + id.toString(16).padStart(4, '0').toUpperCase();
     const ownerEl = card.querySelector('.tok-owner');
     if (ownerEl) ownerEl.textContent = _shortAddr(data.owner);
+    card.dataset.ready = '1';
   });
 }
 
@@ -1531,6 +1514,7 @@ function _unmountTokenIframe(card) {
 }
 
 function _mountModuloIframe(card, id) {
+  if (card.dataset.ready === '1') return; // idempotent guard (audit 2026-05-08)
   const wrap = card.querySelector('.mod-canvas-wrap');
   const slotsEl = card.querySelector('.mod-slots');
   if (!wrap) return;
@@ -1549,11 +1533,12 @@ function _mountModuloIframe(card, id) {
       slotsEl.textContent = 'decode error';
       return;
     }
+    // NO `loading="lazy"` — same rationale as _mountTokenIframe above.
+    // Manual lazy via _attachOnChainObserver covers viewport gating already.
     const existing = wrap.querySelector('iframe');
     let iframe = existing || document.createElement('iframe');
     iframe.className = 'mod-iframe';
     iframe.setAttribute('sandbox', 'allow-scripts');
-    iframe.setAttribute('loading', 'lazy');
     iframe.setAttribute('referrerpolicy', 'no-referrer');
     iframe.setAttribute('aria-label', 'modulo #' + id);
     iframe.srcdoc = _prepareSrcdoc(html);
@@ -1632,6 +1617,7 @@ async function _buildCards() {
       const label = '#' + String(id).padStart(3, '0');
       const card = document.createElement('div');
       card.className = 'tok-card';
+      card.dataset.tokId = String(id);
       card.innerHTML =
         '<div class="tok-tbar">' +
           '<span class="tok-dot"></span>' +
@@ -1691,6 +1677,50 @@ async function _buildCards() {
 }
 
 _buildCards();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Debug helper — pegá `_debug()` en la consola para ver el estado de cada card.
+// Reporta para mod-cards y tok-cards: id, ready flag, canvas/iframe presence,
+// srcdoc length, boundingClientRect, panel display state. Usado para diagnose
+// remoto del bug "cards no rendean" sin necesidad de DevTools steps manuales.
+// ─────────────────────────────────────────────────────────────────────────────
+window._debug = function _debug() {
+  const inspect = (sel, idAttr) => {
+    return [...document.querySelectorAll(sel)].map(card => {
+      const wrap = card.querySelector('.mod-canvas-wrap, .tok-canvas-wrap');
+      const canvas = card.querySelector('canvas');
+      const iframe = card.querySelector('iframe');
+      const cardRect = card.getBoundingClientRect();
+      const wrapRect = wrap ? wrap.getBoundingClientRect() : null;
+      const panel = card.closest('.tab-panel');
+      const panelDisplay = panel ? getComputedStyle(panel).display : '?';
+      const panelActive = panel ? panel.classList.contains('active') : false;
+      return {
+        id: card.dataset[idAttr],
+        ready: card.dataset.ready === '1' ? '✓' : '✗',
+        canvas: canvas ? `${canvas.width}×${canvas.height}` : '✗',
+        iframe: iframe ? `srcdoc=${(iframe.srcdoc || '').length}` : '✗',
+        cardSize: `${Math.round(cardRect.width)}×${Math.round(cardRect.height)}`,
+        wrapSize: wrapRect ? `${Math.round(wrapRect.width)}×${Math.round(wrapRect.height)}` : '✗',
+        cardTop: Math.round(cardRect.top),
+        panel: `${panelActive ? 'active' : 'inactive'}/${panelDisplay}`,
+      };
+    });
+  };
+  console.group('[debug] mod-cards');
+  console.table(inspect('.mod-card', 'modId'));
+  console.groupEnd();
+  console.group('[debug] tok-cards');
+  console.table(inspect('.tok-card', 'tokId'));
+  console.groupEnd();
+  console.log('[debug] state:', {
+    aliveTokenCount: typeof _aliveTokenCount !== 'undefined' ? _aliveTokenCount : '?',
+    aliveArtifactCount: typeof _aliveArtifactCount !== 'undefined' ? _aliveArtifactCount : '?',
+    activeTab: document.querySelector('.tab-btn.active')?.dataset.tab,
+    viewport: `${window.innerWidth}×${window.innerHeight}`,
+    scrollY: window.scrollY,
+  });
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Header action buttons (copy contract + Etherscan + OpenSea testnet)
@@ -1960,10 +1990,25 @@ function _createArtifactEngine(canvas, rawComposition) {
   let _xfadeT = 60, _xfadeFrom = _dtMode, _xfadeTo = _dtMode, _breathFrame = 0;
   function step(ops) { next.set(grid); let pFb, pSh, pNo, pMo, pWv, pOr, pGl, pBl; if (_xfadeT < 60 && _cycleModes.length > 1) { let alpha = _xfadeT / 60, fP = MODE_PROBS[_xfadeFrom] || MODE_PROBS.feedback, tP = MODE_PROBS[_xfadeTo] || MODE_PROBS.feedback; [pFb, pSh, pNo, pMo, pWv, pOr, pGl, pBl] = fP.map((p, i) => p*(1-alpha) + tP[i]*alpha); _xfadeT++; } else { [pFb, pSh, pNo, pMo, pWv, pOr, pGl, pBl] = MODE_PROBS[_dtMode] || MODE_PROBS.feedback; if (_dtMode === 'noise') { if (_breathFrame < 225) { let t = _breathFrame / 300; pNo = 0.5 * (1 - Math.sin(Math.PI * 2 * t) ** 2); pFb += 0.7 - pNo; _breathFrame++; } else if (_breathFrame < 300) { pNo = 0.3 * ((_breathFrame - 225) / 75); pFb += 0.7 - pNo; _breathFrame++; } else { _breathFrame = 0; pNo = 0.5; pFb += 0.2; } } } let cFb = pFb, cSh = pFb + pSh, cNo = cSh + pNo, cMo = cNo + pMo, cWv = cMo + pWv, cJg = cWv + pOr, cGl = cJg + pGl, cBl = cGl + pBl; for (let i = 0; i < (ops || 8); i++) { let r = _rng(); if (r < cFb) animFeedback(); else if (r < cSh) animShift(); else if (r < cNo) animNoise(); else if (r < cMo) animModulo(); else if (r < cWv) animWave(); else if (r < cJg) animJungle(); else if (r < cGl) animSector(); else if (r < cBl) animBlocks(); } grid.set(next); _sizeScale = _lerpScale(_sizeScale, _sizeScaleTarget, 60); _shiftBaseScale = _lerpScale(_shiftBaseScale, _shiftBaseScaleTarget, 60); _shiftZoneScale = _lerpScale(_shiftZoneScale, _shiftZoneScaleTarget, 60); _cycleFrames++; if (_cycleModes.length > 1 && _cycleFrames === 270 && _xfadeT >= 60) { _xfadeFrom = _dtMode; _xfadeTo = _cycleModes[(_cycleIdx + 1) % _cycleModes.length]; _xfadeT = 0; } if (_cycleFrames >= 300) _cycleFrames = 0; if (_cycleModes.length > 1 && _cycleFrames === 0) { _cycleIdx = (_cycleIdx + 1) % _cycleModes.length; _dtMode = _cycleModes[_cycleIdx]; let _sz = getSizeForMode(mod, _dtMode); _sizeScaleTarget = SIZE_SCALES[_sz] || 1; _shiftBaseScaleTarget = SHIFT_BASE_SCALES[_sz] || 0.4; _shiftZoneScaleTarget = SHIFT_ZONE_SCALES[_sz] || 1; _breathFrame = 0; } if (_rsDistinct.length > 1) { _rsCycleFrames++; if (_rsCycleFrames >= 300) { _rsCycleFrames = 0; _rsCycleIdx = (_rsCycleIdx + 1) % _rsDistinct.length; _rsSize = _rsDistinct[_rsCycleIdx]; } } if (_rdDistinct.length > 1) { _rdCycleFrames++; if (_rdCycleFrames >= 300) { _rdCycleFrames = 0; _rdCycleIdx = (_rdCycleIdx + 1) % _rdDistinct.length; _rdDensity = _rdDistinct[_rdCycleIdx]; } } if (_rvDistinct.length > 1) { _rvCycleFrames++; if (_rvCycleFrames >= 300) { _rvCycleFrames = 0; _rvCycleIdx = (_rvCycleIdx + 1) % _rvDistinct.length; _activeRectVariant = _rvDistinct[_rvCycleIdx]; } } _churnDither(); _txtFrame++; if (_txtFrame % 300 === 0) { let onIdxs = mod.tokens.map((t, i) => i).filter(i => getBiosOn(mod.id, i)); if (onIdxs.length === 1) pickText(onIdxs[0]); else if (onIdxs.length > 1) { _biosCycleIdx = (_biosCycleIdx + 1) % onIdxs.length; pickText(onIdxs[_biosCycleIdx]); } } }
   function paintTo(target, tctx) { let W = target.width, H = target.height, visCols = Math.floor(W/6), visRows = Math.floor(H/6), offC = Math.floor((450 - visCols) / 2), offR = Math.floor((250 - visRows) / 2), img = tctx.createImageData(W, H), buf = img.data; for (let r = 0; r < visRows; r++) for (let c = 0; c < visCols; c++) { let [R, G, B] = PAL[grid[(offR + r)*450 + (offC + c)]] || PAL[0]; for (let py = 0; py < 6; py++) for (let px = 0; px < 6; px++) { let i = ((r*6 + py)*W + (c*6 + px))*4; buf[i] = R; buf[i+1] = G; buf[i+2] = B; buf[i+3] = 255; } } _applyDither(buf, W, visCols, visRows, offC, offR); tctx.putImageData(img, 0, 0); }
+  // Native-resolution paint: 1 pixel = 1 cell. Used by the 'native' export preset
+  // for pixel-perfect output at 450×250. Skips _applyDither because DX patterns
+  // are 6×6 cell-internal and have no representation at 1 px/cell. Trade-off
+  // documented in the preset description (user-facing).
+  function paintToNative(target, tctx) {
+    const img = tctx.createImageData(450, 250), buf = img.data;
+    for (let r = 0; r < 250; r++) {
+      for (let c = 0; c < 450; c++) {
+        const [R, G, B] = PAL[grid[r*450 + c]] || PAL[0];
+        const i = (r*450 + c)*4;
+        buf[i] = R; buf[i+1] = G; buf[i+2] = B; buf[i+3] = 255;
+      }
+    }
+    tctx.putImageData(img, 0, 0);
+  }
   function render() { paintTo(canvas, ctx); }
   // ===== ENGINE END =====
 
-  return {step, render, paintTo, applyRects: applyRectShifts, tickRects, dtOps: _sumTokenOps};
+  return {step, render, paintTo, paintToNative, applyRects: applyRectShifts, tickRects, dtOps: _sumTokenOps};
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1982,6 +2027,15 @@ function _createArtifactEngine(canvas, rawComposition) {
 const W_EXPORT = 2700, H_EXPORT = 1500, FPS_EXPORT = 60, TOTAL_FRAMES = FPS_EXPORT * 20; // 20s
 
 const EXPORT_PRESETS = [
+  {
+    id: 'native',
+    label: 'Native 450×250 — pixel-perfect (no dither)',
+    sub: 'Best fidelity. 1 px = 1 cell. Viewer needs CSS image-rendering: pixelated to display at full size; small natively. No DX dither (cell-internal patterns don\'t fit at 1 px/cell).',
+    estSize: '~20 MB',
+    codec: 'avc1.640033',
+    bitrate: 8_000_000,
+    isNative: true,
+  },
   {
     id: 'default',
     label: 'Default — 40 Mbps H.264 4:2:0',
@@ -2124,11 +2178,21 @@ async function _exportMP4(modId, presetId, cropMode) {
   if (_exportInFlight) return;
   _exportInFlight = true;
   const preset = EXPORT_PRESETS.find(p => p.id === presetId) || EXPORT_PRESETS[0];
-  // Snapshot crop dims at export start — if the user resizes the window
-  // mid-encode, the output stays at the dims captured here. Cleaner than
-  // mid-export reflow.
-  const dims = cropMode ? _computeCropDims() : { W: W_EXPORT, H: H_EXPORT };
-  const W = dims.W, H = dims.H;
+  // Resolve output dimensions:
+  //   - Native preset: 450×250 fixed (1 px = 1 cell). cropMode is ignored
+  //     because native is already "max crop" — the grid resolution itself.
+  //   - cropMode active: snapshot dims of #expand-body at export start
+  //     (resize during encode would mid-flight reflow; cleaner to snapshot).
+  //   - Default: full grid 2700×1500.
+  let W, H;
+  if (preset.isNative) {
+    W = 450; H = 250;
+  } else if (cropMode) {
+    const dims = _computeCropDims();
+    W = dims.W; H = dims.H;
+  } else {
+    W = W_EXPORT; H = H_EXPORT;
+  }
   const btn = document.getElementById('export-btn');
   const origText = btn ? btn.textContent : '↓ MP4';
   if (btn) btn.disabled = true;
@@ -2175,15 +2239,28 @@ async function _exportMP4(modId, presetId, cropMode) {
     });
     encoder.configure(cfg);
 
+    const paintFn = preset.isNative ? engine.paintToNative : engine.paintTo;
     for (let f = 0; f < TOTAL_FRAMES; f++) {
       engine.step(engine.dtOps);
       engine.applyRects();
       engine.tickRects && engine.tickRects();
-      engine.paintTo(offscreen, octx);
+      paintFn(offscreen, octx);
 
       const frame = new VideoFrame(offscreen, {
         timestamp: Math.round(f * 1_000_000 / FPS_EXPORT),
         duration: Math.round(1_000_000 / FPS_EXPORT),
+        // T1 quick win (Grok + security-checklist consensus 2026-05-08): explicit
+        // colorSpace with fullRange:true preserves values near 0 and 255 (saturated
+        // reds, pure whites/blacks) that limited-range BT.709 (default) clips into
+        // 16-235. Canvas content is sRGB; declaring it explicitly tells the encoder
+        // to use full-range RGB→YUV conversion. Mitigates "washed colors" reported
+        // 2026-05-08 in the H.264 4:2:0 chroma path.
+        colorSpace: {
+          primaries: 'bt709',
+          transfer:  'iec61966-2-1',  // sRGB transfer function
+          matrix:    'bt709',
+          fullRange: true,
+        },
       });
       encoder.encode(frame, { keyFrame: true });
       frame.close();
@@ -2389,4 +2466,3 @@ document.addEventListener('keydown', e => {
 </script>
 </body>
 </html>
-
