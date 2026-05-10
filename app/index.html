@@ -25,15 +25,19 @@
   img-src 'self' data: blob:;
   connect-src 'self' https://*.firebaseio.com wss://*.firebaseio.com https://*.googleapis.com https://www.gstatic.com https://*.cloudfunctions.net https://www.google.com https://rpc.sepolia.org https://ethereum-sepolia-rpc.publicnode.com wss://ethereum-sepolia-rpc.publicnode.com;
   frame-src 'self' https://www.google.com;
-  frame-ancestors 'none';
   base-uri 'self';
   form-action 'self';
 ">
-<!-- frame-ancestors enforcement note: per CSP spec, the directive above is
-     IGNORED when delivered via <meta> (it requires a real HTTP header). The
-     declaration is kept for documentation + works if the host is later
-     migrated behind Cloudflare/etc. that injects it as a header. The runtime
-     frame-buster below is the actual defense on GitHub Pages. -->
+<!-- Clickjacking defense (post-2026-05-10 update): frame-ancestors directive
+     removed from meta because browsers ignore it when delivered via meta tag
+     per CSP spec (generated a console warning without providing real defense).
+     Real layered defense:
+       (1) Cloudflare Transform Rule security-headers-modulo sends
+           X-Frame-Options: DENY as HTTP header (deployed 2026-05-07,
+           verified 5/5 securityheaders.com green for *.ubk.art + apex).
+       (2) JS frame-buster runtime below as fallback if Cloudflare layer
+           is bypassed (e.g. IP-direct GitHub Pages access, cached response
+           without header). Critical here: page has wallet connect + mint flow. -->
 <script>
   if (window !== window.top) {
     // Page loaded in an iframe — clickjacking risk (malicious overlay
@@ -870,14 +874,15 @@ button, a, [role="button"], .pill, .info-btn, .toggle-btn, .modal-close,
 .tr-rand:hover { background:var(--row-hover); color:var(--sv); transform:rotate(-180deg); }
 /* Combined transform: keep vertical centering AND apply the rotation when expanded */
 .token-row.expanded .tr-arrow { transform:translateY(-50%) rotate(90deg); }
-/* Non-owned tokens (edit-blocked) — header stays legible, the expanded panel
-   dims. The swatch next to the rank keeps full opacity so the actual color
-   renders faithfully; the rank/address text is dimmed as a subtle signal of
-   read-only status. The entire .tr-traits expanded panel is dimmed + non-
-   interactive.
-   NOTE: "edit-blocked" is the ownership-gated read-only state for tokens you
-   do not own. It is distinct from the "locked" state (public commitment to a
-   modulo for settle), which lives in a separate flag. */
+/* edit-blocked tokens — header stays legible, the expanded panel dims.
+   The swatch next to the rank keeps full opacity so the actual color renders
+   faithfully; the rank/address text is dimmed as a subtle signal of read-only
+   status. The entire .tr-traits expanded panel is dimmed + non-interactive.
+   NOTE (2026-05-08): "edit-blocked" now covers two cases:
+     1. Tokens you do NOT own (ownership-gated read-only — other user's token).
+     2. Your own tokens that are LOCKED publicly (commitment to a modulo for
+        settle — traits cannot be modified until expire/orphan/burn release).
+   In both cases trait controls are non-interactive and the row is dimmed. */
 .token-row.edit-blocked .tr-addr,
 .token-row.edit-blocked .tr-idx { opacity:0.55; }
 .token-row.edit-blocked .tr-tags { opacity:0.5; }
@@ -3679,9 +3684,15 @@ function buildTokenList(mod) {
     if (moduloTokenOps[mod.id][i] == null) moduloTokenOps[mod.id][i] = positionDefaultOps(mod.tokens.length, i);
 
     const row = document.createElement('div');
-    // "edit-blocked" = read-only view of another user's token (ownership-gated).
-    // Distinct from the public-commitment "lock" state which lives in a separate flag.
-    row.className = 'token-row' + (own ? '' : ' edit-blocked');
+    // "edit-blocked" = read-only view of the token. Two cases trigger it:
+    //   1. Not our token — ownership-gated read-only (other user's token).
+    //   2. Our token but locked publicly — lock is a binding commitment, traits
+    //      cannot be modified until expire/orphan/burn release path.
+    // 2026-05-08 fix: extended to case 2 — previously locked own tokens left
+    // the trait controls visually active even though all _canEditSlot-gated
+    // setters were no-ops. Owners would click and see no change → confusion.
+    const _editBlocked = !own || (!mod.personal && _isSlotLocked(mod.id, i));
+    row.className = 'token-row' + (_editBlocked ? ' edit-blocked' : '');
 
     // Header (always visible) — shows rank instead of ID
     const header = document.createElement('div');
@@ -3728,7 +3739,10 @@ function buildTokenList(mod) {
       _el('span', { class: 'tr-addr', text: shortAddr(full) }),
       _el('span', { class: 'tr-tags', id: `tr-tags-${mod.id}-${i}` }, _trTagSpans),
       _lockIconEl,
-      own ? _el('button', { class: 'tr-rand', title: 'randomize', text: '↺' }) : null,
+      // Hide randomize button in edit-blocked rows (not-own OR own+locked).
+      // The randomizeToken handler already early-returns via _canEditSlot, but
+      // showing a clickable button on a frozen row sends mixed signals.
+      (own && !_editBlocked) ? _el('button', { class: 'tr-rand', title: 'randomize', text: '↺' }) : null,
       _el('span', { class: 'tr-arrow', text: '▸' })
     ].filter(Boolean));
     applySwatch(header.querySelector('.tr-swatch'), mod.id, i);
@@ -3931,6 +3945,18 @@ function buildTokenList(mod) {
     );
     slider.addEventListener('input', e => {
       e.stopPropagation();
+      // 2026-05-08 fix: speed slider was the only trait control without an
+      // _canEditSlot guard — locked own tokens accepted speed edits silently
+      // (other trait setters all early-return via _canEditSlot). Revert the
+      // slider DOM value to the persisted ops so the thumb snaps back.
+      if (!_canEditSlot(mod.id, i)) {
+        const persisted = (moduloTokenOps[mod.id] && moduloTokenOps[mod.id][i] != null)
+          ? moduloTokenOps[mod.id][i]
+          : initOps;
+        slider.value = String(persisted);
+        speedVal.textContent = String(persisted);
+        return;
+      }
       const ops = parseInt(slider.value);
       speedVal.textContent = ops;
       moduloTokenOps[mod.id][i] = ops;
@@ -8260,6 +8286,15 @@ async function lockToken(modId, tokenNum, durationMs) {
 }
 
 // Per-(modId,tokenNum) timer registry for own-lock precise expiry.
+// NOTE (2026-05-08 audit Round 3): timers can become orphan if a lock is
+// removed via a remote unlock (other tab settles, server-side sweeper, settle
+// from a different wallet, etc.). When the orphan timer eventually fires,
+// the defensive guard at line 8278-8280 (`!entry || entry.owner !== SESSION_USER`)
+// short-circuits the unlockToken call. Bounded: MAX_OWN_PER_MODULO=4 × ~10
+// modulos = 40 entries max, ~12 KB worst case, lifetime ≤ MAX_LOCK_DURATION
+// (~12h). Diff-cleanup logic in the _fbInitSync onValue handler was considered
+// but skipped — cost (10+ LOC + cognitive overhead "did I get the diff right")
+// outweighs benefit (12 KB self-resolving in ≤12h).
 const _ownExpiryTimers = {};
 
 function _scheduleOwnExpiry(modId, tokenNum, lockedUntil) {
@@ -8961,13 +8996,31 @@ function _getEventProvider() {
   if (!window.ethers || !window.ethers.WebSocketProvider) return null;
   try {
     _wsProvider = new window.ethers.WebSocketProvider(_WSS_URL_SEPOLIA, WALLET_TARGET_CHAIN_ID);
+    // Capture provider ref at attach-time so the close handler always destroys
+    // the provider that owns THIS socket, not whatever `_wsProvider` happens to
+    // point at when the close fires (matters during reconnect storms — 3+
+    // reconnects in 10s could otherwise destroy the wrong instance).
+    const ourProvider = _wsProvider;
     // Hook into the underlying browser WebSocket for connection state events.
     // ethers v6 exposes the raw socket on `_wsProvider.websocket`.
     const sock = _wsProvider.websocket;
     if (sock && typeof sock.addEventListener === 'function') {
       sock.addEventListener('close', () => {
         dbg.warn('[ws] provider closed, reconnecting in 3s...');
-        _wsProvider = null;
+        // 2026-05-08 audit Round 3 fix: explicitly destroy the provider
+        // before nulling. ethers v6 WebSocketProvider holds internal
+        // references (PollingBlockSubscriber, scheduled drainer timeout,
+        // socket handler chain) that defeat GC if only the external ref is
+        // nulled. Without destroy(), 5-10 silent-kill reconnects in a 1-2h
+        // session = 5-10 zombie providers held by their internal closures.
+        // Destroy is idempotent + try/catch covers the InvalidStateError
+        // case where the socket is already closed.
+        try { ourProvider && ourProvider.destroy && ourProvider.destroy(); } catch (_) {}
+        // Only null the global ref if it's still pointing at the provider
+        // we just destroyed — protects against the storm-reconnect race
+        // where a fresh provider replaced this one between the close event
+        // queueing and firing.
+        if (_wsProvider === ourProvider) _wsProvider = null;
         _transferListenerActive = false;
         _transferListenerContract = null;
         clearTimeout(_wsReconnectTimer);
@@ -9123,6 +9176,11 @@ async function _handleTransferEvent(from, to, tokenId, agent) {
 }
 
 let _lastProcessedBlock = null;
+// Heartbeat: timestamp (ms) of last block event received. Used by the
+// visibility handler to detect a "silent dead" WS even when readyState
+// lies (or close event never fired). Sepolia block time = 12s, so >120s
+// without a block = at least 10 blocks missed = the socket is unreliable.
+let _lastBlockReceivedTs = 0;
 
 async function _setupTransferListener() {
   if (_transferListenerActive) {
@@ -9142,22 +9200,50 @@ async function _setupTransferListener() {
   const agent = _getTokenAgent(provider);
   if (!agent) { dbg.warn('[transfer-listener] no contract'); return; }
 
+  // Initialize cursor at current tip ONLY on first setup. On reconnect
+  // (WS dropped + 3s reconnect) we keep the previous cursor so the gap
+  // [oldCursor+1, newTip] gets replayed via queryFilter on the next block
+  // event. Otherwise events that fired during the disconnect window would
+  // be silently lost (worst case: background tab + silent close + many
+  // blocks between disconnect and reconnect).
+  //
+  // 2026-05-08 audit fix #1: if `getBlockNumber()` fails on FIRST init
+  // (cursor === null), do NOT seed cursor=0 — that would request a 1→tip
+  // queryFilter range covering ~8M blocks, get rejected by publicnode
+  // (`range too large`), and loop forever without advancing. Instead abort
+  // the listener init; visibility handler / next reconnect picks up retry.
+  try {
+    const tip = await provider.getBlockNumber();
+    if (_lastProcessedBlock === null) {
+      _lastProcessedBlock = tip;
+      dbg.log('[transfer-listener] cursor initialized at block', tip);
+    } else {
+      dbg.log('[transfer-listener] reconnected, preserving cursor at', _lastProcessedBlock,
+        '(tip:', tip, '— gap will replay)');
+    }
+  } catch (err) {
+    dbg.warn('[transfer-listener] getBlockNumber failed, aborting listener init:', err && err.message);
+    // Stay in pre-active state — _transferListenerActive remains false,
+    // so the visibility handler's re-arm path can retry on next foreground.
+    return;
+  }
+
+  // 2026-05-08 audit fix #3: defensive removeAllListeners('block') before
+  // attaching ours, in case a previous setup didn't tear down cleanly (e.g.
+  // close event + visibility re-arm both fire near-simultaneously). NOTE:
+  // this assumes only this listener subscribes to 'block' events on this
+  // provider. If another feature ever adds its own block listener, switch
+  // to tracked-handler pattern: keep a module-scope ref to OUR cb and call
+  // `provider.off('block', _ourCb)` instead.
+  try { provider.removeAllListeners('block'); } catch (_) {}
+
   _transferListenerContract = agent;
   _transferListenerActive = true;
-
-  // Initialize cursor at current tip — events before listener setup are
-  // covered by the initial `_sepoliaSync` that ran prior to this.
-  try {
-    _lastProcessedBlock = await provider.getBlockNumber();
-    dbg.log('[transfer-listener] cursor initialized at block', _lastProcessedBlock);
-  } catch (err) {
-    dbg.warn('[transfer-listener] getBlockNumber failed:', err && err.message);
-    _lastProcessedBlock = 0;
-  }
 
   // On each new block, query Transfer events in the gap [_lastProcessedBlock+1, current].
   // Gap-aware so a missed block (network blip) recovers on the next event.
   provider.on('block', async (blockNumber) => {
+    _lastBlockReceivedTs = Date.now();  // heartbeat for silent-WS-kill detection
     if (_lastProcessedBlock === null || blockNumber <= _lastProcessedBlock) return;
     const fromBlock = _lastProcessedBlock + 1;
     let logs;
@@ -9191,6 +9277,7 @@ window._setupTransferListener = _setupTransferListener;
 // fast tab-switching doesn't spam RPC reads.
 let _lastVisibilitySync = 0;
 const _MIN_VIS_SYNC_MS = 10000;
+const _HEARTBEAT_DEAD_MS = 120000;  // 120s = 10+ Sepolia blocks missed = socket unreliable
 document.addEventListener('visibilitychange', async () => {
   if (document.hidden) return;
   const now = Date.now();
@@ -9201,9 +9288,49 @@ document.addEventListener('visibilitychange', async () => {
   }
   _lastVisibilitySync = now;
   dbg.log('[vis] tab visible — force re-sync');
+
+  // 2026-05-08 audit fix #2: probe socket health BEFORE checking the
+  // active flag. The earlier visibility re-arm relied on `_transferListenerActive`
+  // being flipped to false by the WS `close` handler, but iOS Safari (and
+  // other browsers in long-background tabs) kill the WS silently — close
+  // event never fires, so the flag stays `true` and the re-arm short-circuits
+  // while the listener is bound to a dead socket.
+  //
+  // Two signals indicate dead-but-flagged-alive:
+  //   1. `readyState >= CLOSING` (2 or 3 — socket is closing/closed)
+  //   2. heartbeat: last block received >120s ago (covers the readyState-lies
+  //      case where socket reports OPEN but isn't actually receiving)
+  // Either signal triggers tear-down so the re-arm guard below picks it up.
+  const sock = _wsProvider && _wsProvider.websocket;
+  const readyStateDead = !sock || sock.readyState >= WebSocket.CLOSING;
+  const heartbeatDead = _lastBlockReceivedTs > 0 && (now - _lastBlockReceivedTs) > _HEARTBEAT_DEAD_MS;
+  if ((readyStateDead || heartbeatDead) && _transferListenerActive) {
+    dbg.warn('[vis] dead WS detected (readyStateDead:', readyStateDead,
+      ', heartbeatDead:', heartbeatDead, ') — tearing down for re-arm');
+    _transferListenerActive = false;
+    _transferListenerContract = null;
+    // 2026-05-08 audit Round 3 fix: destroy + null the dead provider so
+    // _setupTransferListener creates a fresh one. Without this, _getEventProvider
+    // short-circuits at `if (_wsProvider) return _wsProvider`, returning the
+    // dead instance — `removeAllListeners('block')` runs on the dead provider
+    // and the new `provider.on('block')` attaches to a dead socket that never
+    // fires events. The earlier "don't null _wsProvider" decision was wrong
+    // (5/5 audit agents flagged this as a memory + functional bug).
+    try { _wsProvider && _wsProvider.destroy && _wsProvider.destroy(); } catch (_) {}
+    _wsProvider = null;
+  }
+
   if (typeof _sepoliaSync === 'function') {
     try { await _sepoliaSync(); }
     catch (err) { dbg.warn('[vis] sync failed:', err && err.message); }
+  }
+  // Re-arm Transfer listener if it was dropped while the tab was hidden
+  // (silent kill detected above OR genuine close handler trip during background).
+  // `_setupTransferListener` is idempotent (`_transferListenerActive` guard
+  // short-circuits if already running), so calling unconditionally is safe.
+  if (!_transferListenerActive && typeof _setupTransferListener === 'function') {
+    try { await _setupTransferListener(); }
+    catch (err) { dbg.warn('[vis] re-arm listener failed:', err && err.message); }
   }
 });
 
