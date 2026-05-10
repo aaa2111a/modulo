@@ -6,9 +6,63 @@
 <!-- CSP defence-in-depth. Collection is read-only — no Firebase, no wallet,
      no Cloud Functions. Reads on-chain via ethers v6 UMD (jsdelivr) +
      publicnode RPC. Token/Modulo renders via iframe srcdoc with sandboxed
-     HTML decoded from tokenURI() base64 — never src=data: (per security
-     audit 2026-05-08 P1-1: srcdoc enforces opaque origin via sandbox flag,
-     preventing escape into modulo.ubk.art origin where /app/ has wallet). -->
+     HTML decoded from tokenURI() base64 — never src=data:.
+
+     Containment model (audit 2026-05-09 Round 4 P2-3 fix — previous comment
+     here was factually wrong about frame-src governing srcdoc): srcdoc
+     iframes have origin `about:srcdoc` and are NOT governed by CSP
+     `frame-src` (which controls `src=` URLs only). The real isolation is
+     sandbox="allow-scripts" WITHOUT allow-same-origin/popups/forms/top-
+     navigation — child document cannot access modulo.ubk.art DOM,
+     localStorage, or wallet, regardless of what HTML the iframe receives.
+     `frame-src 'self'` below is kept as defence against future src=
+     iframe additions; it has no effect on the srcdoc renderers used today. -->
+<!-- CSP defence-in-depth. Collection is read-only — no Firebase, no wallet,
+     no Cloud Functions. Reads on-chain via ethers v6 UMD (jsdelivr) +
+     publicnode RPC. Token/Modulo renders via iframe srcdoc with sandboxed
+     HTML decoded from tokenURI() base64 — never src=data:.
+
+     Containment model: srcdoc iframes have origin about:srcdoc and inherit
+     the parent CSP per CSP3 spec. The real isolation is sandbox="allow-scripts"
+     WITHOUT allow-same-origin/popups/forms/top-navigation — iframe child
+     document cannot access modulo.ubk.art DOM, localStorage, or wallet,
+     regardless of what HTML the iframe receives.
+
+     ARCHITECTURAL LIMITATION — script-src 'unsafe-inline' is REQUIRED here
+     (NOT a deferred technical debt; it cannot be removed without re-architecting
+     the on-chain renderer):
+       1. Iframes srcdoc inherit parent CSP (CSP3 §6.1). Inline scripts
+          inside srcdoc must match a hash in this CSP or have 'unsafe-inline'.
+       2. The on-chain HTML (modulo-token-v0.html, modulo-artifact-v1.html, etc.)
+          contains inline <script> with placeholder substitution
+          (`const TRAITS = __MODULO_TRAITS__;`). HTMLBuilder.sol replaces the
+          placeholder with per-token JSON at tokenURI() call time → each
+          iframe's script bytes differ per token → impossible to pre-allowlist
+          via SHA-256 hashes.
+       3. _prepareSrcdoc additionally injects an IO stub <script> and CSS reset
+          <style> at the top of every iframe head. Those have constant content
+          but are part of the iframe srcdoc and inherit the same CSP.
+       4. 'strict-dynamic' does not help — it propagates trust to scripts loaded
+          DYNAMICALLY by trusted scripts (createElement('script')+appendChild),
+          NOT to inline scripts in iframes inherited via srcdoc.
+       5. Removing 'unsafe-inline' breaks the entire on-chain rendering pipeline.
+
+     Defense-in-depth that actually applies (NOT 'unsafe-inline'):
+       - sandbox="allow-scripts" (no allow-same-origin) → iframe cannot access
+         parent DOM / wallet / localStorage / cookies even if compromised
+       - On-chain HTML mutable only via owner-only setHtmlFilename → post-mainnet
+         plan is renounceOwnership() to make it immutable forever
+       - Cloudflare X-Frame-Options: DENY HTTP header + JS frame-buster
+         runtime → page cannot be embedded in iframes (clickjacking defense).
+         frame-ancestors removed from this meta 2026-05-10 because browsers
+         ignore it when delivered via meta tag.
+       - SRI sha384 hashes on jsdelivr scripts (ethers + mp4-muxer) → CDN
+         compromise blocked
+       - connect-src locks RPC traffic to publicnode only
+
+     Homepage (modulo-repo/index.html) and about (about/index.html) DO use
+     hash-based CSP (no srcdoc iframes there) — the constraint here is specific
+     to collection's iframe srcdoc renderer architecture. -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
   script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net;
@@ -17,12 +71,14 @@
   img-src 'self' data: blob:;
   connect-src 'self' https://ethereum-sepolia-rpc.publicnode.com;
   frame-src 'self';
-  frame-ancestors 'none';
   base-uri 'self';
   form-action 'self';
 ">
-<!-- Frame-buster: clickjacking defense for GitHub Pages where headers can't
-     be sent (frame-ancestors via meta is browser-ignored). -->
+<!-- Frame-buster: clickjacking runtime fallback. Cloudflare Transform Rule
+     security-headers-modulo (deployed 2026-05-07) sends X-Frame-Options:
+     DENY as HTTP header — primary defense. This JS buster activates if the
+     Cloudflare layer is bypassed (IP-direct GitHub Pages access, cached
+     response without header). -->
 <script>
   if (window !== window.top) {
     try { window.top.location = window.location.href; } catch (_) {}
@@ -42,7 +98,8 @@
          | openssl dgst -sha384 -binary | openssl base64 -A -->
 <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"
         integrity="sha384-6Zl0Pc8zjSz8KvmNeXRvUQgY4ryFb+BwDvKCmLYcBME0joAaru491tQgi9B7zsMM"
-        crossorigin="anonymous"></script>
+        crossorigin="anonymous"
+        referrerpolicy="no-referrer"></script>
 <!-- mp4-muxer 5.1.3 UMD — MP4 export from OffscreenCanvas + WebCodecs.
      Same SRI as app/index.html (single version pinned across the project to
      avoid drift). Used only by Modulo expand modal MP4 export — not loaded
@@ -196,6 +253,43 @@ body.night .id-action-btn { background:var(--bg); }
   line-height:1.0;
   color:rgba(0,0,0,1.0);
 }
+/* Per-character span used by the tab-switch letter-swap animation. The title
+   text is converted to <span class="dt-char">…</span> per char on first
+   `_scrambleTitle` call. inline-block lets `transform` work without
+   affecting line layout. */
+.dt-char {
+  display:inline-block;
+  transform-origin:center center;
+}
+
+/* Letter morph animation — slide vertical (split-flap / airport flip board).
+   Letra slides up + fades out, swaps textContent at the 50% midpoint when
+   span is at translateY -50% / opacity 0, then slides in from below. The 50%
+   travel (instead of full 100%) keeps the animation within the title bounding
+   box without overlapping surrounding elements. */
+.dt-char--morphing {
+  animation:dt-morph 0.24s ease-in-out forwards;
+}
+@keyframes dt-morph {
+  0%   { transform:translateY(0%);   opacity:1; }
+  49%  { transform:translateY(-50%); opacity:0; }
+  50%  { transform:translateY(50%);  opacity:0; }
+  100% { transform:translateY(0%);   opacity:1; }
+}
+.dt-char--enter {
+  animation:dt-enter 0.18s ease-out forwards;
+}
+@keyframes dt-enter {
+  from { transform:translateY(50%);  opacity:0; }
+  to   { transform:translateY(0%);   opacity:1; }
+}
+.dt-char--exit {
+  animation:dt-exit 0.18s ease-in forwards;
+}
+@keyframes dt-exit {
+  from { transform:translateY(0%);   opacity:1; }
+  to   { transform:translateY(-50%); opacity:0; }
+}
 .display-sub {
   font-size:13px; font-family:monospace;
   letter-spacing:.04em; color:var(--text-sub);
@@ -301,6 +395,26 @@ body.night .stats-box .meta-value { color:rgba(255,255,255,0.85); }
 /* ── Tab panels ── */
 .tab-panel { display:none; }
 .tab-panel.active { display:block; }
+
+/* Card scale pop-in animation on tab switch (Option C — 2026-05-08+).
+   Cards in the active panel animate from scale 0 → 1 with stagger via
+   --card-index custom property (set by _buildCards per index). The
+   cubic-bezier provides a slight overshoot ("back-out" easing) that gives
+   the "pop" feel. animation-fill-mode: backwards keeps the card hidden
+   during animation-delay (avoids flash of full-size cards before stagger).
+   Re-fires on every display:none → display:block transition (browser
+   resets CSS animations when an element re-enters the render tree).
+   Stagger capped at index 20 via min() so 100-token grid finishes in
+   ~360ms + 420ms anim = ~780ms total instead of 2.5s+. */
+.tab-panel.active .mod-card,
+.tab-panel.active .tok-card {
+  animation:card-pop-in 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
+  animation-delay:calc(min(var(--card-index, 0), 20) * 18ms);
+}
+@keyframes card-pop-in {
+  from { transform:scale(0);   opacity:0; }
+  to   { transform:scale(1);   opacity:1; }
+}
 
 /* ── Modulo (artifacts) grid: 4 cols on wide, scale down on narrower ── */
 .mod-grid {
@@ -420,8 +534,8 @@ body.night .mod-price { color:rgba(255,255,255,0.68); }
 }
 body.night .tok-price { color:rgba(255,255,255,0.68); }
 
-/* Shared canvas style — used as skeleton placeholder until iframe mounts.
-   Iframe replaces canvas in the same wrap on _mountTokenIframe / _mountModuloIframe. */
+/* Shared canvas style — legacy DT placeholder, replaced by .card-loading
+   2026-05-08+. Kept as dead CSS in case anyone re-enables _spawnCanvas. */
 .mod-canvas, .tok-canvas {
   position:absolute; inset:0;
   width:100%; height:100%;
@@ -429,6 +543,196 @@ body.night .tok-price { color:rgba(255,255,255,0.68); }
   image-rendering:crisp-edges;
   image-rendering:pixelated;
 }
+
+/* Loading state — macOS-style 12-spoke spinner on soft gray overlay.
+   Shown initially in each card while the on-chain iframe is fetched +
+   mounted. Removed by _mountTokenIframe / _mountModuloIframe on success
+   or burn/decode-error path. The spinner uses `steps(12, end)` so each
+   spoke ticks discretely like macOS NSProgressIndicator (smooth rotation
+   with continuous SVG fade looks Material/Web, not macOS). */
+.card-loading {
+  position:absolute; inset:0;
+  display:flex; align-items:center; justify-content:center;
+  background:rgba(0,0,0,0.05);
+  z-index:1;
+}
+body.night .card-loading { background:rgba(255,255,255,0.04); }
+.card-spinner {
+  width:24px; height:24px;
+  color:var(--text-sub);
+  animation:card-spinner-rotate 1.05s steps(12, end) infinite;
+}
+@keyframes card-spinner-rotate {
+  to { transform:rotate(360deg); }
+}
+/* Hide spinner on burned/error cards — wrap is already dimmed via
+   .card-burned, the spinner spinning over a dim wrap looks broken. */
+.tok-canvas-wrap.card-burned .card-loading,
+.mod-canvas-wrap.card-burned .card-loading { display:none; }
+
+/* Details popup — anchored bottom-right inside #expand-window with a small
+   offset (no pegged-to-edge feel). Toggled via #expand-details-btn. Floats
+   above the iframe. Dark glass styling looks consistent regardless of the
+   iframe content (most renders are mid-tone with bright cells, so a dark
+   semi-transparent panel reads cleanly). */
+.expand-details-popup {
+  position:absolute;
+  right:18px; bottom:18px;
+  width:560px;       /* doubled from 280 to fit per-token expanded trait rows */
+  max-height:88vh;   /* taller so larger fonts fit without too much scrolling */
+  overflow-y:auto;
+  background:rgba(30,30,30,0.92);
+  -webkit-backdrop-filter:blur(14px);
+          backdrop-filter:blur(14px);
+  border:0.5px solid rgba(255,255,255,0.12);
+  border-radius:8px;
+  padding:36px 20px 20px 20px;  /* extra top to clear the close dot at top-left */
+  font-family:monospace;
+  font-size:11.5px;             /* base — bumped from 9.5 for readability */
+  line-height:1.45;
+  color:rgba(255,255,255,0.86);
+  box-shadow:0 8px 24px rgba(0,0,0,0.42);
+  z-index:10;
+  opacity:0;
+  transform:translateY(6px);
+  pointer-events:none;
+  transition:opacity 0.15s ease, transform 0.15s ease;
+}
+.expand-details-popup.visible {
+  opacity:1;
+  transform:translateY(0);
+  pointer-events:auto;
+}
+/* Close dot — top-left, mirrors the macOS-style red close dot used by the
+   #expand-window tbar. Click closes the popup without affecting the expand
+   modal itself (uses _closeDetailsPopup, no event propagation outward). */
+.details-close-dot {
+  position:absolute;
+  top:11px; left:11px;
+  width:12px; height:12px;
+  border-radius:50%;
+  background:#ff5f57;
+  cursor:pointer;
+  flex-shrink:0;
+  transition:transform 0.15s;
+  z-index:1;
+}
+.details-close-dot:hover { transform:scale(1.25); }
+.details-row {
+  display:flex; justify-content:space-between; align-items:center;
+  padding:4px 0;
+  gap:12px;
+}
+.details-label {
+  color:rgba(255,255,255,0.45);
+  letter-spacing:0.06em;
+  text-transform:uppercase;
+  font-size:10.5px;
+  flex-shrink:0;
+}
+.details-value {
+  color:rgba(255,255,255,0.9);
+  text-align:right;
+  word-break:break-all;
+  font-size:11.5px;
+}
+.details-link {
+  color:rgba(255,255,255,0.9);
+  text-decoration:none;
+  border-bottom:0.5px dotted rgba(255,255,255,0.32);
+  transition:border-color 0.15s, color 0.15s;
+  font-size:11.5px;
+}
+.details-link:hover {
+  border-bottom-color:rgba(255,255,255,0.78);
+  color:#fff;
+}
+.details-divider {
+  margin:11px 0 9px;
+  height:0.5px;
+  background:rgba(255,255,255,0.12);
+}
+.details-tokens-header {
+  font-size:11px;
+  color:rgba(255,255,255,0.45);
+  letter-spacing:0.08em;
+  text-transform:uppercase;
+  margin-bottom:8px;
+}
+/* Each token in the composition: header (id + rank + Etherscan link) +
+   2-column grid of full trait names. */
+.details-token-block {
+  padding:10px 0 6px;
+  border-top:0.5px solid rgba(255,255,255,0.08);
+}
+.details-token-block:first-of-type { border-top:none; padding-top:0; }
+.details-token-header {
+  display:flex; justify-content:space-between; align-items:center;
+  font-size:13px;
+  color:rgba(255,255,255,0.9);
+  padding:2px 0 7px;
+}
+.details-token-meta { color:rgba(255,255,255,0.9); }
+.details-token-header a {
+  color:rgba(255,255,255,0.55);
+  text-decoration:none;
+  font-size:14px;
+  padding:0 4px;
+  transition:color 0.15s;
+}
+.details-token-header a:hover { color:#fff; }
+/* Multi-column layout (NOT grid) — items flow top-to-bottom in column 1
+   first, then wrap to column 2. With grid-auto-flow:row each pair of items
+   would be next to each other (1=2, 3=4...); CSS columns instead distributes
+   so item N+1 lands BELOW item N (1, 2, 3, 4, 5 down column 1; 6, 7, 8, 9
+   down column 2). */
+.details-token-traits {
+  column-count:2;
+  column-gap:22px;
+  font-size:11px;
+}
+.details-trait {
+  display:flex; justify-content:space-between; align-items:center;
+  gap:10px;
+  padding:2.5px 0;
+  break-inside:avoid; /* don't split a single trait row across columns */
+}
+.details-trait-label {
+  color:rgba(255,255,255,0.45);
+  text-transform:uppercase;
+  letter-spacing:0.05em;
+  font-size:10.5px;
+}
+.details-trait-value {
+  color:rgba(255,255,255,0.85);
+  display:inline-flex; align-items:center; gap:6px;
+  font-size:11px;
+}
+.details-trait-swatch {
+  display:inline-block;
+  width:11px; height:11px;
+  border-radius:2px;
+  border:0.5px solid rgba(255,255,255,0.18);
+}
+/* Used when composition couldn't be parsed — placeholder dim. Refactored
+   from inline style="opacity:0.5" 2026-05-10 as part of CSP 'unsafe-inline'
+   removal pass (style="" attrs in JS-built innerHTML strings are gated by
+   CSP just like static HTML attrs). */
+.details-trait-unavailable { opacity:0.5; }
+
+/* Details button — same styling skeleton as #export-btn / #expand-reset-btn.
+   margin-left:auto moved to #expand-onchain-btn (which is now the leftmost
+   action button); details/MP4/RESET just gap-spaced after onchain. */
+#expand-details-btn {
+  padding:2px 8px;
+  font-size:9px; font-family:monospace; letter-spacing:.06em;
+  background:transparent; border:0.5px solid var(--border-mid);
+  border-radius:3px; color:var(--text);
+  cursor:pointer; transition:background 0.15s, color 0.15s, border-color 0.15s;
+  flex-shrink:0;
+}
+#expand-details-btn:hover { background:var(--bg-alt); border-color:var(--text-sub); }
+#expand-details-btn.active { background:var(--bg-alt); border-color:var(--text); }
 
 /* Iframe rendering the on-chain HTML (decoded from tokenURI base64).
    Sandbox="allow-scripts" (no allow-same-origin / allow-top-navigation) — origin
@@ -446,7 +750,11 @@ body.night .tok-price { color:rgba(255,255,255,0.68); }
   background:var(--bg);
   pointer-events:none;
 }
-.mod-card[data-ready="1"] { cursor:zoom-in; }
+/* `cursor: zoom-in` removed 2026-05-08+ at Le's request — the magnifier
+   glyph implied the click would only zoom (which it does, via expand modal)
+   but felt redundant with the clearly-clickable card surface. Default
+   cursor (auto) keeps the card clickable without the visual hint. */
+.mod-card[data-ready="1"] { cursor:default; }
 
 /* Burned / unavailable state — dimmed wrap behind the canvas placeholder */
 .tok-canvas-wrap.card-burned,
@@ -607,6 +915,183 @@ body.night .tok-price { color:rgba(255,255,255,0.68); }
   transition:background 0.14s, border-color 0.14s;
 }
 #export-modal-cancel:hover { background:var(--bg-alt); }
+
+/* On-chain verification modal — same backdrop+window pattern as #export-modal.
+   Slightly wider window because the data URI textarea benefits from the extra
+   horizontal space (long base64 strings). */
+#onchain-modal {
+  display:none;
+  position:fixed; inset:0; z-index:1600;
+  background:rgba(0,0,0,0.55);
+  backdrop-filter:blur(6px);
+  -webkit-backdrop-filter:blur(6px);
+  align-items:center; justify-content:center;
+}
+#onchain-modal.active { display:flex; }
+#onchain-modal-window {
+  width:min(94vw, 640px);
+  max-height:88vh;
+  background:var(--bg);
+  border-radius:10px;
+  overflow:hidden;
+  display:flex; flex-direction:column;
+  box-shadow:0 24px 60px rgba(0,0,0,0.50);
+}
+#onchain-modal-tbar {
+  height:32px;
+  background:var(--tbar-bg);
+  border-bottom:0.5px solid var(--border-mid);
+  display:flex; align-items:center;
+  padding:0 14px;
+}
+#onchain-modal-title {
+  font-size:11px; font-family:monospace;
+  letter-spacing:.10em; text-transform:uppercase;
+  color:var(--text-sub);
+}
+#onchain-modal-body {
+  padding:18px 20px 16px;
+  overflow-y:auto;
+}
+.onchain-intro {
+  font-size:11px; font-family:monospace;
+  letter-spacing:.04em; line-height:1.55;
+  color:var(--text-sub);
+  margin-bottom:18px;
+}
+.onchain-method {
+  margin-bottom:20px;
+  padding:12px 14px;
+  background:var(--bg-alt);
+  border:0.5px solid var(--border-mid);
+  border-radius:6px;
+}
+.onchain-method-title {
+  font-size:10.5px; font-family:monospace;
+  letter-spacing:.06em; text-transform:uppercase;
+  color:var(--text);
+  margin-bottom:8px;
+}
+.onchain-method-text {
+  font-size:11px; font-family:monospace;
+  letter-spacing:.03em; line-height:1.55;
+  color:var(--text-sub);
+}
+.onchain-method-text code {
+  font-size:10.5px;
+  background:rgba(0,0,0,0.06);
+  padding:0 4px;
+  border-radius:2px;
+  color:var(--text);
+}
+body.night .onchain-method-text code { background:rgba(255,255,255,0.08); }
+.onchain-method-text em { font-style:normal; color:var(--text); }
+.onchain-contract-row {
+  display:flex; align-items:center; gap:8px;
+  margin-top:10px;
+}
+.onchain-contract-label {
+  font-size:10px; font-family:monospace;
+  letter-spacing:.06em; text-transform:uppercase;
+  color:var(--text-sub);
+}
+.onchain-contract-addr {
+  font-size:11px; font-family:monospace;
+  color:var(--text);
+  background:rgba(0,0,0,0.06);
+  padding:2px 6px; border-radius:2px;
+  flex:1; min-width:0;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+body.night .onchain-contract-addr { background:rgba(255,255,255,0.08); }
+.onchain-copy-mini {
+  font-size:9.5px; font-family:monospace;
+  letter-spacing:.06em; text-transform:uppercase;
+  background:transparent; color:var(--text-sub);
+  border:0.5px solid var(--border-mid);
+  border-radius:3px;
+  padding:2px 8px; cursor:pointer;
+  transition:background 0.14s, color 0.14s, border-color 0.14s;
+  flex-shrink:0;
+}
+.onchain-copy-mini:hover { background:var(--bg); color:var(--text); border-color:var(--border-strong); }
+.onchain-copy-mini.copied { background:#28c840; color:#fff; border-color:#28c840; }
+.onchain-link {
+  display:inline-block;
+  margin-top:10px;
+  font-size:11px; font-family:monospace;
+  letter-spacing:.04em;
+  color:var(--text);
+  text-decoration:none;
+  border-bottom:0.5px solid var(--text-sub);
+  padding-bottom:1px;
+  transition:color 0.14s, border-color 0.14s;
+}
+.onchain-link:hover { color:var(--text); border-bottom-color:var(--text); }
+.onchain-uri {
+  display:block;
+  width:100%;
+  height:140px;
+  margin-top:10px;
+  font-family:monospace;
+  font-size:10px;
+  line-height:1.4;
+  color:var(--text);
+  background:rgba(0,0,0,0.05);
+  border:0.5px solid var(--border-mid);
+  border-radius:4px;
+  padding:8px 10px;
+  resize:vertical;
+  overflow:auto;
+  word-break:break-all;
+}
+body.night .onchain-uri { background:rgba(255,255,255,0.06); }
+.onchain-copy-btn {
+  display:inline-block;
+  margin-top:8px;
+  padding:5px 14px;
+  font-size:10px; font-family:monospace;
+  letter-spacing:.08em; text-transform:uppercase;
+  background:transparent;
+  border:0.5px solid var(--border-mid);
+  border-radius:4px;
+  color:var(--text);
+  cursor:pointer;
+  transition:background 0.14s, color 0.14s, border-color 0.14s;
+}
+.onchain-copy-btn:hover { background:var(--bg-alt); border-color:var(--border-strong); }
+.onchain-copy-btn.copied { background:#28c840; color:#fff; border-color:#28c840; }
+#onchain-modal-actions {
+  display:flex; justify-content:flex-end; gap:8px;
+  border-top:0.5px solid var(--border);
+  padding-top:14px;
+  margin-top:6px;
+}
+#onchain-modal-close {
+  padding:6px 14px;
+  font-size:10px; font-family:monospace;
+  letter-spacing:.08em; text-transform:uppercase;
+  background:transparent;
+  border:0.5px solid var(--border-mid);
+  border-radius:4px;
+  color:var(--text);
+  cursor:pointer;
+  transition:background 0.14s, border-color 0.14s;
+}
+#onchain-modal-close:hover { background:var(--bg-alt); }
+
+/* ONCHAIN button — same skeleton as DETAILS / MP4 / RESET */
+#expand-onchain-btn {
+  margin-left:auto;  /* this becomes the "push to right" anchor; details no longer needs it */
+  padding:2px 8px;
+  font-size:9px; font-family:monospace; letter-spacing:.06em;
+  background:transparent; border:0.5px solid var(--border-mid);
+  border-radius:3px; color:var(--text);
+  cursor:pointer; transition:background 0.15s, color 0.15s, border-color 0.15s;
+  flex-shrink:0;
+}
+#expand-onchain-btn:hover { background:var(--bg-alt); border-color:var(--text-sub); }
+#expand-onchain-btn.active { background:var(--bg-alt); border-color:var(--text); }
 #export-modal-go {
   background:var(--text);
   color:var(--bg);
@@ -643,6 +1128,12 @@ body.night .tok-price { color:rgba(255,255,255,0.68); }
   position:fixed; inset:0; z-index:1500;
   align-items:center; justify-content:center;
   pointer-events:none;
+  /* Dark semi-transparent backdrop (Le 2026-05-10): mimics app/'s
+     setup where the modal sits over a dark world canvas, so the rounded
+     corner anti-aliased pixels blend dark-with-dark instead of dark-with-
+     cream-page-bg (which produced visible thin curves at corners). 0.50
+     opacity keeps cards behind readable but dimmed. */
+  background:rgba(0,0,0,0.50);
 }
 #expand-overlay.active { display:flex; }
 #expand-window {
@@ -658,7 +1149,15 @@ body.night .tok-price { color:rgba(255,255,255,0.68); }
      the aspect cap directly + clamp at 96vw on narrow viewports. */
   width:min(96vw, calc((90vh - 28px) * 1.78));
   height:90vh;
-  background:#000;
+  /* No background here — `background:#000` (legacy 2026-05-08 fix to hide
+     a momentary cream flash during iframe srcdoc load) was creating a thin
+     black curve tracing the border-radius corners against the cream page
+     bg (Le reported 2026-05-10). Anti-aliased corner pixels exposed the
+     window's #000 fill behind the tbar's light bg. app/'s expand-window
+     has no background and doesn't show this — matching that pattern.
+     The cream flash is no longer visible because the inner #expand-body
+     has its own background:#000 + the iframe srcdoc paints in the same
+     frame as the mount call. */
   transform-origin:center center;
   will-change:transform;
 }
@@ -694,7 +1193,7 @@ body.night .tok-price { color:rgba(255,255,255,0.68); }
 }
 #expand-window.expand-fs #expand-tbar { display:none; }
 #export-btn {
-  margin-left:auto; padding:2px 8px;
+  padding:2px 8px;
   font-size:9px; font-family:monospace; letter-spacing:.06em;
   background:transparent; border:0.5px solid var(--border-mid);
   border-radius:3px; color:var(--text);
@@ -854,7 +1353,7 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
   </div>
   <div class="tbar-tabs">
     <button class="tab-btn active" data-tab="tokens">Tokens</button>
-    <button class="tab-btn"        data-tab="modulo">Modulo</button>
+    <button class="tab-btn"        data-tab="modulo">Artifacts</button>
   </div>
   <div class="tbar-right">
     <button class="tbar-night" id="night-toggle" title="toggle night mode"></button>
@@ -978,6 +1477,47 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
   </div>
 </div>
 
+<!-- On-chain verification modal — opens when user clicks ONCHAIN inside expand
+     modal. Shows two ways to fetch the artifact's HTML straight from Ethereum:
+     (1) link to the SettleArtifact contract on Etherscan + step-by-step to
+         call tokenURI(id) via Read Contract; (2) the raw data URI ready to
+         paste in any browser address bar. Reuses #export-modal styling
+         (backdrop + window + tbar) for consistency. -->
+<div id="onchain-modal">
+  <div id="onchain-modal-window">
+    <div id="onchain-modal-tbar">
+      <span id="onchain-modal-title">Verify on-chain</span>
+    </div>
+    <div id="onchain-modal-body">
+      <p class="onchain-intro" id="onchain-intro">The artifact's render HTML is stored 100% on Ethereum. Two ways to fetch + view the raw on-chain output, no server required.</p>
+
+      <div class="onchain-method">
+        <div class="onchain-method-title">Method 1 — Etherscan</div>
+        <div class="onchain-method-text">
+          <div>Open the SettleArtifact contract on Etherscan → <em>Contract</em> → <em>Read Contract</em> → expand <code>tokenURI</code> → enter ID <code id="onchain-id-hint">N</code> → click <em>Query</em>. Output is a <code>data:text/html;base64,...</code> URI; paste it in any browser tab.</div>
+          <div class="onchain-contract-row">
+            <span class="onchain-contract-label">Contract</span>
+            <code class="onchain-contract-addr" id="onchain-contract-addr">0xa33C…2d699</code>
+            <button class="onchain-copy-mini" id="onchain-copy-addr" title="copy contract address">copy</button>
+          </div>
+          <a class="onchain-link" id="onchain-etherscan-link" target="_blank" rel="noopener noreferrer">Open SettleArtifact on Etherscan ↗</a>
+        </div>
+      </div>
+
+      <div class="onchain-method">
+        <div class="onchain-method-title">Method 2 — Copy URI directly</div>
+        <div class="onchain-method-text">Paste this into any browser address bar — same render the iframe shows above, fetched from on-chain bytes:</div>
+        <textarea id="onchain-uri-text" class="onchain-uri" readonly spellcheck="false"></textarea>
+        <button id="onchain-copy-uri" class="onchain-copy-btn">Copy URI</button>
+      </div>
+
+      <div id="onchain-modal-actions">
+        <button id="onchain-modal-close">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Expand overlay (Modulo cards only — wired in <script> below).
      Copy of app/ expand structure (lines 1924-1942) minus sidebar/tab.
      MP4 button uses inline engine port (_createArtifactEngine + _exportMP4,
@@ -993,11 +1533,18 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
       <div id="expand-close" title="close"></div>
       <div id="expand-fullscreen" title="fullscreen"></div>
       <span id="expand-tbar-title"></span>
+      <button id="expand-onchain-btn" title="verify the artifact's HTML render is stored on Ethereum (Etherscan + raw data URI)">ONCHAIN</button>
+      <button id="expand-details-btn" title="show artifact details (composition, settler, settled date)">DETAILS</button>
       <button id="export-btn" title="export 20s MP4 of this artifact (H.264, 2700×1500)">↓ MP4</button>
       <button id="expand-reset-btn">RESET</button>
     </div>
     <div id="expand-body">
       <iframe id="expand-iframe" sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>
+      <!-- Details popup — anchored bottom-right of #expand-window via CSS.
+           Populated by _populateDetailsPopup(modId) on every _openExpand call;
+           toggled visible via #expand-details-btn click. Closes on Esc, click
+           outside, expand close, or details button click again. -->
+      <div id="expand-details-popup" class="expand-details-popup"></div>
     </div>
   </div>
 </div>
@@ -1127,7 +1674,18 @@ async function _fetchArtifactData(id) {
       ]);
       // art is a Result tuple — access by name (ethers v6 supports both)
       const compositionLen = Number(art.tokenIds.length);
-      return { owner, tokenURI: uri, compositionLen };
+      // Parse + normalize the composition JSON embedded in the tokenURI HTML
+      // so the details popup can show full trait values per token without an
+      // extra parse pass. Cached together with the rest.
+      let composition = null;
+      try {
+        const html = _decodeTokenURI(uri);
+        if (html) composition = _extractComposition(html);
+      } catch (_) { /* malformed HTML — popup falls back to "no traits" */ }
+      // Store raw artifact struct for the details popup (modId, tokenIds, ranks,
+      // settler, settledAt) + parsed composition for trait names. Cached so
+      // re-opening the popup doesn't re-fetch nor re-parse.
+      return { owner, tokenURI: uri, compositionLen, artifact: art, composition };
     } catch (_) {
       return null;
     }
@@ -1137,10 +1695,12 @@ async function _fetchArtifactData(id) {
 }
 
 // Decode the data:text/html;base64,... URI returned by tokenURI() into raw
-// HTML for iframe srcdoc. Per security audit 2026-05-08 P1-1: srcdoc beats
-// src=data: because origin is opaque-via-sandbox-flag (not URL scheme), so
-// CSP frame-src 'self' covers about:srcdoc cleanly without permitting data:
-// across the page. Decoding fails fast on malformed URIs.
+// HTML for iframe srcdoc. srcdoc beats src=data: because the iframe gets
+// origin about:srcdoc (sandboxed) — sandbox="allow-scripts" without
+// allow-same-origin is the real isolation barrier. CSP frame-src does NOT
+// govern srcdoc iframes (they inherit parent CSP per CSP3 §6.1, not gated
+// by frame-src URL allowlist). Comment corrected 2026-05-10. Decoding
+// fails fast on malformed URIs.
 function _decodeTokenURI(uri) {
   if (typeof uri !== 'string') return null;
   const comma = uri.indexOf(',');
@@ -1202,9 +1762,31 @@ function _prepareSrcdoc(html) {
       '})();' +
     '<' + '/script>';
   // Aggressive reset with !important — defeats specificity of the on-chain
-  // HTML's own CSS (which may set body bg to white, body padding/margins,
-  // or canvas borders). Without !important the on-chain rules win because
-  // they come AFTER the prepended reset in source order.
+  // HTML's own CSS. Multi-issue fix; commented per problem.
+  //
+  // 1) `display:block!important` on html,body — the on-chain renderer uses
+  //    `body{display:flex;align-items:center;justify-content:center}` to
+  //    center the canvas. With align-items:center, flex items DON'T stretch
+  //    to cross-axis even with explicit height:100% — they use the item's
+  //    intrinsic size centered, leaving small gaps top+bottom (reported by
+  //    Le 2026-05-10 as "líneas negras en los bordes de la ventana
+  //    extendida"). Forcing block layout on body removes flex centering
+  //    entirely; canvas with width/height 100% then fills exactly.
+  //
+  // 2) `width/height:100%` on canvas — the on-chain HTML uses `width:auto;
+  //    max-width:100%; max-height:100%` so canvas displays at intrinsic
+  //    buffer size (which is floor(innerWidth/6)*6 by floor(innerHeight/6)*6,
+  //    capped at 2700×1500). With body sized to e.g. 1860×1052, the buffer
+  //    is 1860×1050 — 2px smaller. Without our overrides, body's `#000` bg
+  //    bleeds through as a black strip at bottom (and right when applicable).
+  //    With width/height 100% the canvas DOM box stretches to fill body
+  //    exactly. `image-rendering:pixelated` keeps the slight stretch
+  //    (≤5px in any dimension) pixel-perfect.
+  //
+  // 3) `display:block!important` on canvas — defaults to `display:inline`,
+  //    which leaves a baseline gap below it inside the body. The renderer's
+  //    `#render{display:block}` should fix this but its specificity (0,1,0,0)
+  //    can be defeated by user-agent stylesheets in some edge cases.
   const reset =
     '<style>' +
       'html,body{' +
@@ -1215,14 +1797,8 @@ function _prepareSrcdoc(html) {
         'background:#000!important;' +
         'width:100%!important;' +
         'height:100%!important;' +
+        'display:block!important;' +
       '}' +
-      // Force the canvas inside the iframe to fill the body 100% — the
-      // on-chain HTML uses `width:auto; max-width:100%; max-height:100%`
-      // which leaves letterbox strips when the canvas drawing buffer
-      // (snapped to PIXEL=6 multiples) is slightly smaller than the body.
-      // Le reported black strips around the painted area 2026-05-08; this
-      // override stretches the canvas to fill the wrap. `image-rendering:
-      // pixelated` keeps bordes pixel-perfect during the slight stretch.
       'canvas{' +
         'background:#000!important;' +
         'outline:none!important;' +
@@ -1231,19 +1807,35 @@ function _prepareSrcdoc(html) {
         'max-width:none!important;' +
         'max-height:none!important;' +
         'image-rendering:pixelated!important;' +
+        'display:block!important;' +
       '}' +
     '</style>';
   // Inject order: ioStub FIRST (must override IO before engine script runs),
-  // then reset. Both prepended to <head> or to start if no <head> tag.
-  // Reset is AFTER any existing <style> tags so its !important rules win.
+  // then reset. Inject AFTER <!doctype> to keep standards mode — placing
+  // <script>/<style> before the doctype switches Chrome to quirks mode,
+  // where flex/box-sizing/percentage-height behave subtly differently and
+  // the !important overrides above can fail in unexpected ways. (Round 4
+  // P2 fix 2026-05-10 — Le reported strips that traced to quirks-mode
+  // height:100% computing against an undefined containing block in the
+  // renderer's flex body.) Cascade: reset is AFTER renderer's <style> so
+  // !important rules win cleanly even at equal specificity.
   const inject = ioStub + reset;
   const headEndIdx = html.indexOf('</head>');
-  if (headEndIdx < 0) {
-    const headIdx = html.indexOf('<head>');
-    if (headIdx < 0) return inject + html;
+  if (headEndIdx >= 0) {
+    return html.slice(0, headEndIdx) + inject + html.slice(headEndIdx);
+  }
+  const headIdx = html.indexOf('<head>');
+  if (headIdx >= 0) {
     return html.slice(0, headIdx + 6) + inject + html.slice(headIdx + 6);
   }
-  return html.slice(0, headEndIdx) + inject + html.slice(headEndIdx);
+  // No <head>. Inject after <!doctype...> if present (standards mode); else
+  // fall back to prepending (last resort — accepts quirks mode).
+  const doctypeMatch = html.match(/<!doctype[^>]*>/i);
+  if (doctypeMatch) {
+    const cutIdx = doctypeMatch.index + doctypeMatch[0].length;
+    return html.slice(0, cutIdx) + inject + html.slice(cutIdx);
+  }
+  return inject + html;
 }
 
 // ── Shared palette (mutated by night toggle) ───────────────────────────────────
@@ -1269,16 +1861,169 @@ document.getElementById('night-toggle').addEventListener('click', () => {
 if (localStorage.getItem('tc-night') === '1') _setNight(true);
 
 // ── Tab switch + title sync ────────────────────────────────────────────────────
-// Title in the header mirrors the active tab name ("Tokens" or "Modulo") because
-// these are two distinct on-chain collections, not subtabs of one.
+// Title in the header mirrors the active tab name ("Tokens" or "Artifacts") because
+// these are two distinct on-chain collections, not subtabs of one. Internal keys
+// (data-tab="modulo", id="panel-modulo", _mountModuloIframe, etc.) keep the
+// "modulo" naming because that's how the SettleArtifact contract refers to them
+// internally — only the user-facing label was renamed to "Artifacts" 2026-05-08+.
 const _displayTitle = document.getElementById('display-title');
-const _TAB_TITLES = { tokens: 'Tokens', modulo: 'Modulo' };
+const _TAB_TITLES = { tokens: 'Tokens', modulo: 'Artifacts' };
+
+// Scramble-reveal transition for the title — same pattern as about/'s
+// `desires-word` effect: render N chars where each position cycles through
+// random scramble glyphs, then reveal target characters left-to-right
+// progressively. Length is fixed at the longest title's char count
+// ('Artifacts' = 9) so the layout doesn't shift during the animation; if
+// the new target is shorter (e.g. 'Tokens' = 6), the trailing positions
+// Letter-swap title transition with per-character morph animation
+// (scale + fade — 2026-05-08+).
+//
+//   Tokens → Artifacts (target longer): each tick MORPHS one position
+//     left-to-right with the target letter; once past src.length, subsequent
+//     ticks APPEND new spans (entry animation). End: "Artifacts".
+//
+//   Artifacts → Tokens (target shorter): first ticks ERASE rightmost span
+//     (exit animation); after length matches target, subsequent ticks
+//     MORPH rightmost remaining span right-to-left. End: "Tokens".
+//
+//   Per-letter animation: 160ms scale 1→0→1 (text swap at 50% midpoint).
+//   Tick interval: 60ms — letters cascade with brief overlap (3 letters
+//   animating simultaneously). Total ~max(src,target) × 60ms = ~360-540ms.
+//
+//   Spans are lazy-initialized on first call. Cancel-on-rapid-click — last
+//   click wins via clearInterval. Intermediate state when interrupted may
+//   show a mix of letters (acceptable; end state always correct).
+let _titleScrambleIv = null;
+let _titleSpans = null;  // array of <span class="dt-char">… elements
+
+// Tracks setTimeout IDs from _morphCharSpan / _appendCharSpan / _eraseCharSpan
+// so a new _scrambleTitle can cancel residual timers from the previous run.
+// Without this, a rapid Tokens→Artifacts→Tokens click triggers an erase whose
+// 185ms removeChild fires AFTER the new scramble has reclaimed the span,
+// silently deleting letters of the new title (audit Round 4 P2-1).
+let _pendingMorphTimers = [];
+function _clearPendingMorphTimers() {
+  for (const id of _pendingMorphTimers) clearTimeout(id);
+  _pendingMorphTimers.length = 0;
+}
+
+function _initTitleSpans() {
+  // Convert _displayTitle.textContent → span-per-char if not already done.
+  // WARNING: after this runs, NEVER set _displayTitle.textContent directly
+  // (would wipe the spans, causing _morphCharSpan to operate on detached
+  // nodes silently). Always use _scrambleTitle() for title text changes.
+  if (_titleSpans !== null) return;
+  const text = _displayTitle.textContent || '';
+  _displayTitle.textContent = '';
+  _titleSpans = [];
+  for (let i = 0; i < text.length; i++) {
+    const span = document.createElement('span');
+    span.className = 'dt-char';
+    span.textContent = text[i];
+    _displayTitle.appendChild(span);
+    _titleSpans.push(span);
+  }
+}
+
+// Morph a span in place: slide-up + slide-in-from-below + text swap at midpoint.
+function _morphCharSpan(span, newChar) {
+  // Restart animation if previously applied (clear class to allow re-trigger).
+  span.classList.remove('dt-char--morphing');
+  void span.offsetWidth; // force reflow so class re-add re-runs animation
+  span.classList.add('dt-char--morphing');
+  // Swap text at 120ms (50% of 240ms keyframe — span is at translateY -100%
+  // / opacity 0, about to flip to +100% and slide in). Cleanup class after
+  // animation completes (allows future morphs). Both timers tracked so a
+  // rapid retrigger can cancel them (see _clearPendingMorphTimers).
+  _pendingMorphTimers.push(setTimeout(() => { span.textContent = newChar; }, 120));
+  _pendingMorphTimers.push(setTimeout(() => { span.classList.remove('dt-char--morphing'); }, 250));
+}
+
+// Append a new span entering with slide-up-from-below.
+function _appendCharSpan(char) {
+  const span = document.createElement('span');
+  span.className = 'dt-char dt-char--enter';
+  span.textContent = char;
+  _displayTitle.appendChild(span);
+  // Cleanup class after animation completes (180ms + small buffer).
+  _pendingMorphTimers.push(setTimeout(() => { span.classList.remove('dt-char--enter'); }, 190));
+  return span;
+}
+
+// Erase a span: slide-up + fade, then remove from DOM (180ms + small buffer).
+function _eraseCharSpan(span) {
+  span.classList.add('dt-char--exit');
+  _pendingMorphTimers.push(setTimeout(() => {
+    if (span.parentNode) span.parentNode.removeChild(span);
+  }, 185));
+}
+
+function _scrambleTitle(target) {
+  if (!_displayTitle) return;
+  _initTitleSpans();
+  const src = _titleSpans.map(s => s.textContent).join('');
+  if (src === target) return;
+  if (_titleScrambleIv) {
+    clearInterval(_titleScrambleIv);
+    _titleScrambleIv = null;
+  }
+  // Cancel residual setTimeouts from prior scramble so they don't mutate
+  // spans the new scramble considers fresh (Round 4 P2-1 race fix).
+  _clearPendingMorphTimers();
+  const tickMs = 80;
+  const direction = target.length >= src.length ? 'lr' : 'rl';
+
+  if (direction === 'lr') {
+    // Replace + append left-to-right.
+    let tick = -1;
+    _titleScrambleIv = setInterval(() => {
+      tick++;
+      if (tick >= target.length) {
+        clearInterval(_titleScrambleIv);
+        _titleScrambleIv = null;
+        return;
+      }
+      if (tick < _titleSpans.length) {
+        // Morph existing span at this position to the target char.
+        _morphCharSpan(_titleSpans[tick], target[tick]);
+      } else {
+        // Append a new span (entry animation).
+        const span = _appendCharSpan(target[tick]);
+        _titleSpans.push(span);
+      }
+    }, tickMs);
+  } else {
+    // Erase rightmost span until length matches target, then morph right-to-left.
+    const excess = src.length - target.length;
+    const total  = src.length;
+    let tick = -1;
+    _titleScrambleIv = setInterval(() => {
+      tick++;
+      if (tick >= total) {
+        clearInterval(_titleScrambleIv);
+        _titleScrambleIv = null;
+        return;
+      }
+      if (tick < excess) {
+        // Erase rightmost span (exit animation + remove from DOM).
+        const span = _titleSpans.pop();
+        if (span) _eraseCharSpan(span);
+      } else {
+        // Morph rightmost remaining unchanged span (right-to-left replacement).
+        const replacePos = target.length - 1 - (tick - excess);
+        const span = _titleSpans[replacePos];
+        if (span) _morphCharSpan(span, target[replacePos]);
+      }
+    }, tickMs);
+  }
+}
+
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     const target = btn.dataset.tab;
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + target));
-    if (_displayTitle && _TAB_TITLES[target]) _displayTitle.textContent = _TAB_TITLES[target];
+    if (_displayTitle && _TAB_TITLES[target]) _scrambleTitle(_TAB_TITLES[target]);
     if (typeof _setMetaCount === 'function') _setMetaCount(target);
     // Mount sweep — IO observers attached to cards inside a `display:none`
     // panel get their initial callback with isIntersecting=false and Chrome
@@ -1296,15 +2041,17 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     // pushes the sweep to AFTER layout commit → iframes attach with
     // correct geometry → all activate properly.
     const _sweepMount = () => {
+      // Mount funcs have internal idempotent guards (skip when iframe already
+      // has srcdoc). Calling unconditionally lets them re-mount cards whose
+      // iframe was cleared by the unmount path on a previous tab switch.
+      // Without this, re-entry to a tab leaves cards visible but blank.
       if (target === 'modulo') {
         document.querySelectorAll('.mod-card').forEach(card => {
-          if (card.dataset.ready === '1') return;
           const id = Number(card.dataset.modId);
           if (id && typeof _mountModuloIframe === 'function') _mountModuloIframe(card, id);
         });
       } else if (target === 'tokens') {
         document.querySelectorAll('.tok-card').forEach(card => {
-          if (card.dataset.ready === '1') return;
           const id = Number(card.dataset.tokId);
           if (id && typeof _mountTokenIframe === 'function') _mountTokenIframe(card, id);
         });
@@ -1479,10 +2226,17 @@ function _attachOnChainObserver(card, mountFn, unmountFn) {
 }
 
 function _mountTokenIframe(card, id) {
-  if (card.dataset.ready === '1') return; // idempotent guard (audit 2026-05-08)
   const wrap = card.querySelector('.tok-canvas-wrap');
-  const slot = card.querySelector('.tok-seed');
   if (!wrap) return;
+  // Idempotent guard: skip only if the iframe is already mounted WITH content.
+  // After a tab-switch unmount, the iframe element survives but srcdoc was
+  // cleared — falling through here lets us re-fetch (cache hit, no new RPC)
+  // and re-mount the srcdoc. Without this nuance, the data-ready='1' flag
+  // would block re-mount and the user would see blank cards on tab return.
+  // Bug fixed 2026-05-08+ after Le reported empty cards on second tab switch.
+  const existingFrame = wrap.querySelector('iframe.tok-iframe');
+  if (card.dataset.ready === '1' && existingFrame && existingFrame.srcdoc) return;
+  const slot = card.querySelector('.tok-seed');
   if (!_tokenAgent) {
     slot.textContent = 'no rpc';
     return;
@@ -1519,6 +2273,9 @@ function _mountTokenIframe(card, id) {
     iframe.setAttribute('referrerpolicy', 'no-referrer');
     iframe.setAttribute('aria-label', 'token #' + id);
     iframe.srcdoc = _prepareSrcdoc(html);
+    // Remove loading placeholder (also legacy canvas if present from older builds).
+    const loading = wrap.querySelector('.card-loading');
+    if (loading) loading.remove();
     const canvas = wrap.querySelector('canvas');
     if (canvas) canvas.remove();
     wrap.appendChild(iframe);
@@ -1535,10 +2292,14 @@ function _unmountTokenIframe(card) {
 }
 
 function _mountModuloIframe(card, id) {
-  if (card.dataset.ready === '1') return; // idempotent guard (audit 2026-05-08)
   const wrap = card.querySelector('.mod-canvas-wrap');
-  const slotsEl = card.querySelector('.mod-slots');
   if (!wrap) return;
+  // Idempotent guard: same nuance as _mountTokenIframe — skip only if the
+  // iframe is already mounted WITH content. Tab-switch unmount clears
+  // srcdoc; this lets us re-mount on tab return without an extra RPC.
+  const existingFrame = wrap.querySelector('iframe.mod-iframe');
+  if (card.dataset.ready === '1' && existingFrame && existingFrame.srcdoc) return;
+  const slotsEl = card.querySelector('.mod-slots');
   if (!_settleArtifact) {
     slotsEl.textContent = 'no rpc';
     return;
@@ -1565,6 +2326,9 @@ function _mountModuloIframe(card, id) {
     iframe.setAttribute('referrerpolicy', 'no-referrer');
     iframe.setAttribute('aria-label', 'modulo #' + id);
     iframe.srcdoc = _prepareSrcdoc(html);
+    // Remove loading placeholder (also legacy canvas if present from older builds).
+    const loading = wrap.querySelector('.card-loading');
+    if (loading) loading.remove();
     const canvas = wrap.querySelector('canvas');
     if (canvas) canvas.remove();
     wrap.appendChild(iframe);
@@ -1590,6 +2354,30 @@ function _setMetaCount(tab) {
   const n = tab === 'modulo' ? _aliveArtifactCount : _aliveTokenCount;
   _metaCountEl.textContent = n + (n === 1 ? ' ITEM' : ' ITEMS');
 }
+
+// Loading placeholder shown inside each card until the on-chain iframe mounts.
+// macOS-style 12-spoke spinner: each <rect> is a spoke at 30° offset with a
+// fade-trailing opacity gradient. Rotation via CSS keyframe with steps(12, end)
+// produces the discrete tick-tick motion of NSProgressIndicator.
+const _CARD_LOADING_HTML =
+  '<div class="card-loading">' +
+    '<svg class="card-spinner" viewBox="0 0 32 32" aria-hidden="true">' +
+      '<g fill="currentColor">' +
+        '<rect x="15" y="3" width="2" height="6" rx="1" opacity="1.00"/>' +
+        '<rect x="15" y="3" width="2" height="6" rx="1" opacity="0.92" transform="rotate(30 16 16)"/>' +
+        '<rect x="15" y="3" width="2" height="6" rx="1" opacity="0.83" transform="rotate(60 16 16)"/>' +
+        '<rect x="15" y="3" width="2" height="6" rx="1" opacity="0.75" transform="rotate(90 16 16)"/>' +
+        '<rect x="15" y="3" width="2" height="6" rx="1" opacity="0.67" transform="rotate(120 16 16)"/>' +
+        '<rect x="15" y="3" width="2" height="6" rx="1" opacity="0.58" transform="rotate(150 16 16)"/>' +
+        '<rect x="15" y="3" width="2" height="6" rx="1" opacity="0.50" transform="rotate(180 16 16)"/>' +
+        '<rect x="15" y="3" width="2" height="6" rx="1" opacity="0.42" transform="rotate(210 16 16)"/>' +
+        '<rect x="15" y="3" width="2" height="6" rx="1" opacity="0.33" transform="rotate(240 16 16)"/>' +
+        '<rect x="15" y="3" width="2" height="6" rx="1" opacity="0.25" transform="rotate(270 16 16)"/>' +
+        '<rect x="15" y="3" width="2" height="6" rx="1" opacity="0.17" transform="rotate(300 16 16)"/>' +
+        '<rect x="15" y="3" width="2" height="6" rx="1" opacity="0.08" transform="rotate(330 16 16)"/>' +
+      '</g>' +
+    '</svg>' +
+  '</div>';
 
 async function _buildCards() {
   const ok = _initOnChain();
@@ -1634,6 +2422,7 @@ async function _buildCards() {
   if (aliveTokenIds.length === 0) {
     tokGrid.innerHTML = '<div class="card-empty">no tokens minted yet</div>';
   } else {
+    let _tokCardIdx = 0;
     for (const id of aliveTokenIds) {
       const label = '#' + String(id).padStart(3, '0');
       const card = document.createElement('div');
@@ -1645,15 +2434,18 @@ async function _buildCards() {
           '<span class="tok-label">' + label + '</span>' +
         '</div>' +
         '<div class="tok-canvas-wrap">' +
-          '<canvas class="tok-canvas"></canvas>' +
+          _CARD_LOADING_HTML +
         '</div>' +
         '<div class="tok-footer">' +
           '<span class="tok-seed">…</span>' +
           '<span class="tok-owner">…</span>' +
           '<span class="tok-price">— ETH</span>' +
         '</div>';
+      // Set per-card stagger index for the pop-in animation. CSS clamps via
+      // min(idx, 20) so the first 20 cards stagger sequentially and the rest
+      // animate together (avoids 100-card cascade taking 2.5s+).
+      card.style.setProperty('--card-index', _tokCardIdx++);
       tokGrid.appendChild(card);
-      _spawnCanvas(card.querySelector('.tok-canvas'), 5, card);
       _attachOnChainObserver(card,
         () => _mountTokenIframe(card, id),
         () => _unmountTokenIframe(card));
@@ -1665,6 +2457,7 @@ async function _buildCards() {
   if (aliveArtifactIds.length === 0) {
     modGrid.innerHTML = '<div class="card-empty">no modulos settled yet</div>';
   } else {
+    let _modCardIdx = 0;
     for (const id of aliveArtifactIds) {
       const label = 'MODULO #' + id;
       const card = document.createElement('div');
@@ -1676,15 +2469,15 @@ async function _buildCards() {
           '<span class="mod-label">' + label + '</span>' +
         '</div>' +
         '<div class="mod-canvas-wrap">' +
-          '<canvas class="mod-canvas"></canvas>' +
+          _CARD_LOADING_HTML +
         '</div>' +
         '<div class="mod-footer">' +
           '<span class="mod-slots">…</span>' +
           '<span class="mod-owner">…</span>' +
           '<span class="mod-price">— ETH</span>' +
         '</div>';
+      card.style.setProperty('--card-index', _modCardIdx++);
       modGrid.appendChild(card);
-      _spawnCanvas(card.querySelector('.mod-canvas'), 8, card);
       _attachOnChainObserver(card,
         () => _mountModuloIframe(card, id),
         () => _unmountModuloIframe(card));
@@ -1704,8 +2497,13 @@ _buildCards();
 // Reporta para mod-cards y tok-cards: id, ready flag, canvas/iframe presence,
 // srcdoc length, boundingClientRect, panel display state. Usado para diagnose
 // remoto del bug "cards no rendean" sin necesidad de DevTools steps manuales.
+//
+// Gated behind `?debug=1` URL param (Round 4 P3-2 hygiene fix). Production
+// page loads don't expose `window._debug` — Le adds `?debug=1` to the URL
+// when remote diagnosis is needed. Keeps internal state out of casual probes
+// while preserving the helper as one URL flip away.
 // ─────────────────────────────────────────────────────────────────────────────
-window._debug = function _debug() {
+if (new URLSearchParams(location.search).has('debug')) window._debug = function _debug() {
   const inspect = (sel, idAttr) => {
     return [...document.querySelectorAll(sel)].map(card => {
       const wrap = card.querySelector('.mod-canvas-wrap, .tok-canvas-wrap');
@@ -2047,16 +2845,12 @@ function _createArtifactEngine(canvas, rawComposition) {
 // ─────────────────────────────────────────────────────────────────────────────
 const W_EXPORT = 2700, H_EXPORT = 1500, FPS_EXPORT = 60, TOTAL_FRAMES = FPS_EXPORT * 20; // 20s
 
+// Native preset (450×250 pixel-perfect, no dither) removed 2026-05-08+ at Le's
+// request — UX wasn't matching expectation (small native size + viewer-side
+// pixelated CSS dependency). Auxiliary code paths (preset.isNative branch in
+// _exportMP4, engine.paintToNative method in _createArtifactEngine) left in
+// place as dead code — minor bloat, intentional re-enable affordance if needed.
 const EXPORT_PRESETS = [
-  {
-    id: 'native',
-    label: 'Native 450×250 — pixel-perfect (no dither)',
-    sub: 'Best fidelity. 1 px = 1 cell. Viewer needs CSS image-rendering: pixelated to display at full size; small natively. No DX dither (cell-internal patterns don\'t fit at 1 px/cell).',
-    estSize: '~20 MB',
-    codec: 'avc1.640033',
-    bitrate: 8_000_000,
-    isNative: true,
-  },
   {
     id: 'default',
     label: 'Default — 40 Mbps H.264 4:2:0',
@@ -2081,14 +2875,12 @@ const EXPORT_PRESETS = [
     codec: 'avc1.640033',
     bitrate: 200_000_000,
   },
-  {
-    id: 'chroma444',
-    label: 'Chroma 4:4:4 — 100 Mbps H.264',
-    sub: 'Best color (no chroma subsampling). Chrome only.',
-    estSize: '~250 MB',
-    codec: 'avc1.f40033', // H.264 4:4:4 — Chrome experimental
-    bitrate: 100_000_000,
-  },
+  // Chroma 4:4:4 (avc1.f40033) preset removed 2026-05-08+: el codec H.264 4:4:4
+  // High Profile en práctica nunca está soportado en browsers — OpenH264 (el
+  // software encoder de Chrome cuando `prefer-software` está active) no support
+  // 4:4:4, y los hardware encoders comunes (Intel QSV, NVIDIA NVENC, AMD VCE,
+  // Apple VideoToolbox) tampoco support 4:4:4 H.264. El probe siempre lo
+  // marcaba como disabled y confundía al user. Decisión: removed for UX clarity.
 ];
 
 let _exportInFlight = false;
@@ -2218,6 +3010,12 @@ async function _exportMP4(modId, presetId, cropMode) {
   const origText = btn ? btn.textContent : '↓ MP4';
   if (btn) btn.disabled = true;
 
+  // Declared outside try so finally can clean them up if the encode aborts
+  // (Round 4 P1 + P2-2 fix). On the happy path, fileStream is nulled after
+  // close() so finally skips the abort; encoder.close() is idempotent via
+  // state check.
+  let encoder = null, muxer = null, fileStream = null;
+
   try {
     const cfg = {
       codec: preset.codec,
@@ -2248,13 +3046,56 @@ async function _exportMP4(modId, presetId, cropMode) {
     const engine = _createArtifactEngine(offscreen, composition);
     if (!engine) { alert('Engine init failed.'); return; }
 
-    const target = new Mp4Muxer.ArrayBufferTarget();
-    const muxer = new Mp4Muxer.Muxer({
+    // Hybrid target selection (audit 2026-05-08+ post-OOM in max preset):
+    //   - Estimated size = preset.bitrate * 20s. If > 250 MB, the contiguous
+    //     ArrayBuffer doubling strategy in mp4-muxer (init 64 KB → doubles)
+    //     hits the browser's contiguous-allocation ceiling around 256→512 MB
+    //     and throws "Array buffer allocation failed" inside Muxer.finalize()
+    //     when fastStart='in-memory' rewrites the moov atom (worst-case temp
+    //     double buffer). Le hit this with the 'max' preset (200 Mbps × 20s
+    //     = ~500 MB).
+    //   - Solution: stream large outputs directly to disk via the File System
+    //     Access API. mp4-muxer 5.1.3 exposes FileSystemWritableFileStreamTarget
+    //     for exactly this. Pair with fastStart='fragmented' (fMP4) so the
+    //     muxer doesn't need a final rewrite — chunks land on disk as they
+    //     arrive. fMP4 is supported by Chrome/Firefox/Safari 15+/VLC/ffmpeg/
+    //     QuickTime 10+ (not legacy WMP / QuickTime 7 EOL — acceptable for
+    //     the audience).
+    //   - Browser fallback: showSaveFilePicker is Chrome 105+ / Edge only.
+    //     Safari/Firefox + max preset → still uses ArrayBufferTarget and may
+    //     OOM. Acceptable because Le's primary is Chrome.
+    //   - UX delta: large presets show a native save dialog (user picks
+    //     filename + location) instead of automatic download. Small presets
+    //     keep the original auto-download behaviour.
+    const useStream = preset.bitrate * 20 > 250_000_000;
+    let target;
+
+    if (useStream && window.showSaveFilePicker) {
+      let fileHandle;
+      try {
+        fileHandle = await window.showSaveFilePicker({
+          suggestedName: 'modulo-' + modId + '-' + preset.id + (cropMode ? '-crop' : '') + '.mp4',
+          types: [{ description: 'MP4 video', accept: { 'video/mp4': ['.mp4'] } }],
+        });
+      } catch (e) {
+        if (e.name === 'AbortError') return; // user cancelled before any encode work
+        throw e;
+      }
+      fileStream = await fileHandle.createWritable();
+      // FileSystemWritableFileStreamTarget (NOT StreamTarget) is the correct
+      // mp4-muxer API for streaming directly to a FileSystemWritableFileStream.
+      // StreamTarget takes an options object with onData callback — different shape.
+      target = new Mp4Muxer.FileSystemWritableFileStreamTarget(fileStream);
+    } else {
+      target = new Mp4Muxer.ArrayBufferTarget();
+    }
+
+    muxer = new Mp4Muxer.Muxer({
       target,
       video: { codec: 'avc', width: W, height: H, frameRate: FPS_EXPORT },
-      fastStart: 'in-memory',
+      fastStart: useStream ? 'fragmented' : 'in-memory',
     });
-    const encoder = new VideoEncoder({
+    encoder = new VideoEncoder({
       output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
       error: e => console.error('[export]', e),
     });
@@ -2290,15 +3131,25 @@ async function _exportMP4(modId, presetId, cropMode) {
 
     await encoder.flush();
     encoder.close();
+    encoder = null; // signal closed so finally skips re-close
     muxer.finalize();
 
-    const blob = new Blob([target.buffer], { type: 'video/mp4' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'modulo-' + modId + '-' + preset.id + (cropMode ? '-crop' : '') + '.mp4';
-    a.click();
-    URL.revokeObjectURL(url);
+    if (fileStream) {
+      // Stream path (large preset): muxer.finalize() wrote the last fMP4
+      // fragment to the writable; close() flushes to disk. File is already
+      // at the user-picked location — no Blob/anchor click needed.
+      await fileStream.close();
+      fileStream = null; // signal happy-path completion so finally skips abort
+    } else {
+      // ArrayBuffer path (small preset): unchanged behaviour — Blob + <a download>.
+      const blob = new Blob([target.buffer], { type: 'video/mp4' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'modulo-' + modId + '-' + preset.id + (cropMode ? '-crop' : '') + '.mp4';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
   } catch (err) {
     console.error('[export] failed:', err);
     alert('Export failed. See console.');
@@ -2307,6 +3158,18 @@ async function _exportMP4(modId, presetId, cropMode) {
     if (btn) {
       btn.disabled = false;
       btn.textContent = origText;
+    }
+    // Round 4 P1 + P2-2 fix: clean up encoder + writable stream if the
+    // encode aborted mid-flight. Without this, a throw between createWritable
+    // (L2945) and fileStream.close() (L3001) leaves the file lock held in
+    // the OS filesystem until tab close, blocking the user from re-exporting
+    // to the same path. encoder.close() releases the hardware encoder buffer
+    // (~16 MB) immediately rather than waiting for GC.
+    if (encoder) {
+      try { encoder.close(); } catch (_) {}
+    }
+    if (fileStream) {
+      try { await fileStream.abort(); } catch (_) {}
     }
   }
 }
@@ -2395,6 +3258,12 @@ function _openExpand(card, modId) {
 function _closeExpand() {
   if (_expandOpenId === null || _expandClosing) return;
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  // Dismiss details popup + onchain modal first if either is open. Both are
+  // child of #expand-window / fixed children, but their visible state would
+  // outlive the expand close animation if not explicitly cleared.
+  _detailsPopup.classList.remove('visible');
+  _detailsBtn.classList.remove('active');
+  if (_onchainModal.classList.contains('active')) _closeOnchainModal();
   _expandOpenId = null;
 
   if (_expandCardEl) {
@@ -2464,6 +3333,369 @@ document.getElementById('expand-reset-btn').addEventListener('click', () => {
   _expandFrame.srcdoc = '';
   requestAnimationFrame(() => { _expandFrame.srcdoc = html; });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Details popup — anchored bottom-right of #expand-window via CSS. Toggled by
+// #expand-details-btn. Reads from _artifactFetchCache (already populated when
+// the card mounted), so opening is instant — no extra RPC calls.
+// ─────────────────────────────────────────────────────────────────────────────
+const _detailsPopup = document.getElementById('expand-details-popup');
+const _detailsBtn   = document.getElementById('expand-details-btn');
+
+function _formatSettledAt(unixSeconds) {
+  // YYYY-MM-DD HH:MM UTC — compact, locale-stable, no DST surprises.
+  const d = new Date(Number(unixSeconds) * 1000);
+  if (isNaN(d.getTime())) return '—';
+  return d.toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+}
+
+// Trait label tables — full readable names. Engine uses abbreviated codes
+// internally (sm/md/lg, lo/hi/mx, etc.); the popup expands them so a viewer
+// reading the artifact's traits sees human terms.
+const _DETAILS_MODE_NAMES = ['feedback','shift','noise','modulo','wave','jungle','sector','blocks'];
+const _DETAILS_SIZE_FULL  = ['small','medium','large'];                    // index = SIZE_INT
+const _DETAILS_RS_FULL    = ['small','medium','large','xlarge'];           // index = RS_INT
+const _DETAILS_RD_FULL    = ['low','medium','high','max'];                 // index = RD_INT
+const _DETAILS_DX_FULL    = ['cross','plus','horizontal','square','digit','digit-inv','mosaic','circle']; // index = DX_INT
+const _DETAILS_RV_NAMES   = ['core','mecha','hysteria','metro','side-b','earthquake','retro','ladder'];
+const _DETAILS_PALETTE    = ['#6363ff','#a040ff','#ff003a','#ff8c00','#ffbd2e','#28c840','#ff4080','#ff63ff','#1100ff','#63ff63','#57686e','#2a0b18','#23242a','#ab0a5f','#0f1021','#000000','#bfbcce','#8b8b8b'];
+
+function _renderDetailsTraitsForToken(t) {
+  // Build trait rows — emit color + speed first (always present), then the
+  // conditional traits in the same order as app/'s expand panel DOM:
+  //   color → speed → size → mode → rect-size → rect-variant → rect-density
+  //         → bios → dx-pattern
+  // Reference: app/index.html `makeGroup()` calls — Color (3912), DT group
+  // with speed (3937), size (3982), mode (4048), Rect Shift with rs/rv/rd
+  // (4081+), BIOS (4119), Dither (4161). Trait tags via getTraitTags()
+  // mirror the same conditional order.
+  const rows = [];
+
+  // Color: always present. Show a swatch + hex value.
+  const hex = _DETAILS_PALETTE[t.colorIndex] || '#000000';
+  rows.push({
+    label:'color',
+    valueHTML:'<span class="details-trait-swatch" data-color="' + hex + '"></span>' + hex,
+  });
+  // Speed: always present.
+  rows.push({ label:'speed', value:String(t.speed) });
+
+  // Conditional traits — only emit rows for traits the token actually has.
+  if (t.hasSize) {
+    rows.push({ label:'size', value:_DETAILS_SIZE_FULL[t.size] || '—' });
+  }
+  if (t.hasMode && t.modes && t.modes.length) {
+    rows.push({ label:'mode', value:_DETAILS_MODE_NAMES[t.modes[0]] || '—' });
+  }
+  if (t.hasRS) {
+    rows.push({ label:'rect-size', value:_DETAILS_RS_FULL[t.rectSize] || '—' });
+  }
+  if (t.rv && t.rv.length) {
+    rows.push({ label:'rect-variant', value:_DETAILS_RV_NAMES[t.rv[0]] || '—' });
+  }
+  if (t.hasRD) {
+    rows.push({ label:'rect-density', value:_DETAILS_RD_FULL[t.rectDim] || '—' });
+  }
+  if (t.hasBios) {
+    rows.push({ label:'bios', value:t.biosOn ? 'on' : 'off' });
+  }
+  if (t.hasDX && t.dx && t.dx.length) {
+    rows.push({ label:'dx-pattern', value:_DETAILS_DX_FULL[t.dx[0]] || '—' });
+  }
+  return rows.map(r => {
+    const valueMarkup = r.valueHTML
+      ? r.valueHTML
+      : '<span>' + r.value + '</span>';
+    return '<div class="details-trait">' +
+      '<span class="details-trait-label">' + r.label + '</span>' +
+      '<span class="details-trait-value">' + valueMarkup + '</span>' +
+    '</div>';
+  }).join('');
+}
+
+function _renderDetails(data, modId) {
+  const art = data && data.artifact;
+  const composition = data && data.composition;
+  if (!art) {
+    _detailsPopup.innerHTML = _DETAILS_CLOSE_HTML +
+      '<div class="details-row"><span class="details-label">no data</span></div>';
+    return;
+  }
+  const moduloId = Number(art.moduloId);
+  const settler  = String(art.settler);
+  const owner    = String(data.owner || '');
+  const dateStr  = _formatSettledAt(art.settledAt);
+  // ethers v6 returns Result tuples — Array.from to get plain arrays we can map
+  const tokenIds = Array.from(art.tokenIds).map(Number);
+  const ranks    = Array.from(art.ranks).map(Number);
+
+  // Header rows (modulo template, settled, settler, owner).
+  // All interpolated values are deterministic projections of on-chain data
+  // (numbers via padStart, addresses via _shortAddr which slice-truncates,
+  // ETHERSCAN_BASE / TOKEN_AGENT_ADDRESS hardcoded constants). No user input
+  // surface → safe innerHTML use.
+  const headerRows =
+    '<div class="details-row"><span class="details-label">Modulo</span>' +
+      '<span class="details-value">modulo_' + String(moduloId).padStart(2, '0') + '</span></div>' +
+    '<div class="details-row"><span class="details-label">Settled</span>' +
+      '<span class="details-value">' + dateStr + '</span></div>' +
+    '<div class="details-row"><span class="details-label">Settler</span>' +
+      '<a class="details-link" href="' + ETHERSCAN_BASE + '/address/' + settler +
+        '" target="_blank" rel="noopener noreferrer">' + _shortAddr(settler) + ' ↗</a></div>' +
+    '<div class="details-row"><span class="details-label">Owner</span>' +
+      '<a class="details-link" href="' + ETHERSCAN_BASE + '/address/' + owner +
+        '" target="_blank" rel="noopener noreferrer">' + _shortAddr(owner) + ' ↗</a></div>';
+
+  // Per-token blocks: header (id + rank + Etherscan link) + 2-column grid
+  // of full trait names. Falls back to the bare header if composition didn't
+  // parse (older artifact / corrupt HTML).
+  const tokenBlocks = tokenIds.map((id, i) => {
+    const headerHtml =
+      '<div class="details-token-header">' +
+        '<span class="details-token-meta">#' + String(id).padStart(4, '0') +
+          ' · R#' + String(ranks[i] || 0).padStart(4, '0') + '</span>' +
+        '<a href="' + ETHERSCAN_BASE + '/token/' + TOKEN_AGENT_ADDRESS + '?a=' + id +
+          '" target="_blank" rel="noopener noreferrer" title="View token on Etherscan">↗</a>' +
+      '</div>';
+    const compToken = composition && composition.tokens && composition.tokens[i];
+    const traitsHtml = compToken
+      ? '<div class="details-token-traits">' + _renderDetailsTraitsForToken(compToken) + '</div>'
+      : '<div class="details-trait-label details-trait-unavailable">traits unavailable</div>';
+    return '<div class="details-token-block">' + headerHtml + traitsHtml + '</div>';
+  }).join('');
+
+  _detailsPopup.innerHTML =
+    _DETAILS_CLOSE_HTML +
+    headerRows +
+    '<div class="details-divider"></div>' +
+    '<div class="details-tokens-header">Composition (' + tokenIds.length + ')</div>' +
+    tokenBlocks;
+  // Apply per-swatch background colors via JS-set element.style (NOT gated by
+  // CSP style-src, unlike inline style="" attributes which are blocked when
+  // 'unsafe-inline' is removed). The data-color attribute carries the hex
+  // value through innerHTML safely (only [#0-9a-fA-F] chars from
+  // _DETAILS_PALETTE indexed by t.colorIndex which is `Number | 0`,
+  // range-bound 0-17 — verified Round 4 audit). Synchronous post-innerHTML
+  // hook in same call stack → no flash window before paint.
+  _detailsPopup.querySelectorAll('.details-trait-swatch[data-color]').forEach(el => {
+    el.style.background = el.dataset.color;
+  });
+}
+
+// Close dot HTML — re-injected on every render because innerHTML reset wipes
+// the prior DOM node. Kept as a const so the markup stays in one place.
+const _DETAILS_CLOSE_HTML = '<div class="details-close-dot" title="close"></div>';
+
+// Event delegation for the close dot — wired ONCE on the popup container,
+// not per-render. Avoids stale listeners after innerHTML reset.
+_detailsPopup.addEventListener('click', e => {
+  const target = e.target;
+  if (target && target.classList && target.classList.contains('details-close-dot')) {
+    e.stopPropagation();
+    _closeDetailsPopup();
+  }
+});
+
+// Placeholder body wrapper — always includes the close dot so the user can
+// dismiss the popup even before the data resolves.
+function _detailsPlaceholder(text) {
+  return _DETAILS_CLOSE_HTML +
+    '<div class="details-row"><span class="details-label">' + text + '</span></div>';
+}
+
+function _populateDetailsPopup(modId) {
+  // Show "loading…" placeholder while the cache resolves (instant if already cached).
+  _detailsPopup.innerHTML = _detailsPlaceholder('loading…');
+  const cached = _artifactFetchCache.get(modId);
+  if (!cached) {
+    // Fallback: not in cache yet (rare — would mean popup was opened before mount).
+    _detailsPopup.innerHTML = _detailsPlaceholder('unavailable');
+    return;
+  }
+  cached.then(data => {
+    // Guard against popup being closed / different modId opened mid-fetch.
+    if (_expandOpenId !== modId || !_detailsPopup.classList.contains('visible')) return;
+    if (!data) {
+      _detailsPopup.innerHTML = _detailsPlaceholder('unavailable');
+      return;
+    }
+    _renderDetails(data, modId);
+  }).catch(() => {
+    if (_expandOpenId !== modId) return;
+    _detailsPopup.innerHTML = _detailsPlaceholder('error');
+  });
+}
+
+function _closeDetailsPopup() {
+  _detailsPopup.classList.remove('visible');
+  _detailsBtn.classList.remove('active');
+}
+
+_detailsBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  if (_expandOpenId === null) return;
+  const willOpen = !_detailsPopup.classList.contains('visible');
+  _detailsPopup.classList.toggle('visible', willOpen);
+  _detailsBtn.classList.toggle('active', willOpen);
+  if (willOpen) _populateDetailsPopup(_expandOpenId);
+});
+
+// Click outside popup (but not on the toggle button) closes it.
+document.addEventListener('click', e => {
+  if (!_detailsPopup.classList.contains('visible')) return;
+  if (e.target === _detailsBtn || _detailsBtn.contains(e.target)) return;
+  if (e.target === _detailsPopup || _detailsPopup.contains(e.target)) return;
+  _closeDetailsPopup();
+});
+
+// Esc closes details popup as a more granular dismiss before falling through
+// to the expand-close Esc handler (also listening on document keydown).
+// CRITICAL: must use stopImmediatePropagation, NOT stopPropagation. The
+// expand-close handler is a SIBLING listener on document — same target, so
+// stopPropagation (which prevents bubbling UP the tree) doesn't apply.
+// stopImmediatePropagation also blocks remaining siblings on the same target,
+// which is what we need here. Without this, Esc closes BOTH the popup AND
+// the expand modal in a single press (security-auditor caught 2026-05-08+).
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (_detailsPopup.classList.contains('visible')) {
+    _closeDetailsPopup();
+    e.stopImmediatePropagation();
+  }
+});
+
+// Close popup on fullscreen toggle (the popup's bottom-right offset relative
+// to a fullscreen window can land in odd spots — easier to just dismiss).
+document.addEventListener('fullscreenchange', () => {
+  if (_detailsPopup.classList.contains('visible')) _closeDetailsPopup();
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// On-chain verification modal — centered modal explaining how to fetch the
+// artifact's HTML directly from Ethereum (Etherscan tokenURI call OR raw data
+// URI copy/paste). Reads from _artifactFetchCache (already populated when the
+// card mounted). Opens with #expand-onchain-btn click.
+// ─────────────────────────────────────────────────────────────────────────────
+const _onchainModal       = document.getElementById('onchain-modal');
+const _onchainBtn         = document.getElementById('expand-onchain-btn');
+const _onchainTitle       = document.getElementById('onchain-modal-title');
+const _onchainIdHint      = document.getElementById('onchain-id-hint');
+const _onchainContractEl  = document.getElementById('onchain-contract-addr');
+const _onchainEtherscanA  = document.getElementById('onchain-etherscan-link');
+const _onchainUriText     = document.getElementById('onchain-uri-text');
+const _onchainCopyAddrBtn = document.getElementById('onchain-copy-addr');
+const _onchainCopyUriBtn  = document.getElementById('onchain-copy-uri');
+const _onchainCloseBtn    = document.getElementById('onchain-modal-close');
+
+function _openOnchainModal(modId) {
+  if (_expandOpenId === null) return;
+  _onchainTitle.textContent  = 'Verify on-chain — Modulo #' + modId;
+  _onchainIdHint.textContent = String(modId);
+  _onchainContractEl.textContent = SETTLE_ARTIFACT_ADDRESS;
+  // Etherscan deep-links to #readContract; user scrolls to find tokenURI.
+  _onchainEtherscanA.href = ETHERSCAN_BASE + '/address/' + SETTLE_ARTIFACT_ADDRESS + '#readContract';
+  // URI textarea — start blank to reduce flash, populate from cache.
+  _onchainUriText.value = 'loading…';
+  const cached = _artifactFetchCache.get(modId);
+  if (cached) {
+    cached.then(data => {
+      // Guard against modal being closed / different modId opened mid-fetch.
+      if (!_onchainModal.classList.contains('active') || _expandOpenId !== modId) return;
+      _onchainUriText.value = (data && data.tokenURI) ? data.tokenURI : 'unavailable';
+    }).catch(() => {
+      if (_onchainModal.classList.contains('active')) _onchainUriText.value = 'error';
+    });
+  } else {
+    _onchainUriText.value = 'unavailable';
+  }
+  _onchainModal.classList.add('active');
+  _onchainBtn.classList.add('active');
+}
+
+function _closeOnchainModal() {
+  _onchainModal.classList.remove('active');
+  _onchainBtn.classList.remove('active');
+  // Reset copy-button visual state so next open starts clean.
+  _onchainCopyAddrBtn.classList.remove('copied');
+  _onchainCopyAddrBtn.textContent = 'copy';
+  _onchainCopyUriBtn.classList.remove('copied');
+  _onchainCopyUriBtn.textContent = 'Copy URI';
+}
+
+// Generic copy-to-clipboard with visual feedback. The clipboard write happens
+// inside the click handler (user gesture) — required by the Permissions API
+// for `navigator.clipboard.writeText` without a permission prompt.
+function _onchainCopy(btn, value, copiedLabel, originalLabel) {
+  if (!value || value === 'loading…' || value === 'unavailable' || value === 'error') return;
+  const writeFn = (navigator.clipboard && navigator.clipboard.writeText)
+    ? () => navigator.clipboard.writeText(value)
+    : () => Promise.reject(new Error('no clipboard API'));
+  writeFn().then(() => {
+    btn.classList.add('copied');
+    btn.textContent = copiedLabel;
+    setTimeout(() => {
+      btn.classList.remove('copied');
+      btn.textContent = originalLabel;
+    }, 1500);
+  }).catch(err => {
+    console.warn('[onchain] clipboard write failed:', err && err.message);
+    // Fallback: select the textarea text so user can manually copy.
+    if (btn === _onchainCopyUriBtn) {
+      _onchainUriText.focus();
+      _onchainUriText.select();
+    }
+  });
+}
+
+_onchainBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  if (_expandOpenId === null) return;
+  if (_onchainModal.classList.contains('active')) {
+    _closeOnchainModal();
+  } else {
+    _openOnchainModal(_expandOpenId);
+  }
+});
+
+_onchainCloseBtn.addEventListener('click', _closeOnchainModal);
+
+// Backdrop click closes (only when target is the modal container itself, not
+// the inner window) — same pattern as #export-modal.
+_onchainModal.addEventListener('click', e => {
+  if (e.target === _onchainModal) _closeOnchainModal();
+});
+
+// Esc closes onchain modal — uses stopImmediatePropagation for the same
+// reason as the details popup (the expand-close Esc handler is a sibling
+// listener on document, would close BOTH otherwise).
+//
+// IMPORTANT — handler ORDER dependency (audit 2026-05-08+ P2):
+//   document.addEventListener fires listeners in registration order.
+//   stopImmediatePropagation on `document` blocks remaining listeners on
+//   the SAME target (sibling listeners). This handler must register BEFORE
+//   the expand-overlay Esc handler. Current source order:
+//     1. details-popup Esc handler (~line 3183)
+//     2. onchain-modal Esc handler (this one, ~line 3295)
+//     3. expand-overlay Esc handler (~line 3322)
+//   Cascade: details > onchain > expand. If JS blocks are reordered or
+//   handlers extracted, the Esc dismissal hierarchy can silently break.
+//   When refactoring: keep this registration order or migrate to a single
+//   keydown handler with explicit dispatch logic.
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (_onchainModal.classList.contains('active')) {
+    _closeOnchainModal();
+    e.stopImmediatePropagation();
+  }
+});
+
+_onchainCopyAddrBtn.addEventListener('click', () => {
+  _onchainCopy(_onchainCopyAddrBtn, SETTLE_ARTIFACT_ADDRESS, 'copied', 'copy');
+});
+_onchainCopyUriBtn.addEventListener('click', () => {
+  _onchainCopy(_onchainCopyUriBtn, _onchainUriText.value, 'Copied ✓', 'Copy URI');
+});
+
 // MP4 button: opens the export options modal. User picks a codec/bitrate
 // preset, then the encode pipeline runs (OffscreenCanvas + inline engine
 // factory + WebCodecs + mp4-muxer). Same engine the iframe runs (deterministic
