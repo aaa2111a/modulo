@@ -1428,6 +1428,211 @@ button, a, [role="button"], .pill, .info-btn, .toggle-btn, .modal-close,
   width:0.5px; height:22px; background:var(--minimap-border);
   flex-shrink:0; margin:0 2px;
 }
+
+/* ── Bottom nav cluster: wraps `.my-artifacts-wrap` + `.modulo-nav` so both
+       stay grouped + centered at bottom. The modulo-nav width is dynamic
+       (grows with #modulos), so the cluster's flexbox lets the My Artifacts
+       button always sit on its left with a fixed gap regardless of nav
+       width. Replaces the previous `.modulo-nav { position:absolute }` —
+       the cluster owns the absolute positioning now. ── */
+.bottom-nav-cluster {
+  position:absolute; bottom:14px; left:50%; z-index:200;
+  transform:translateX(-50%);
+  display:flex; align-items:center; gap:12px;
+  pointer-events:none; /* children re-enable */
+}
+.bottom-nav-cluster > * { pointer-events:auto; }
+.bottom-nav-cluster .modulo-nav {
+  /* Cluster owns positioning — modulo-nav inherits centering from parent.
+     Keeps its own chrome (bg, border, radius, padding). */
+  position:relative;
+  bottom:auto; left:auto; z-index:auto;
+  transform:none;
+}
+
+/* ── My Artifacts button — own wrapper chrome matching `.modulo-nav` shell
+       (same bg + border + radius + padding) for visual cohesion as a sibling
+       cluster element. ── */
+.my-artifacts-wrap {
+  background:var(--node-bg-solid);
+  border:0.5px solid var(--minimap-border);
+  border-radius:10px;
+  padding:10px 12px;
+  display:flex; align-items:center;
+  transition:background 0.3s;
+}
+#my-artifacts-btn {
+  /* Mirror #nav-overview-btn dimensions + look so the two square glyph
+     buttons read as a paired affordance (⊟ paired with ⊞). */
+  display:flex; align-items:center; justify-content:center;
+  width:28px; height:28px; border-radius:6px;
+  border:0.5px solid var(--minimap-border);
+  background:transparent; cursor:pointer;
+  color:var(--sl); font-size:13px;
+  transition:background 0.15s, color 0.15s;
+  flex-shrink:0;
+  padding:0; line-height:1;
+  font-family:inherit;
+}
+#my-artifacts-btn:hover { background:var(--pill-bg); color:var(--sv); }
+#my-artifacts-btn.active { background:var(--pill-bg); color:var(--sv); }
+
+/* ── My Artifacts modal — uses `.overlay` (z-700 backdrop dim/blur).
+       Window is more square than #expand-window (~1.2 aspect vs 1.78).
+       Reuses `.mod-card` styling from collection page for individual
+       artifact cards inside the grid. ── */
+#my-artifacts-window {
+  pointer-events:all;
+  border-radius:11px;
+  overflow:hidden;
+  box-shadow:var(--shadow-window-hover);
+  display:flex; flex-direction:column;
+  background:var(--node-bg-solid);
+  max-width:min(96vw, calc((90vh - 28px) * 1.2));
+  max-height:90vh;
+  width:100%; height:100%;
+}
+#my-artifacts-tbar {
+  height:28px;
+  background:var(--tbar-bg);
+  border-bottom:0.5px solid var(--tbar-border);
+  display:flex; align-items:center; padding:0 10px; gap:8px;
+  flex-shrink:0;
+  transition:background 0.3s;
+}
+#my-artifacts-tbar .card-tbar-title { font-size:10px; color:var(--stats-title); letter-spacing:.03em; font-weight:400; margin-left:5px; font-family:monospace; flex:1; }
+#my-artifacts-close {
+  width:12px; height:12px; border-radius:50%;
+  background:#ff5f57; cursor:pointer; flex-shrink:0;
+  transition:transform 0.15s;
+}
+#my-artifacts-close:hover { transform:scale(1.25); }
+#my-artifacts-refresh {
+  background:transparent;
+  border:0.5px solid var(--minimap-border);
+  border-radius:5px;
+  width:22px; height:20px;
+  font-size:11px; color:var(--sl);
+  cursor:pointer;
+  padding:0; line-height:1;
+  transition:background 0.15s, color 0.15s, transform 0.4s;
+}
+#my-artifacts-refresh:hover { background:var(--pill-bg); color:var(--sv); }
+#my-artifacts-refresh:disabled { opacity:0.45; cursor:default; }
+#my-artifacts-refresh.spinning { transform:rotate(360deg); transition:transform 0.6s linear; }
+#my-artifacts-body {
+  flex:1; min-height:0;
+  display:flex; flex-direction:column;
+  overflow:hidden;
+}
+#my-artifacts-filters {
+  display:flex; gap:6px; padding:10px 14px 6px;
+  border-bottom:0.5px solid var(--divider);
+  flex-shrink:0;
+}
+.ma-chip {
+  background:transparent;
+  border:0.5px solid var(--minimap-border);
+  border-radius:12px;
+  padding:3px 10px;
+  font-size:9px; font-family:monospace;
+  color:var(--sl); cursor:pointer;
+  letter-spacing:.04em; text-transform:lowercase;
+  transition:background 0.15s, color 0.15s, border-color 0.15s;
+}
+.ma-chip:hover { background:var(--pill-bg); color:var(--sv); }
+.ma-chip.active {
+  background:var(--pill-bg);
+  color:var(--sv);
+  border-color:var(--sv);
+}
+.ma-chip-count { opacity:0.6; margin-left:2px; }
+
+/* Grid: reuse modulo-cards aspect (9:5) and chrome. Responsive columns. */
+#my-artifacts-grid {
+  flex:1; min-height:0;
+  overflow-y:auto;
+  padding:14px;
+  display:grid;
+  grid-template-columns:repeat(auto-fill, minmax(220px, 1fr));
+  gap:12px;
+  align-content:start;
+}
+#my-artifacts-grid::-webkit-scrollbar { width:3px; }
+#my-artifacts-grid::-webkit-scrollbar-thumb { background:var(--divider); border-radius:2px; }
+
+/* SETTLED badge — small chip top-right corner of card. Contrast >= 4.5:1
+   per WCAG AA. aria-label on parent .ma-card-badge for AT. */
+.ma-card {
+  background:var(--node-bg);
+  border:0.5px solid var(--node-border);
+  border-radius:9px;
+  overflow:hidden;
+  position:relative;
+  display:flex; flex-direction:column;
+  cursor:pointer;
+  transition:transform 0.22s cubic-bezier(0.4,0,0.2,1), opacity 0.22s;
+  box-shadow:
+    0 0 0 0.5px rgba(0,0,0,0.05),
+    0 2px 8px rgba(0,0,0,0.06);
+}
+.ma-card:hover { transform:scale(1.02); z-index:2; }
+.ma-card.ma-not-owned { opacity:0.45; }
+.ma-card.ma-not-owned:hover { opacity:0.6; }
+.ma-card-tbar {
+  height:22px;
+  background:var(--tbar-bg);
+  border-bottom:0.5px solid var(--tbar-border);
+  display:flex; align-items:center; padding:0 8px; gap:5px;
+  font-size:9px; font-family:monospace;
+  color:var(--stats-title);
+  flex-shrink:0;
+}
+.ma-card-canvas-wrap {
+  position:relative;
+  aspect-ratio:9/5;
+  background:var(--anim-panel-bg);
+  overflow:hidden;
+}
+.ma-card-iframe {
+  position:absolute; inset:0;
+  width:100%; height:100%;
+  border:none; display:block;
+  background:var(--anim-panel-bg);
+  pointer-events:none;
+}
+.ma-card-footer {
+  padding:5px 8px;
+  display:flex; align-items:center; justify-content:space-between;
+  border-top:0.5px solid var(--divider);
+  flex-shrink:0;
+  font-size:8px; font-family:monospace;
+  color:var(--sl); letter-spacing:.04em;
+}
+.ma-card-badge {
+  position:absolute; top:6px; right:6px;
+  background:rgba(40,200,64,0.92);
+  color:#0a2010;
+  font-size:8px; font-family:monospace; font-weight:700;
+  padding:2px 5px;
+  border-radius:3px;
+  letter-spacing:.08em;
+  z-index:1;
+  pointer-events:none;
+  box-shadow:0 1px 3px rgba(0,0,0,0.18);
+}
+
+#my-artifacts-empty,
+#my-artifacts-loading {
+  flex:1;
+  display:flex; align-items:center; justify-content:center;
+  color:var(--sl);
+  font-size:11px; font-family:monospace;
+  letter-spacing:.04em;
+  padding:40px;
+  text-align:center;
+}
+
 #overview-blocker {
   display:none; position:absolute; inset:0; z-index:199;
   cursor:default;
@@ -1968,9 +2173,39 @@ button, a, [role="button"], .pill, .info-btn, .toggle-btn, .modal-close,
     </div>
   </div>
 
-  <div class="modulo-nav" id="modulo-nav">
-    <div id="nav-overview-sep"></div>
-    <button id="nav-overview-btn" title="Overview">⊞</button>
+  <!-- My Artifacts overlay — pop-up modal mostrando artifacts del SESSION_USER.
+       Data via single Transfer event scan (from==0x0 → settled by user; current
+       owner==user → owned). Filter chips switch entre all/owned/settled.
+       Click en card → cierra modal + abre expand modal (single-modal-stack
+       invariant). Reusa .mod-card chrome del collection page. -->
+  <div class="overlay" id="my-artifacts-overlay">
+    <div id="my-artifacts-window">
+      <div id="my-artifacts-tbar">
+        <div class="dot r" id="my-artifacts-close" role="button" aria-label="Close" tabindex="0"></div>
+        <span class="card-tbar-title">My artifacts</span>
+        <button id="my-artifacts-refresh" type="button" title="Refresh from chain" aria-label="Refresh">↻</button>
+      </div>
+      <div id="my-artifacts-body">
+        <div id="my-artifacts-filters" role="tablist" aria-label="Filter artifacts">
+          <button class="ma-chip active" data-filter="owned" type="button" role="tab" aria-selected="true">owned (<span class="ma-chip-count">0</span>)</button>
+          <button class="ma-chip" data-filter="settled" type="button" role="tab" aria-selected="false">settled (<span class="ma-chip-count">0</span>)</button>
+          <button class="ma-chip" data-filter="all" type="button" role="tab" aria-selected="false">all (<span class="ma-chip-count">0</span>)</button>
+        </div>
+        <div id="my-artifacts-grid"></div>
+        <div id="my-artifacts-empty" hidden>no artifacts settled yet</div>
+        <div id="my-artifacts-loading" hidden>reading on-chain state…</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bottom-nav-cluster">
+    <div class="my-artifacts-wrap">
+      <button id="my-artifacts-btn" type="button" aria-label="My artifacts" title="My artifacts">⊟</button>
+    </div>
+    <div class="modulo-nav" id="modulo-nav">
+      <div id="nav-overview-sep"></div>
+      <button id="nav-overview-btn" title="Overview">⊞</button>
+    </div>
   </div>
 
   <div id="overview-blocker"></div>
@@ -7403,6 +7638,397 @@ inventoryOverlay.addEventListener('click', e => {
   if (e.target === inventoryOverlay) closeInventory();
 });
 
+// ── My Artifacts modal (2026-05-11) ────────────────────────────────────────────
+// Shows the SESSION_USER's settled artifacts. Data via single `Transfer` event
+// scan on SettleArtifact contract from SETTLE_ARTIFACT_DEPLOY_BLOCK. Filter
+// chips switch between owned/settled/all views. Cached to sessionStorage
+// keyed by user+contract address; invalidated on user settle (storage event
+// cross-tab) or stale block.
+//
+// ASSUMES: SettleArtifact.settle() always mints to msg.sender (p.settler).
+// Verified 2026-05-11 in `Code/contracts/src/SettleArtifact.sol` L223:
+// `_safeMint(p.settler, artifactId)` — single mint path in the contract.
+// If contract changes to add admin mint / batch mint / mint-to-recipient,
+// the from==ZeroAddress filter no longer cleanly maps to "settled by user".
+const _maOverlay   = document.getElementById('my-artifacts-overlay');
+const _maWindow    = document.getElementById('my-artifacts-window');
+const _maGrid      = document.getElementById('my-artifacts-grid');
+const _maEmpty     = document.getElementById('my-artifacts-empty');
+const _maLoading   = document.getElementById('my-artifacts-loading');
+const _maRefreshBtn= document.getElementById('my-artifacts-refresh');
+const _maCloseBtn  = document.getElementById('my-artifacts-close');
+const _maTriggerBtn= document.getElementById('my-artifacts-btn');
+const _maChips     = document.querySelectorAll('#my-artifacts-filters .ma-chip');
+
+let _maCurrentFilter = 'owned';        // 'owned' | 'settled' | 'all'
+let _maData          = null;           // { ownedIds: Set, settledIds: Set, allIds: Set }
+let _maScanInFlight  = false;
+const _maCacheKeyFor = (user) => `tc-my-artifacts:${SETTLE_ARTIFACT_ADDRESS}:${user.toLowerCase()}`;
+const _MA_CACHE_TTL_BLOCKS = 25;       // invalidate cache after 25 blocks (~5 min Sepolia)
+const _MA_CHUNK_SIZE       = 5000;     // safely under publicnode/Alchemy 10k getLogs limit
+const _MA_RENDER_CAP       = 200;      // defensive: don't render more than 200 cards at once
+const _ZERO_ADDR           = '0x0000000000000000000000000000000000000000';
+
+function _maOpen() {
+  if (!SESSION_USER) {
+    _showToast('Connect wallet first', { ttlMs: 2500 });
+    return;
+  }
+  // Close inventory if open — single-modal-stack invariant (reviewer P3).
+  if (inventoryModuloId) closeInventory();
+  _maOverlay.classList.add('open');
+  _maTriggerBtn.classList.add('active');
+  // Try cache first; if stale or absent, scan.
+  const cached = _maReadCache(SESSION_USER);
+  if (cached && !_maCacheStale(cached)) {
+    _maApplyData(cached.data);
+    return;
+  }
+  _maScanAndRender();
+}
+
+function _maClose() {
+  _maOverlay.classList.remove('open');
+  _maTriggerBtn.classList.remove('active');
+}
+
+function _maReadCache(user) {
+  try {
+    const raw = sessionStorage.getItem(_maCacheKeyFor(user));
+    if (!raw) return null;
+    return JSON.parse(raw); // { scanAtBlock, data: { ownedIds:[], settledIds:[], allIds:[] } }
+  } catch (_) { return null; }
+}
+
+function _maWriteCache(user, scanAtBlock, data) {
+  try {
+    sessionStorage.setItem(_maCacheKeyFor(user), JSON.stringify({
+      scanAtBlock,
+      data: {
+        ownedIds:   [...data.ownedIds],
+        settledIds: [...data.settledIds],
+        allIds:     [...data.allIds],
+      },
+    }));
+  } catch (_) {/* sessionStorage quota — silently skip */}
+}
+
+function _maCacheStale(cached) {
+  // Stale if we can't read current block (treat as fresh) or if N blocks advanced
+  if (!cached || !cached.scanAtBlock) return true;
+  const currentBlock = _lastProcessedBlock || cached.scanAtBlock;
+  return (currentBlock - cached.scanAtBlock) > _MA_CACHE_TTL_BLOCKS;
+}
+
+async function _maScanAndRender() {
+  if (_maScanInFlight) return;
+  _maScanInFlight = true;
+  _maRefreshBtn.disabled = true;
+  _maRefreshBtn.classList.add('spinning');
+  _maGrid.innerHTML = '';
+  _maEmpty.hidden = true;
+  _maLoading.hidden = false;
+
+  try {
+    const provider = _getReadonlyProvider();
+    if (!provider) throw new Error('no readonly provider available');
+    const contract = new window.ethers.Contract(
+      SETTLE_ARTIFACT_ADDRESS,
+      SETTLE_ARTIFACT_ABI,
+      provider
+    );
+    const latestBlock = await provider.getBlockNumber();
+    const userLc = SESSION_USER.toLowerCase();
+
+    // Chunked Transfer scan from DEPLOY_BLOCK → latest. Build:
+    //   ownerMap : tokenId → currentOwner (overwritten in chronological order,
+    //              so latest Transfer in scan determines current owner)
+    //   settledByUser : set of tokenIds where from==0x0 AND to==user
+    const ownerMap     = new Map();
+    const settledByUser = new Set();
+    let from = SETTLE_ARTIFACT_DEPLOY_BLOCK;
+    const filter = contract.filters.Transfer();
+    while (from <= latestBlock) {
+      const to = Math.min(from + _MA_CHUNK_SIZE - 1, latestBlock);
+      const events = await contract.queryFilter(filter, from, to);
+      for (const ev of events) {
+        const fromAddr = (ev.args.from || ev.args[0]).toLowerCase();
+        const toAddr   = (ev.args.to   || ev.args[1]).toLowerCase();
+        const tokenId  = (ev.args.tokenId || ev.args[2]).toString();
+        ownerMap.set(tokenId, toAddr);
+        if (fromAddr === _ZERO_ADDR && toAddr === userLc) {
+          settledByUser.add(tokenId);
+        }
+      }
+      from = to + 1;
+    }
+
+    // Build owned set: tokenIds where current owner == user.
+    const ownedByUser = new Set();
+    for (const [id, owner] of ownerMap.entries()) {
+      if (owner === userLc) ownedByUser.add(id);
+    }
+    // All = union (settled ∪ owned).
+    const allRelevant = new Set([...settledByUser, ...ownedByUser]);
+
+    const data = {
+      ownedIds:   ownedByUser,
+      settledIds: settledByUser,
+      allIds:     allRelevant,
+    };
+    _maWriteCache(SESSION_USER, latestBlock, data);
+    _maApplyData(data);
+  } catch (err) {
+    console.error('[my-artifacts] scan failed:', err);
+    _maLoading.hidden = true;
+    _maEmpty.hidden = false;
+    _maEmpty.textContent = 'error reading on-chain state — try refresh';
+  } finally {
+    _maScanInFlight = false;
+    _maRefreshBtn.disabled = false;
+    // Spin-stop after a short delay so the rotation animation completes once
+    setTimeout(() => _maRefreshBtn.classList.remove('spinning'), 600);
+  }
+}
+
+function _maApplyData(data) {
+  _maData = data;
+  _maLoading.hidden = true;
+  _maRenderGrid();
+  _maUpdateChipCounts();
+}
+
+function _maUpdateChipCounts() {
+  if (!_maData) return;
+  _maChips.forEach(chip => {
+    const filter = chip.dataset.filter;
+    const set = (filter === 'owned')   ? _maData.ownedIds
+              : (filter === 'settled') ? _maData.settledIds
+              : _maData.allIds;
+    const cntEl = chip.querySelector('.ma-chip-count');
+    if (cntEl) cntEl.textContent = String(set.size);
+  });
+}
+
+function _maSetFilter(filter) {
+  _maCurrentFilter = filter;
+  _maChips.forEach(c => {
+    const isActive = c.dataset.filter === filter;
+    c.classList.toggle('active', isActive);
+    c.setAttribute('aria-selected', isActive ? 'true' : 'false');
+  });
+  _maRenderGrid();
+}
+
+function _maRenderGrid() {
+  if (!_maData) return;
+  _maGrid.innerHTML = '';
+
+  const ids = (_maCurrentFilter === 'owned')   ? _maData.ownedIds
+            : (_maCurrentFilter === 'settled') ? _maData.settledIds
+            : _maData.allIds;
+
+  if (ids.size === 0) {
+    _maEmpty.hidden = false;
+    _maEmpty.textContent = (_maCurrentFilter === 'owned')   ? 'no artifacts in your wallet'
+                         : (_maCurrentFilter === 'settled') ? 'no artifacts settled by you'
+                         : 'no artifacts settled yet';
+    return;
+  }
+  _maEmpty.hidden = true;
+
+  // Sort by tokenId ascending. Cap render at _MA_RENDER_CAP for performance.
+  const sorted = [...ids].map(Number).sort((a, b) => a - b).slice(0, _MA_RENDER_CAP);
+  for (const id of sorted) {
+    const idStr = String(id);
+    const isSettled = _maData.settledIds.has(idStr);
+    const isOwned   = _maData.ownedIds.has(idStr);
+    const card = _maBuildCard(id, isSettled, isOwned);
+    _maGrid.appendChild(card);
+  }
+  if (ids.size > _MA_RENDER_CAP) {
+    const more = document.createElement('div');
+    more.style.cssText = 'grid-column:1/-1;text-align:center;padding:14px;font-size:10px;color:var(--sl);font-family:monospace;';
+    more.textContent = `+${ids.size - _MA_RENDER_CAP} more (showing first ${_MA_RENDER_CAP})`;
+    _maGrid.appendChild(more);
+  }
+}
+
+function _maBuildCard(artifactId, isSettled, isOwned) {
+  const card = document.createElement('div');
+  card.className = 'ma-card' + (isOwned ? '' : ' ma-not-owned');
+  card.dataset.artifactId = String(artifactId);
+  card.setAttribute('role', 'button');
+  card.setAttribute('tabindex', '0');
+  card.setAttribute('aria-label',
+    `Modulo #${artifactId}` +
+    (isSettled ? ', settled by you' : '') +
+    (isOwned ? '' : ', no longer in your wallet')
+  );
+  if (!isOwned) card.title = 'no longer in your wallet';
+
+  const tbar = document.createElement('div');
+  tbar.className = 'ma-card-tbar';
+  const label = document.createElement('span');
+  label.textContent = 'MODULO #' + artifactId;
+  tbar.appendChild(label);
+  card.appendChild(tbar);
+
+  if (isSettled) {
+    const badge = document.createElement('span');
+    badge.className = 'ma-card-badge';
+    badge.textContent = 'S';
+    badge.setAttribute('aria-label', 'settled by you');
+    badge.title = 'settled by you';
+    card.appendChild(badge);
+  }
+
+  const wrap = document.createElement('div');
+  wrap.className = 'ma-card-canvas-wrap';
+  card.appendChild(wrap);
+
+  const footer = document.createElement('div');
+  footer.className = 'ma-card-footer';
+  const idSpan = document.createElement('span');
+  idSpan.textContent = '#' + String(artifactId).padStart(4, '0');
+  footer.appendChild(idSpan);
+  card.appendChild(footer);
+
+  // Lazy iframe mount via IntersectionObserver (reuses pattern from collection).
+  // The on-chain tokenURI call is heavy; only fetch when card is near viewport.
+  _maAttachLazyMount(card, artifactId);
+
+  card.addEventListener('click', () => _maHandleCardClick(artifactId));
+  card.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      _maHandleCardClick(artifactId);
+    }
+  });
+
+  return card;
+}
+
+// Lazy mount per-card iframe — fetches tokenURI(artifactId) only when card
+// enters viewport. Avoids 200 parallel iframe mounts on modal open.
+function _maAttachLazyMount(card, artifactId) {
+  const wrap = card.querySelector('.ma-card-canvas-wrap');
+  if (!wrap) return;
+  let mounted = false;
+  const io = new IntersectionObserver(entries => {
+    for (const entry of entries) {
+      if (entry.isIntersecting && !mounted) {
+        mounted = true;
+        _maMountIframe(wrap, artifactId);
+        io.disconnect();
+      }
+    }
+  }, { root: _maGrid, rootMargin: '200px', threshold: 0 });
+  io.observe(card);
+}
+
+async function _maMountIframe(wrap, artifactId) {
+  try {
+    const provider = _getReadonlyProvider();
+    if (!provider) return;
+    const contract = new window.ethers.Contract(
+      SETTLE_ARTIFACT_ADDRESS,
+      SETTLE_ARTIFACT_ABI,
+      provider
+    );
+    const uri = await contract.tokenURI(artifactId);
+    if (!uri || typeof uri !== 'string') return;
+    const comma = uri.indexOf(',');
+    if (comma < 0) return;
+    // UTF-8-safe atob (same pattern as collection/index.html _decodeTokenURI fix).
+    const binStr = atob(uri.slice(comma + 1));
+    const bytes = new Uint8Array(binStr.length);
+    for (let i = 0; i < binStr.length; i++) bytes[i] = binStr.charCodeAt(i);
+    const html = new TextDecoder('utf-8').decode(bytes);
+
+    const iframe = document.createElement('iframe');
+    iframe.className = 'ma-card-iframe';
+    iframe.setAttribute('sandbox', 'allow-scripts');
+    iframe.setAttribute('referrerpolicy', 'no-referrer');
+    iframe.setAttribute('aria-label', 'artifact #' + artifactId);
+    iframe.srcdoc = html;
+    wrap.appendChild(iframe);
+  } catch (err) {
+    console.warn('[my-artifacts] iframe mount failed for', artifactId, err);
+  }
+}
+
+function _maHandleCardClick(artifactId) {
+  // v1 click behavior: open Etherscan token page in a new tab. The app's
+  // existing `openExpand(modId, cardEl)` is scoped to LIVE workshop modulos
+  // (uses MODULOS[].find which has no settled-artifact entries), so we can't
+  // reuse it directly for past settles. Collection page has its own expand
+  // for settled artifacts — future iteration could deep-link there
+  // (`../collection/#artifact-N`) once that anchor handling exists. For v1,
+  // Etherscan gives a verifiable on-chain view + the iframe in this card
+  // already renders the artifact visually.
+  const explorer = (WALLET_TARGET_CHAIN_INFO &&
+                    WALLET_TARGET_CHAIN_INFO.blockExplorerUrls &&
+                    WALLET_TARGET_CHAIN_INFO.blockExplorerUrls[0]) || '';
+  if (!explorer) return;
+  const url = explorer + '/token/' + SETTLE_ARTIFACT_ADDRESS + '?a=' + artifactId;
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+// Cross-tab invalidation: if another tab settles a new artifact, its scanner
+// writes the cache; this tab's storage event clears our in-memory data so
+// next open re-scans. Listen for both sessionStorage (same origin, not cross-
+// tab in modern browsers) and localStorage (cross-tab). We use sessionStorage
+// for the cache itself but write a lightweight signal to localStorage on
+// invalidation.
+window.addEventListener('storage', e => {
+  if (!e.key) return;
+  if (e.key === 'tc-my-artifacts:invalidate') {
+    _maData = null;
+    try { sessionStorage.removeItem(_maCacheKeyFor(SESSION_USER || '')); } catch (_) {}
+  }
+});
+
+// Public helper — call from settle success path to invalidate cache cross-tab.
+// (Hook this into settleModulo's success branch later if desired; for v1 the
+// 25-block TTL covers most cases.)
+window._maInvalidateCache = () => {
+  _maData = null;
+  if (SESSION_USER) {
+    try { sessionStorage.removeItem(_maCacheKeyFor(SESSION_USER)); } catch (_) {}
+  }
+  try { localStorage.setItem('tc-my-artifacts:invalidate', String(Date.now())); } catch (_) {}
+};
+
+// Event wiring
+_maTriggerBtn.addEventListener('click', _maOpen);
+_maCloseBtn.addEventListener('click', _maClose);
+_maCloseBtn.addEventListener('keydown', e => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); _maClose(); }
+});
+_maOverlay.addEventListener('click', e => {
+  if (e.target === _maOverlay) _maClose();
+});
+_maRefreshBtn.addEventListener('click', () => {
+  if (!SESSION_USER) return;
+  // Force fresh scan — clear cache first
+  try { sessionStorage.removeItem(_maCacheKeyFor(SESSION_USER)); } catch (_) {}
+  _maData = null;
+  _maScanAndRender();
+});
+_maChips.forEach(chip => {
+  chip.addEventListener('click', () => _maSetFilter(chip.dataset.filter));
+});
+// Esc closes the modal (siblings keydown handler at document level handles
+// other overlays; we use the same pattern — capture-phase + stopImmediatePropagation
+// would conflict with sibling handlers, so we just listen for our specific case).
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && _maOverlay.classList.contains('open')) {
+    e.stopPropagation();
+    _maClose();
+  }
+}, true); // capture phase — fires before bubble-phase Esc handlers
+
 // Battery level: maps token count → 1..4 bars + color
 // 0-1 → level 1 (green, 1 bar)
 // 2-3 → level 2 (green, 2 bars)
@@ -8729,8 +9355,18 @@ const SETTLE_ARTIFACT_ABI = [
   ') external',
   'function totalArtifacts() view returns (uint256)',
   'function tokenURI(uint256) view returns (string)',
+  'function ownerOf(uint256) view returns (address)',
   'event Settled(uint256 indexed artifactId, uint256 indexed moduloId, address indexed settler)',
+  'event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)',
 ];
+
+// SettleArtifact deploy block on the active network — sets `fromBlock` for the
+// `Transfer` event scan in the My Artifacts modal. Scanning from block 0 would
+// fail on RPCs with range limits (publicnode/Alchemy/Infura ~10k blocks per
+// call). Confirmed via `contracts/broadcast/Deploy.s.sol/11155111/run-latest.json`
+// tx hash `0x7f8e51cc...` blockNumber `0xa4951b` = 10786075 (Sepolia).
+// SWAP: at T-0 mainnet deploy, update this to the mainnet deploy block.
+const SETTLE_ARTIFACT_DEPLOY_BLOCK = 10786075;
 
 // EIP-712 domain MUST match SettleArtifact.DOMAIN_SEPARATOR exactly. Any drift
 // here produces an unverifiable signature on-chain.
