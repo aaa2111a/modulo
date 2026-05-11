@@ -8364,16 +8364,14 @@ async function _maMountIframe(wrap, artifactId, attempt) {
 }
 
 function _maHandleCardClick(artifactId) {
-  // Click → open artifact expand modal (Round 2+). Falls back to Etherscan
-  // open if expand modal not yet wired (Round 1 ships helpers/cache only).
+  // Click → open artifact expand modal as overlap (Le UX 2026-05-11): My
+  // Artifacts grid stays visible behind the expand window. Close expand →
+  // user is still on the grid, no re-open dance. Per reviewer P2-1: this
+  // breaks single-modal-stack but Esc handlers below have priority guards
+  // (innermost takes precedence: ONCHAIN > expand > MA).
   if (typeof _artifactExpandOpen === 'function') {
-    // Measure source card rect FIRST (before closing My Artifacts which
-    // detaches the card from DOM) for FLIP animation. Reviewer P2-3 fix.
     const cardEl = _maGrid.querySelector(`.ma-card[data-artifact-id="${artifactId}"]`);
     const sourceRect = cardEl ? cardEl.getBoundingClientRect() : null;
-    // Set flag so artifact-expand close re-opens My Artifacts grid (Le UX).
-    _maReopenOnArtifactClose = true;
-    _maClose();
     _artifactExpandOpen(artifactId, sourceRect);
     return;
   }
@@ -8568,10 +8566,6 @@ const _artifactExpandResetBtn  = document.getElementById('artifact-expand-reset-
 
 let _artifactExpandOpenId = null;
 let _artifactExpandClosing = false;
-// True when My Artifacts was open and we closed it to show artifact-expand.
-// On expand close, re-open My Artifacts so user returns to the grid.
-// (Le 2026-05-11 — UX continuity, not the strict single-modal invariant.)
-let _maReopenOnArtifactClose = false;
 
 // Open expand window for an artifact. `sourceRect` is a pre-measured
 // `DOMRect` of the source card in My Artifacts grid — passed before
@@ -8645,12 +8639,8 @@ function _artifactExpandClose() {
     _artifactExpandWindow.style.transform = '';
     _artifactExpandWindow.style.opacity = '1';
     _artifactExpandIframe.srcdoc = ''; // free child document
-    // Re-open My Artifacts grid if the expand was opened FROM it. Cached
-    // owner-map → re-open is near-instant; cards re-mount iframes lazily.
-    if (_maReopenOnArtifactClose) {
-      _maReopenOnArtifactClose = false;
-      _maOpen();
-    }
+    // My Artifacts overlap stays open behind expand; nothing to re-open here.
+    // (Le 2026-05-11 — overlap UX, see _maHandleCardClick.)
   };
   const _onTransitionEnd = e => { if (e.propertyName === 'opacity') _teardown(); };
   const _teardownTimer = setTimeout(_teardown, 300);
@@ -8893,6 +8883,14 @@ _maChips.forEach(chip => {
 // would conflict with sibling handlers, so we just listen for our specific case).
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && _maOverlay.classList.contains('open')) {
+    // Skip if an inner modal (artifact-expand or ONCHAIN) is open — those
+    // handlers (declared LATER in the script) take priority. They'll call
+    // stopImmediatePropagation when handling Esc, so this handler shouldn't
+    // close MA while a higher-priority modal is still expecting Esc input.
+    // Use `typeof` guards because the vars are declared below in the script.
+    if (typeof _artifactExpandOpenId !== 'undefined' && _artifactExpandOpenId !== null) return;
+    if (typeof _artifactOnchainModal !== 'undefined' && _artifactOnchainModal &&
+        _artifactOnchainModal.classList.contains('active')) return;
     e.stopPropagation();
     _maClose();
   }
