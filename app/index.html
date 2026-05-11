@@ -1629,22 +1629,65 @@ button, a, [role="button"], .pill, .info-btn, .toggle-btn, .modal-close,
   pointer-events:none;
 }
 
+/* Loading + empty banners — position:absolute so they overlay the body
+   (filters + grid) and stay perfectly centered against the whole modal-body
+   area instead of fighting flex:1 with the grid (Le 2026-05-11 — "se ve
+   un poco abajo del centro"). */
 #my-artifacts-empty,
 #my-artifacts-loading {
-  flex:1;
+  position:absolute; inset:36px 0 0 0; /* skip filter bar (~36px) */
   display:flex; align-items:center; justify-content:center;
+  flex-direction:column; gap:14px;
   color:var(--sl);
   font-size:11px; font-family:monospace;
   letter-spacing:.04em;
   padding:40px;
   text-align:center;
+  pointer-events:none;
+  background:transparent;
+  z-index:2;
 }
-/* `[hidden]` attribute must override the explicit `display:flex` above —
-   without this rule the loading/empty banners stay visible behind the
-   rendered grid (Le 2026-05-11). HTML5 user-agent default is `display:none`
-   for `[hidden]` but author-set `display:flex` outranks it by CSS cascade. */
 #my-artifacts-empty[hidden],
 #my-artifacts-loading[hidden] { display:none; }
+/* `#my-artifacts-body` needs `position:relative` so the absolutely-positioned
+   loading/empty banners anchor to it. */
+#my-artifacts-body { position:relative; }
+
+/* Card loading placeholder + spinner (port from collection's `.card-loading`
+   + `.card-spinner`). Shown inside `.ma-card-canvas-wrap` until the iframe
+   srcdoc mounts. 12-spoke macOS-style spinner with stepped rotation. */
+.ma-card-loading {
+  position:absolute; inset:0;
+  display:flex; align-items:center; justify-content:center;
+  background:rgba(0,0,0,0.05);
+  z-index:1;
+}
+body.night .ma-card-loading { background:rgba(255,255,255,0.04); }
+.ma-card-spinner {
+  width:22px; height:22px;
+  color:var(--sl);
+  animation:ma-card-spinner-rotate 1.05s steps(12, end) infinite;
+}
+/* Bigger version used inside the loading banner above the text */
+#my-artifacts-loading .ma-card-spinner {
+  width:28px; height:28px;
+  color:var(--sl);
+}
+@keyframes ma-card-spinner-rotate {
+  to { transform:rotate(360deg); }
+}
+
+/* Pop-in entry animation — scale 0 → 1 with stagger via --card-index
+   (port from collection's `card-pop-in`). Stagger capped at index 20 via
+   min() so a large grid finishes quickly. */
+#my-artifacts-overlay.open .ma-card {
+  animation:ma-card-pop-in 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
+  animation-delay:calc(min(var(--card-index, 0), 20) * 18ms);
+}
+@keyframes ma-card-pop-in {
+  from { transform:scale(0);   opacity:0; }
+  to   { transform:scale(1);   opacity:1; }
+}
 
 /* ── Artifact expand overlay (2026-05-11) ──
    Port of collection's #expand-overlay chrome (collection L1173+) into app/,
@@ -2834,7 +2877,25 @@ body.night .artifact-onchain-uri { background:rgba(255,255,255,0.06); }
         </div>
         <div id="my-artifacts-grid"></div>
         <div id="my-artifacts-empty" hidden>no artifacts settled yet</div>
-        <div id="my-artifacts-loading" hidden>reading on-chain state…</div>
+        <div id="my-artifacts-loading" hidden>
+          <svg class="ma-card-spinner" viewBox="0 0 32 32" aria-hidden="true">
+            <g fill="currentColor">
+              <rect x="15" y="3" width="2" height="6" rx="1" opacity="1.00"/>
+              <rect x="15" y="3" width="2" height="6" rx="1" opacity="0.92" transform="rotate(30 16 16)"/>
+              <rect x="15" y="3" width="2" height="6" rx="1" opacity="0.83" transform="rotate(60 16 16)"/>
+              <rect x="15" y="3" width="2" height="6" rx="1" opacity="0.75" transform="rotate(90 16 16)"/>
+              <rect x="15" y="3" width="2" height="6" rx="1" opacity="0.67" transform="rotate(120 16 16)"/>
+              <rect x="15" y="3" width="2" height="6" rx="1" opacity="0.58" transform="rotate(150 16 16)"/>
+              <rect x="15" y="3" width="2" height="6" rx="1" opacity="0.50" transform="rotate(180 16 16)"/>
+              <rect x="15" y="3" width="2" height="6" rx="1" opacity="0.42" transform="rotate(210 16 16)"/>
+              <rect x="15" y="3" width="2" height="6" rx="1" opacity="0.33" transform="rotate(240 16 16)"/>
+              <rect x="15" y="3" width="2" height="6" rx="1" opacity="0.25" transform="rotate(270 16 16)"/>
+              <rect x="15" y="3" width="2" height="6" rx="1" opacity="0.17" transform="rotate(300 16 16)"/>
+              <rect x="15" y="3" width="2" height="6" rx="1" opacity="0.08" transform="rotate(330 16 16)"/>
+            </g>
+          </svg>
+          <span>reading on-chain state…</span>
+        </div>
       </div>
     </div>
   </div>
@@ -8494,13 +8555,16 @@ function _maRenderGrid() {
 
   // Sort by tokenId ascending. Cap render at _MA_RENDER_CAP for performance.
   const sorted = [...ids].map(Number).sort((a, b) => a - b).slice(0, _MA_RENDER_CAP);
-  for (const id of sorted) {
+  sorted.forEach((id, cardIdx) => {
     const idStr = String(id);
     const isSettled = _maData.settledIds.has(idStr);
     const isOwned   = _maData.ownedIds.has(idStr);
     const card = _maBuildCard(id, isSettled, isOwned);
+    // Stagger pop-in via CSS custom property — clamped at 20 by the
+    // `min(var(--card-index, 0), 20)` in the keyframes anim-delay.
+    card.style.setProperty('--card-index', cardIdx);
     _maGrid.appendChild(card);
-  }
+  });
   if (ids.size > _MA_RENDER_CAP) {
     const more = document.createElement('div');
     more.style.cssText = 'grid-column:1/-1;text-align:center;padding:14px;font-size:10px;color:var(--sl);font-family:monospace;';
@@ -8508,6 +8572,30 @@ function _maRenderGrid() {
     _maGrid.appendChild(more);
   }
 }
+
+// Loading placeholder for individual cards — shown inside `.ma-card-canvas-wrap`
+// until `_maMountIframe` succeeds. Same 12-spoke macOS-style spinner used in
+// collection. innerHTML used because the SVG is a constant literal — no
+// interpolated values (safe per Round 1 audit).
+const _MA_CARD_LOADING_HTML =
+  '<div class="ma-card-loading">' +
+    '<svg class="ma-card-spinner" viewBox="0 0 32 32" aria-hidden="true">' +
+      '<g fill="currentColor">' +
+        '<rect x="15" y="3" width="2" height="6" rx="1" opacity="1.00"/>' +
+        '<rect x="15" y="3" width="2" height="6" rx="1" opacity="0.92" transform="rotate(30 16 16)"/>' +
+        '<rect x="15" y="3" width="2" height="6" rx="1" opacity="0.83" transform="rotate(60 16 16)"/>' +
+        '<rect x="15" y="3" width="2" height="6" rx="1" opacity="0.75" transform="rotate(90 16 16)"/>' +
+        '<rect x="15" y="3" width="2" height="6" rx="1" opacity="0.67" transform="rotate(120 16 16)"/>' +
+        '<rect x="15" y="3" width="2" height="6" rx="1" opacity="0.58" transform="rotate(150 16 16)"/>' +
+        '<rect x="15" y="3" width="2" height="6" rx="1" opacity="0.50" transform="rotate(180 16 16)"/>' +
+        '<rect x="15" y="3" width="2" height="6" rx="1" opacity="0.42" transform="rotate(210 16 16)"/>' +
+        '<rect x="15" y="3" width="2" height="6" rx="1" opacity="0.33" transform="rotate(240 16 16)"/>' +
+        '<rect x="15" y="3" width="2" height="6" rx="1" opacity="0.25" transform="rotate(270 16 16)"/>' +
+        '<rect x="15" y="3" width="2" height="6" rx="1" opacity="0.17" transform="rotate(300 16 16)"/>' +
+        '<rect x="15" y="3" width="2" height="6" rx="1" opacity="0.08" transform="rotate(330 16 16)"/>' +
+      '</g>' +
+    '</svg>' +
+  '</div>';
 
 function _maBuildCard(artifactId, isSettled, isOwned) {
   const card = document.createElement('div');
@@ -8540,6 +8628,9 @@ function _maBuildCard(artifactId, isSettled, isOwned) {
 
   const wrap = document.createElement('div');
   wrap.className = 'ma-card-canvas-wrap';
+  // Loading placeholder shown until `_maMountIframe` mounts the iframe.
+  // Removed in `_maMountIframe` on success (collection pattern).
+  wrap.innerHTML = _MA_CARD_LOADING_HTML;
   card.appendChild(wrap);
 
   const footer = document.createElement('div');
@@ -8611,6 +8702,10 @@ async function _maMountIframe(wrap, artifactId, attempt) {
     iframe.setAttribute('aria-label', 'artifact #' + artifactId);
     iframe.srcdoc = html;
     wrap.appendChild(iframe);
+    // Remove the loading placeholder spinner — iframe will render over it
+    // anyway, but clean DOM keeps the stacking + accessibility tree tidy.
+    const loadingEl = wrap.querySelector('.ma-card-loading');
+    if (loadingEl) loadingEl.remove();
   } catch (err) {
     // RPC error (rate-limit, network blip). Retry once with jittered delay
     // before giving up — covers the "some cards don't load until I hit
