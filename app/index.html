@@ -1780,6 +1780,172 @@ button, a, [role="button"], .pill, .info-btn, .toggle-btn, .modal-close,
   }
 }
 
+/* ── Artifact ONCHAIN modal (Round 3, 2026-05-11) ──
+   Child overlay of artifact-expand. Variable mapping from collection's
+   #onchain-modal (collection's --bg → --node-bg-solid, --bg-alt → --pill-bg,
+   --border-mid → --minimap-border, etc.). z-index 850 (above expand 800). */
+#artifact-onchain-modal {
+  display:none;
+  position:fixed; inset:0; z-index:850;
+  background:rgba(0,0,0,0.55);
+  backdrop-filter:blur(6px);
+  -webkit-backdrop-filter:blur(6px);
+  align-items:center; justify-content:center;
+}
+#artifact-onchain-modal.active { display:flex; }
+#artifact-onchain-modal-window {
+  width:min(94vw, 640px);
+  max-height:88vh;
+  background:var(--node-bg-solid);
+  border-radius:10px;
+  overflow:hidden;
+  display:flex; flex-direction:column;
+  box-shadow:0 24px 60px rgba(0,0,0,0.50);
+}
+#artifact-onchain-modal-tbar {
+  height:32px;
+  background:var(--tbar-bg);
+  border-bottom:0.5px solid var(--minimap-border);
+  display:flex; align-items:center;
+  padding:0 14px;
+}
+#artifact-onchain-modal-title {
+  font-size:11px; font-family:monospace;
+  letter-spacing:.10em; text-transform:uppercase;
+  color:var(--sl);
+}
+#artifact-onchain-modal-body {
+  padding:18px 20px 16px;
+  overflow-y:auto;
+}
+.artifact-onchain-intro {
+  font-size:11px; font-family:monospace;
+  letter-spacing:.04em; line-height:1.55;
+  color:var(--sl);
+  margin-bottom:18px;
+}
+.artifact-onchain-method {
+  margin-bottom:20px;
+  padding:12px 14px;
+  background:var(--pill-bg);
+  border:0.5px solid var(--minimap-border);
+  border-radius:6px;
+}
+.artifact-onchain-method-title {
+  font-size:10.5px; font-family:monospace;
+  letter-spacing:.06em; text-transform:uppercase;
+  color:var(--sv);
+  margin-bottom:8px;
+}
+.artifact-onchain-method-text {
+  font-size:11px; font-family:monospace;
+  letter-spacing:.03em; line-height:1.55;
+  color:var(--sl);
+}
+.artifact-onchain-method-text code {
+  font-size:10.5px;
+  background:rgba(0,0,0,0.06);
+  padding:0 4px;
+  border-radius:2px;
+  color:var(--sv);
+}
+body.night .artifact-onchain-method-text code { background:rgba(255,255,255,0.08); }
+.artifact-onchain-method-text em { font-style:normal; color:var(--sv); }
+.artifact-onchain-contract-row {
+  display:flex; align-items:center; gap:8px;
+  margin-top:10px;
+}
+.artifact-onchain-contract-label {
+  font-size:10px; font-family:monospace;
+  letter-spacing:.06em; text-transform:uppercase;
+  color:var(--sl);
+}
+.artifact-onchain-contract-addr {
+  font-size:11px; font-family:monospace;
+  color:var(--sv);
+  background:rgba(0,0,0,0.06);
+  padding:2px 6px; border-radius:2px;
+  flex:1; min-width:0;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+body.night .artifact-onchain-contract-addr { background:rgba(255,255,255,0.08); }
+.artifact-onchain-copy-mini {
+  font-size:9.5px; font-family:monospace;
+  letter-spacing:.06em; text-transform:uppercase;
+  background:transparent; color:var(--sl);
+  border:0.5px solid var(--minimap-border);
+  border-radius:3px;
+  padding:2px 8px; cursor:pointer;
+  transition:background 0.14s, color 0.14s, border-color 0.14s;
+  flex-shrink:0;
+}
+.artifact-onchain-copy-mini:hover { background:var(--node-bg); color:var(--sv); border-color:var(--node-border); }
+.artifact-onchain-copy-mini.copied { background:#28c840; color:#fff; border-color:#28c840; }
+.artifact-onchain-link {
+  display:inline-block;
+  margin-top:10px;
+  font-size:11px; font-family:monospace;
+  letter-spacing:.04em;
+  color:var(--sv);
+  text-decoration:none;
+  border-bottom:0.5px solid var(--sl);
+  padding-bottom:1px;
+  transition:color 0.14s, border-color 0.14s;
+}
+.artifact-onchain-link:hover { color:var(--sv); border-bottom-color:var(--sv); }
+.artifact-onchain-uri {
+  display:block;
+  width:100%;
+  height:140px;
+  margin-top:10px;
+  font-family:monospace;
+  font-size:10px;
+  line-height:1.4;
+  color:var(--sv);
+  background:rgba(0,0,0,0.05);
+  border:0.5px solid var(--minimap-border);
+  border-radius:4px;
+  padding:8px 10px;
+  resize:vertical;
+  overflow:auto;
+  word-break:break-all;
+  box-sizing:border-box;
+}
+body.night .artifact-onchain-uri { background:rgba(255,255,255,0.06); }
+.artifact-onchain-copy-btn {
+  display:inline-block;
+  margin-top:8px;
+  padding:5px 14px;
+  font-size:10px; font-family:monospace;
+  letter-spacing:.08em; text-transform:uppercase;
+  background:transparent;
+  border:0.5px solid var(--minimap-border);
+  border-radius:4px;
+  color:var(--sv);
+  cursor:pointer;
+  transition:background 0.14s, color 0.14s, border-color 0.14s;
+}
+.artifact-onchain-copy-btn:hover { background:var(--pill-bg); border-color:var(--node-border); }
+.artifact-onchain-copy-btn.copied { background:#28c840; color:#fff; border-color:#28c840; }
+#artifact-onchain-modal-actions {
+  display:flex; justify-content:flex-end; gap:8px;
+  border-top:0.5px solid var(--divider);
+  padding-top:14px;
+  margin-top:6px;
+}
+#artifact-onchain-modal-close {
+  padding:6px 14px;
+  font-size:10px; font-family:monospace;
+  letter-spacing:.08em; text-transform:uppercase;
+  background:transparent;
+  border:0.5px solid var(--minimap-border);
+  border-radius:4px;
+  color:var(--sv);
+  cursor:pointer;
+  transition:background 0.14s, border-color 0.14s;
+}
+#artifact-onchain-modal-close:hover { background:var(--pill-bg); }
+
 #overview-blocker {
   display:none; position:absolute; inset:0; z-index:199;
   cursor:default;
@@ -2316,6 +2482,48 @@ button, a, [role="button"], .pill, .info-btn, .toggle-btn, .modal-close,
           <button id="inventory-sort-btn" title="Sort by rank">R↑</button>
         </div>
         <div id="inventory-grid"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Artifact ONCHAIN modal — child overlay of artifact-expand. Opens when
+       user clicks ONCHAIN button in the expand tbar. Shows two ways to fetch
+       the artifact's render HTML from Ethereum: (1) Etherscan Read Contract
+       deep-link to call tokenURI(id); (2) raw data URI textarea ready to
+       paste in browser address bar. Port from collection's #onchain-modal
+       with prefix `#artifact-onchain-*` to avoid collision. z-index 850
+       (above artifact-expand 800). -->
+  <div id="artifact-onchain-modal">
+    <div id="artifact-onchain-modal-window">
+      <div id="artifact-onchain-modal-tbar">
+        <span id="artifact-onchain-modal-title">Verify on-chain</span>
+      </div>
+      <div id="artifact-onchain-modal-body">
+        <p class="artifact-onchain-intro">The artifact's render HTML is stored 100% on Ethereum. Two ways to fetch + view the raw on-chain output, no server required.</p>
+
+        <div class="artifact-onchain-method">
+          <div class="artifact-onchain-method-title">Method 1 — Etherscan</div>
+          <div class="artifact-onchain-method-text">
+            <div>Open the SettleArtifact contract on Etherscan → <em>Contract</em> → <em>Read Contract</em> → expand <code>tokenURI</code> → enter ID <code id="artifact-onchain-id-hint">N</code> → click <em>Query</em>. Output is a <code>data:text/html;base64,...</code> URI; paste it in any browser tab.</div>
+            <div class="artifact-onchain-contract-row">
+              <span class="artifact-onchain-contract-label">Contract</span>
+              <code class="artifact-onchain-contract-addr" id="artifact-onchain-contract-addr">0xa33C…2d699</code>
+              <button class="artifact-onchain-copy-mini" id="artifact-onchain-copy-addr" type="button" title="copy contract address">copy</button>
+            </div>
+            <a class="artifact-onchain-link" id="artifact-onchain-etherscan-link" target="_blank" rel="noopener noreferrer">Open SettleArtifact on Etherscan ↗</a>
+          </div>
+        </div>
+
+        <div class="artifact-onchain-method">
+          <div class="artifact-onchain-method-title">Method 2 — Copy URI directly</div>
+          <div class="artifact-onchain-method-text">Paste this into any browser address bar — same render the iframe shows above, fetched from on-chain bytes:</div>
+          <textarea id="artifact-onchain-uri-text" class="artifact-onchain-uri" readonly spellcheck="false"></textarea>
+          <button id="artifact-onchain-copy-uri" type="button" class="artifact-onchain-copy-btn">Copy URI</button>
+        </div>
+
+        <div id="artifact-onchain-modal-actions">
+          <button id="artifact-onchain-modal-close" type="button">Close</button>
+        </div>
       </div>
     </div>
   </div>
@@ -8163,6 +8371,8 @@ function _maHandleCardClick(artifactId) {
     // detaches the card from DOM) for FLIP animation. Reviewer P2-3 fix.
     const cardEl = _maGrid.querySelector(`.ma-card[data-artifact-id="${artifactId}"]`);
     const sourceRect = cardEl ? cardEl.getBoundingClientRect() : null;
+    // Set flag so artifact-expand close re-opens My Artifacts grid (Le UX).
+    _maReopenOnArtifactClose = true;
     _maClose();
     _artifactExpandOpen(artifactId, sourceRect);
     return;
@@ -8358,6 +8568,10 @@ const _artifactExpandResetBtn  = document.getElementById('artifact-expand-reset-
 
 let _artifactExpandOpenId = null;
 let _artifactExpandClosing = false;
+// True when My Artifacts was open and we closed it to show artifact-expand.
+// On expand close, re-open My Artifacts so user returns to the grid.
+// (Le 2026-05-11 — UX continuity, not the strict single-modal invariant.)
+let _maReopenOnArtifactClose = false;
 
 // Open expand window for an artifact. `sourceRect` is a pre-measured
 // `DOMRect` of the source card in My Artifacts grid — passed before
@@ -8431,6 +8645,12 @@ function _artifactExpandClose() {
     _artifactExpandWindow.style.transform = '';
     _artifactExpandWindow.style.opacity = '1';
     _artifactExpandIframe.srcdoc = ''; // free child document
+    // Re-open My Artifacts grid if the expand was opened FROM it. Cached
+    // owner-map → re-open is near-instant; cards re-mount iframes lazily.
+    if (_maReopenOnArtifactClose) {
+      _maReopenOnArtifactClose = false;
+      _maOpen();
+    }
   };
   const _onTransitionEnd = e => { if (e.propertyName === 'opacity') _teardown(); };
   const _teardownTimer = setTimeout(_teardown, 300);
@@ -8495,11 +8715,132 @@ _artifactExpandResetBtn.addEventListener('click', () => {
 // Esc handler — capture phase + stopPropagation so it doesn't also trigger
 // other overlay close handlers (My Artifacts, lock-modal). Reviewer P2-1
 // flag honored: artifact-expand is the topmost modal when open, takes Esc.
+// EXCEPT when the ONCHAIN modal is open — that takes precedence (closest
+// to user focus). Handler below checks ONCHAIN active before expand-close.
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && _artifactExpandOpenId !== null) {
+    if (_artifactOnchainModal.classList.contains('active')) return; // ONCHAIN handles
     e.stopPropagation();
     e.stopImmediatePropagation();
     _artifactExpandClose();
+  }
+}, true);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ARTIFACT EXPAND MODAL — Round 3: ONCHAIN modal (verify on-chain)
+// ═══════════════════════════════════════════════════════════════════════════
+// Child overlay of artifact-expand. Shows two ways to fetch the artifact's
+// render HTML from Ethereum: Etherscan Read Contract deep-link OR raw data
+// URI textarea for paste. Port of collection's #onchain-modal — simplified
+// (no type switch, always artifact context). Reviewer P3 simplification.
+
+const _artifactOnchainModal       = document.getElementById('artifact-onchain-modal');
+const _artifactOnchainBtn         = document.getElementById('artifact-expand-onchain-btn');
+const _artifactOnchainTitle       = document.getElementById('artifact-onchain-modal-title');
+const _artifactOnchainIdHint      = document.getElementById('artifact-onchain-id-hint');
+const _artifactOnchainContractEl  = document.getElementById('artifact-onchain-contract-addr');
+const _artifactOnchainEtherscanA  = document.getElementById('artifact-onchain-etherscan-link');
+const _artifactOnchainUriText     = document.getElementById('artifact-onchain-uri-text');
+const _artifactOnchainCopyAddrBtn = document.getElementById('artifact-onchain-copy-addr');
+const _artifactOnchainCopyUriBtn  = document.getElementById('artifact-onchain-copy-uri');
+const _artifactOnchainCloseBtn    = document.getElementById('artifact-onchain-modal-close');
+
+function _openArtifactOnchainModal(artifactId) {
+  if (_artifactExpandOpenId === null) return;
+  _artifactOnchainTitle.textContent  = 'Verify on-chain — Modulo #' + artifactId;
+  _artifactOnchainIdHint.textContent = String(artifactId);
+  _artifactOnchainContractEl.textContent = SETTLE_ARTIFACT_ADDRESS;
+  const etherscanBase = _etherscanBase();
+  _artifactOnchainEtherscanA.href = etherscanBase + '/address/' + SETTLE_ARTIFACT_ADDRESS + '#readContract';
+  // URI textarea — start with loading, populate from cache when ready.
+  _artifactOnchainUriText.value = 'loading…';
+  const cached = _artifactFetchCache.get(Number(artifactId));
+  if (cached) {
+    cached.then(data => {
+      // Guard: modal still open AND same artifact (Le might've closed +
+      // opened a different one between fetch start + resolution).
+      if (!_artifactOnchainModal.classList.contains('active')) return;
+      if (_artifactExpandOpenId !== artifactId) return;
+      _artifactOnchainUriText.value = (data && data.tokenURI) ? data.tokenURI : 'unavailable';
+    }).catch(() => {
+      if (_artifactOnchainModal.classList.contains('active')) _artifactOnchainUriText.value = 'error';
+    });
+  } else {
+    // Cache miss — trigger fetch (Round 1 helper) + retry the same path.
+    _fetchArtifactData(artifactId).then(data => {
+      if (!_artifactOnchainModal.classList.contains('active')) return;
+      if (_artifactExpandOpenId !== artifactId) return;
+      _artifactOnchainUriText.value = (data && data.tokenURI) ? data.tokenURI : 'unavailable';
+    }).catch(() => {
+      if (_artifactOnchainModal.classList.contains('active')) _artifactOnchainUriText.value = 'error';
+    });
+  }
+  _artifactOnchainModal.classList.add('active');
+  _artifactOnchainBtn.classList.add('active');
+}
+
+function _closeArtifactOnchainModal() {
+  _artifactOnchainModal.classList.remove('active');
+  _artifactOnchainBtn.classList.remove('active');
+  // Reset copy-button visual state so next open starts clean.
+  _artifactOnchainCopyAddrBtn.classList.remove('copied');
+  _artifactOnchainCopyAddrBtn.textContent = 'copy';
+  _artifactOnchainCopyUriBtn.classList.remove('copied');
+  _artifactOnchainCopyUriBtn.textContent = 'Copy URI';
+}
+
+// Copy-to-clipboard helper with visual feedback. Clipboard write inside the
+// click handler (user gesture) — required by Permissions API to avoid prompt.
+function _artifactOnchainCopy(btn, value, copiedLabel, originalLabel) {
+  if (!value || value === 'loading…' || value === 'unavailable' || value === 'error') return;
+  const writeFn = (navigator.clipboard && navigator.clipboard.writeText)
+    ? () => navigator.clipboard.writeText(value)
+    : () => Promise.reject(new Error('no clipboard API'));
+  writeFn().then(() => {
+    btn.classList.add('copied');
+    btn.textContent = copiedLabel;
+    setTimeout(() => {
+      btn.classList.remove('copied');
+      btn.textContent = originalLabel;
+    }, 1500);
+  }).catch(err => {
+    console.warn('[artifact-onchain] clipboard write failed:', err && err.message);
+    if (btn === _artifactOnchainCopyUriBtn) {
+      _artifactOnchainUriText.focus();
+      _artifactOnchainUriText.select();
+    }
+  });
+}
+
+// Wire ONCHAIN button — Round 3 enables it (was disabled in Round 2 markup).
+_artifactOnchainBtn.disabled = false;
+_artifactOnchainBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  if (_artifactExpandOpenId === null) return;
+  if (_artifactOnchainModal.classList.contains('active')) {
+    _closeArtifactOnchainModal();
+  } else {
+    _openArtifactOnchainModal(_artifactExpandOpenId);
+  }
+});
+_artifactOnchainCloseBtn.addEventListener('click', _closeArtifactOnchainModal);
+_artifactOnchainModal.addEventListener('click', e => {
+  if (e.target === _artifactOnchainModal) _closeArtifactOnchainModal();
+});
+_artifactOnchainCopyAddrBtn.addEventListener('click', () => {
+  _artifactOnchainCopy(_artifactOnchainCopyAddrBtn, _artifactOnchainContractEl.textContent, 'copied', 'copy');
+});
+_artifactOnchainCopyUriBtn.addEventListener('click', () => {
+  _artifactOnchainCopy(_artifactOnchainCopyUriBtn, _artifactOnchainUriText.value, 'Copied ✓', 'Copy URI');
+});
+// Esc closes ONCHAIN modal — capture phase, stopImmediatePropagation so the
+// expand-close Esc handler above doesn't ALSO fire. Order matters: ONCHAIN
+// (innermost) takes precedence over expand.
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && _artifactOnchainModal.classList.contains('active')) {
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    _closeArtifactOnchainModal();
   }
 }, true);
 
