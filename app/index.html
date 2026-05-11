@@ -1646,6 +1646,140 @@ button, a, [role="button"], .pill, .info-btn, .toggle-btn, .modal-close,
 #my-artifacts-empty[hidden],
 #my-artifacts-loading[hidden] { display:none; }
 
+/* ── Artifact expand overlay (2026-05-11) ──
+   Port of collection's #expand-overlay chrome (collection L1173+) into app/,
+   prefix `#artifact-expand-*` to avoid collision with app's existing
+   `#expand-overlay` (live workshop). z-index 800 sits above My Artifacts
+   modal (z-700) — clicking a My Artifacts card closes that modal first
+   (single-modal-stack invariant) then opens this one. */
+#artifact-expand-overlay {
+  display:none;
+  position:fixed; inset:0; z-index:800;
+  align-items:center; justify-content:center;
+  pointer-events:none;
+  background:rgba(0,0,0,0.50);
+}
+#artifact-expand-overlay.active { display:flex; pointer-events:auto; }
+#artifact-expand-window {
+  pointer-events:all;
+  border-radius:10px;
+  overflow:hidden;
+  box-shadow:0 24px 60px rgba(0,0,0,0.50);
+  display:flex; flex-direction:column;
+  /* Aspect cap 1.78 (~9:5 artifact engine ratio) — same math as collection. */
+  width:min(96vw, calc((90vh - 28px) * 1.78));
+  height:90vh;
+  transform-origin:center center;
+  will-change:transform;
+}
+#artifact-expand-window.expand-fs {
+  border-radius:0; box-shadow:none; background:#000;
+  max-width:none; max-height:none;
+  width:100vw; height:100vh;
+}
+#artifact-expand-window.expand-fs #artifact-expand-tbar { display:none; }
+#artifact-expand-tbar {
+  height:28px;
+  background:var(--tbar-bg);
+  border-bottom:0.5px solid var(--tbar-border);
+  display:flex; align-items:center; padding:0 10px; gap:5px;
+  flex-shrink:0;
+  transition:background 0.3s;
+}
+#artifact-expand-close {
+  width:12px; height:12px; border-radius:50%;
+  background:#ff5f57; cursor:pointer; flex-shrink:0;
+  transition:transform 0.15s;
+}
+#artifact-expand-close:hover { transform:scale(1.25); }
+#artifact-expand-fullscreen {
+  width:12px; height:12px; border-radius:50%;
+  background:#28c840; cursor:pointer; flex-shrink:0;
+  transition:transform 0.15s;
+}
+#artifact-expand-fullscreen:hover { transform:scale(1.25); }
+#artifact-expand-tbar-title {
+  font-size:11px; font-family:monospace;
+  letter-spacing:.05em; color:var(--stats-title);
+  margin-left:4px;
+}
+/* Button styling — uniform across ONCHAIN / DETAILS / ↓MP4 / RESET. Disabled
+   state in Round 2 (until wired in R3/R4) shows the buttons visually present
+   but un-clickable. Active state added by handlers later. */
+#artifact-expand-onchain-btn,
+#artifact-expand-details-btn,
+#artifact-expand-export-btn,
+#artifact-expand-reset-btn {
+  padding:2px 8px;
+  font-size:9px; font-family:monospace; letter-spacing:.06em;
+  background:transparent;
+  border:0.5px solid var(--minimap-border);
+  border-radius:3px;
+  color:var(--stats-title);
+  cursor:pointer;
+  transition:background 0.15s, color 0.15s, border-color 0.15s;
+  flex-shrink:0;
+}
+#artifact-expand-onchain-btn:hover:not(:disabled),
+#artifact-expand-details-btn:hover:not(:disabled),
+#artifact-expand-export-btn:hover:not(:disabled),
+#artifact-expand-reset-btn:hover:not(:disabled) {
+  background:var(--pill-bg); color:var(--sv);
+  border-color:var(--sv);
+}
+#artifact-expand-onchain-btn:disabled,
+#artifact-expand-details-btn:disabled,
+#artifact-expand-export-btn:disabled,
+#artifact-expand-reset-btn:disabled {
+  opacity:0.4; cursor:default;
+}
+#artifact-expand-onchain-btn.active,
+#artifact-expand-details-btn.active {
+  background:var(--pill-bg); color:var(--sv);
+  border-color:var(--sv);
+}
+/* Push ONCHAIN to the right (after title spacer) for visual hierarchy.
+   Title gets flex:1 to fill the gap; buttons cluster on the right. */
+#artifact-expand-tbar-title { flex:1; }
+#artifact-expand-body {
+  position:relative;
+  flex:1; min-height:0;
+  display:flex; align-items:stretch;
+  overflow:hidden;
+  background:#000;
+}
+#artifact-expand-iframe {
+  flex:1;
+  width:100%; height:100%;
+  border:none; display:block;
+  background:#000;
+}
+/* Details popup (Round 4) — placeholder rule for the empty div in markup.
+   Hidden by default; .visible class shown by populate handler. */
+.artifact-expand-details-popup {
+  display:none;
+  position:absolute;
+  right:14px; bottom:14px;
+  width:300px; max-height:60%;
+  background:rgba(20,20,22,0.96);
+  border:0.5px solid rgba(255,255,255,0.12);
+  border-radius:8px;
+  padding:14px;
+  color:rgba(255,255,255,0.85);
+  font-size:10px; font-family:monospace;
+  overflow-y:auto;
+  box-shadow:0 8px 24px rgba(0,0,0,0.40);
+  z-index:1;
+}
+.artifact-expand-details-popup.visible { display:block; }
+
+@media (max-width:768px), (max-height:768px) {
+  #artifact-expand-window {
+    max-width:100vw !important;
+    max-height:95vh !important;
+  }
+}
+
 #overview-blocker {
   display:none; position:absolute; inset:0; z-index:199;
   cursor:default;
@@ -2182,6 +2316,32 @@ button, a, [role="button"], .pill, .info-btn, .toggle-btn, .modal-close,
           <button id="inventory-sort-btn" title="Sort by rank">R↑</button>
         </div>
         <div id="inventory-grid"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Artifact expand overlay — pop-up modal mostrando un artifact específico
+       en tamaño grande, abierto al clickear una card de My Artifacts. Mirror
+       de collection's #expand-overlay pattern PERO prefijo `#artifact-expand-*`
+       para evitar colisión con app's existing `#expand-overlay` (live workshop
+       modulos, diferente semantics). z-index 800 (sobre My Artifacts 700) —
+       My Artifacts se cierra antes de abrir este (single-modal-stack
+       invariant per reviewer). Round 2 ships chrome + iframe + close.
+       ONCHAIN/DETAILS/MP4/RESET buttons placeholder hasta Rounds 3-4. -->
+  <div id="artifact-expand-overlay">
+    <div id="artifact-expand-window">
+      <div id="artifact-expand-tbar">
+        <div id="artifact-expand-close" title="close"></div>
+        <div id="artifact-expand-fullscreen" title="fullscreen"></div>
+        <span id="artifact-expand-tbar-title"></span>
+        <button id="artifact-expand-onchain-btn" type="button" title="verify the artifact's HTML render is stored on Ethereum" disabled>ONCHAIN</button>
+        <button id="artifact-expand-details-btn" type="button" title="show artifact details (composition, settler, settled date)" disabled>DETAILS</button>
+        <button id="artifact-expand-export-btn" type="button" title="export 20s MP4 of this artifact (H.264, 2700×1500)" disabled>↓ MP4</button>
+        <button id="artifact-expand-reset-btn" type="button" title="reload the renderer">RESET</button>
+      </div>
+      <div id="artifact-expand-body">
+        <iframe id="artifact-expand-iframe" sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>
+        <div id="artifact-expand-details-popup" class="artifact-expand-details-popup"></div>
       </div>
     </div>
   </div>
@@ -8177,16 +8337,171 @@ function _fetchArtifactData(artifactId) {
   return p;
 }
 
-// Add getArtifact + ownerOf to SETTLE_ARTIFACT_ABI if not already present.
-// SETTLE_ARTIFACT_ABI is defined earlier in the script; the additions are
-// idempotent (ethers tolerates duplicate ABI fragments). Future rounds
-// rely on these being callable.
-// Note: ABI defined as const at L8958-8969, can't push() onto it. The
-// duplicates would only fire if not already in the original definition.
-// Check: SETTLE_ARTIFACT_ABI already includes ownerOf (added in Round 0
-// for My Artifacts owner-map). getArtifact NOT present — must add to the
-// const definition above. (Deferred to a later Edit on the ABI const itself
-// so this file diff stays additive-only in Round 1.)
+// ═══════════════════════════════════════════════════════════════════════════
+// ARTIFACT EXPAND MODAL — Round 2: markup wiring + open/close + iframe mount
+// ═══════════════════════════════════════════════════════════════════════════
+// Click on a My Artifacts card → close My Artifacts → measure source rect →
+// open artifact-expand window with FLIP animation from source rect to final.
+// Close: fade-out only (no FLIP-back — source card detached when My Artifacts
+// closed, per reviewer P2-3).
+//
+// Round 2 ships: open/close, iframe mount, fullscreen toggle, RESET. ONCHAIN
+// modal in Round 3. DETAILS popup + MP4 export in Round 4.
+
+const _artifactExpandOverlay   = document.getElementById('artifact-expand-overlay');
+const _artifactExpandWindow    = document.getElementById('artifact-expand-window');
+const _artifactExpandIframe    = document.getElementById('artifact-expand-iframe');
+const _artifactExpandTbarTitle = document.getElementById('artifact-expand-tbar-title');
+const _artifactExpandCloseBtn  = document.getElementById('artifact-expand-close');
+const _artifactExpandFsBtn     = document.getElementById('artifact-expand-fullscreen');
+const _artifactExpandResetBtn  = document.getElementById('artifact-expand-reset-btn');
+
+let _artifactExpandOpenId = null;
+let _artifactExpandClosing = false;
+
+// Open expand window for an artifact. `sourceRect` is a pre-measured
+// `DOMRect` of the source card in My Artifacts grid — passed before
+// `_maClose()` detaches the card from DOM. If null, skips FLIP animation
+// (fades in instead).
+function _artifactExpandOpen(artifactId, sourceRect) {
+  if (_artifactExpandOpenId !== null) return;
+  _artifactExpandOpenId = artifactId;
+
+  // Title
+  _artifactExpandTbarTitle.textContent = 'MODULO #' + String(artifactId).padStart(4, '0');
+
+  // Pre-fetch artifact data for ONCHAIN/DETAILS to consume (no extra RPC on
+  // their button clicks). Promise resolves async; popups handle pending.
+  _fetchArtifactData(artifactId);
+
+  // Mount iframe with the artifact's render HTML. Same retry pattern as
+  // My Artifacts cards for resilience on RPC blips.
+  _artifactExpandMountIframe(artifactId);
+
+  // Show overlay BEFORE measuring finalRect (display:flex enables layout).
+  _artifactExpandOverlay.classList.add('active');
+
+  if (!sourceRect) {
+    // No source rect → simple fade-in.
+    _artifactExpandWindow.style.transition = 'none';
+    _artifactExpandWindow.style.transform = '';
+    _artifactExpandWindow.style.opacity = '1';
+    return;
+  }
+
+  // FLIP animation — measure final after layout, compute delta from source.
+  _artifactExpandWindow.style.transition = 'none';
+  _artifactExpandWindow.style.transform = '';
+  _artifactExpandWindow.style.opacity = '1';
+  void _artifactExpandWindow.offsetHeight; // force reflow
+
+  const finalRect = _artifactExpandWindow.getBoundingClientRect();
+  const sx = sourceRect.width  / finalRect.width;
+  const sy = sourceRect.height / finalRect.height;
+  const dx = (sourceRect.left + sourceRect.width  * 0.5) - (finalRect.left + finalRect.width  * 0.5);
+  const dy = (sourceRect.top  + sourceRect.height * 0.5) - (finalRect.top  + finalRect.height * 0.5);
+
+  _artifactExpandWindow.style.transform = `translate(${dx}px,${dy}px) scale(${sx},${sy})`;
+  _artifactExpandWindow.style.opacity = '0.15';
+  _artifactExpandWindow.getBoundingClientRect();
+  _artifactExpandWindow.style.transition = 'transform 0.42s cubic-bezier(0.22,1,0.36,1), opacity 0.2s ease';
+  _artifactExpandWindow.style.transform = '';
+  _artifactExpandWindow.style.opacity = '1';
+}
+
+// Close expand window. Per reviewer P2-3: no FLIP-back because the source
+// card is detached (My Artifacts closed) — just fade-out then teardown.
+function _artifactExpandClose() {
+  if (_artifactExpandOpenId === null || _artifactExpandClosing) return;
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+
+  _artifactExpandOpenId = null;
+  _artifactExpandClosing = true;
+
+  _artifactExpandWindow.style.transition = 'opacity 0.22s ease';
+  _artifactExpandWindow.style.opacity = '0';
+
+  const _teardown = () => {
+    _artifactExpandClosing = false;
+    _artifactExpandWindow.removeEventListener('transitionend', _onTransitionEnd);
+    clearTimeout(_teardownTimer);
+    _artifactExpandOverlay.classList.remove('active');
+    _artifactExpandWindow.classList.remove('expand-fs');
+    _artifactExpandWindow.style.transition = 'none';
+    _artifactExpandWindow.style.transform = '';
+    _artifactExpandWindow.style.opacity = '1';
+    _artifactExpandIframe.srcdoc = ''; // free child document
+  };
+  const _onTransitionEnd = e => { if (e.propertyName === 'opacity') _teardown(); };
+  const _teardownTimer = setTimeout(_teardown, 300);
+  _artifactExpandWindow.addEventListener('transitionend', _onTransitionEnd);
+}
+
+// Mount artifact iframe — uses the cache (same provider as My Artifacts
+// scanner) so if My Artifacts already fetched tokenURI, we hit cache.
+// Otherwise fetches fresh. Retry once on transient RPC failure.
+async function _artifactExpandMountIframe(artifactId, attempt) {
+  attempt = attempt || 1;
+  try {
+    const provider = _getReadonlyProvider();
+    if (!provider) return;
+    const contract = new window.ethers.Contract(SETTLE_ARTIFACT_ADDRESS, SETTLE_ARTIFACT_ABI, provider);
+    const uri = await contract.tokenURI(artifactId);
+    if (_artifactExpandOpenId !== artifactId) return; // guard: closed mid-fetch
+    if (!uri || typeof uri !== 'string') {
+      if (attempt < 2) setTimeout(() => _artifactExpandMountIframe(artifactId, attempt + 1), 600);
+      return;
+    }
+    const html = _decodeTokenURI(uri);
+    if (!html) return;
+    _artifactExpandIframe.srcdoc = html;
+  } catch (err) {
+    if (attempt < 2) {
+      setTimeout(() => _artifactExpandMountIframe(artifactId, attempt + 1), 600);
+      return;
+    }
+    console.warn('[artifact-expand] iframe mount failed:', artifactId, err);
+  }
+}
+
+// Event wiring — Round 2: close, fullscreen, RESET, backdrop, Esc.
+// ONCHAIN/DETAILS/MP4 buttons stay disabled until Round 3-4 wire them.
+_artifactExpandCloseBtn.addEventListener('click', _artifactExpandClose);
+_artifactExpandFsBtn.addEventListener('click', () => {
+  if (_artifactExpandOpenId === null) return;
+  if (document.fullscreenElement) {
+    document.exitFullscreen().catch(() => {});
+  } else {
+    _artifactExpandWindow.requestFullscreen && _artifactExpandWindow.requestFullscreen().catch(() => {});
+  }
+});
+document.addEventListener('fullscreenchange', () => {
+  if (_artifactExpandOpenId === null) return;
+  _artifactExpandWindow.classList.toggle('expand-fs', !!document.fullscreenElement);
+});
+_artifactExpandOverlay.addEventListener('click', e => {
+  if (e.target === _artifactExpandOverlay) _artifactExpandClose();
+});
+_artifactExpandResetBtn.addEventListener('click', () => {
+  if (_artifactExpandOpenId === null) return;
+  // Re-mount iframe srcdoc → forces engine re-init (same UX as collection's
+  // RESET button; engine state restored to seed).
+  const id = _artifactExpandOpenId;
+  _artifactExpandIframe.srcdoc = '';
+  setTimeout(() => {
+    if (_artifactExpandOpenId === id) _artifactExpandMountIframe(id);
+  }, 50);
+});
+// Esc handler — capture phase + stopPropagation so it doesn't also trigger
+// other overlay close handlers (My Artifacts, lock-modal). Reviewer P2-1
+// flag honored: artifact-expand is the topmost modal when open, takes Esc.
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && _artifactExpandOpenId !== null) {
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    _artifactExpandClose();
+  }
+}, true);
 
 // Cross-tab invalidation: if another tab settles a new artifact, its scanner
 // writes the cache; this tab's storage event clears our in-memory data so
