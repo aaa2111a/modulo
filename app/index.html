@@ -7980,14 +7980,18 @@ async function _maMountIframe(wrap, artifactId) {
 }
 
 function _maHandleCardClick(artifactId) {
-  // v1 click behavior: open Etherscan token page in a new tab. The app's
-  // existing `openExpand(modId, cardEl)` is scoped to LIVE workshop modulos
-  // (uses MODULOS[].find which has no settled-artifact entries), so we can't
-  // reuse it directly for past settles. Collection page has its own expand
-  // for settled artifacts — future iteration could deep-link there
-  // (`../collection/#artifact-N`) once that anchor handling exists. For v1,
-  // Etherscan gives a verifiable on-chain view + the iframe in this card
-  // already renders the artifact visually.
+  // Click → open artifact expand modal (Round 2+). Falls back to Etherscan
+  // open if expand modal not yet wired (Round 1 ships helpers/cache only).
+  if (typeof _artifactExpandOpen === 'function') {
+    // Measure source card rect FIRST (before closing My Artifacts which
+    // detaches the card from DOM) for FLIP animation. Reviewer P2-3 fix.
+    const cardEl = _maGrid.querySelector(`.ma-card[data-artifact-id="${artifactId}"]`);
+    const sourceRect = cardEl ? cardEl.getBoundingClientRect() : null;
+    _maClose();
+    _artifactExpandOpen(artifactId, sourceRect);
+    return;
+  }
+  // Fallback v1: Etherscan link until expand modal wired
   const explorer = (WALLET_TARGET_CHAIN_INFO &&
                     WALLET_TARGET_CHAIN_INFO.blockExplorerUrls &&
                     WALLET_TARGET_CHAIN_INFO.blockExplorerUrls[0]) || '';
@@ -7995,6 +7999,178 @@ function _maHandleCardClick(artifactId) {
   const url = explorer + '/token/' + SETTLE_ARTIFACT_ADDRESS + '?a=' + artifactId;
   window.open(url, '_blank', 'noopener,noreferrer');
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ARTIFACT EXPAND MODAL — Round 1: helpers + constants + cache (2026-05-11)
+// ═══════════════════════════════════════════════════════════════════════════
+// Port of collection's expand window infrastructure for use from My Artifacts.
+// Round 1 ships ONLY data layer (helpers + cache). Markup/CSS/open-close JS
+// land in Round 2. ONCHAIN modal Round 3. DETAILS+MP4 Round 4.
+//
+// Reviewer-mandated prefix: `_artifact*` for namespace, `#artifact-expand-*`
+// for DOM ids in later rounds. Avoids collision with app's existing
+// `openExpand(modId, cardEl)` (LIVE workshop modulos, different semantics)
+// and `#expand-overlay` DOM (also live workshop).
+
+// Etherscan base — derived from WALLET_TARGET_CHAIN_INFO (Sepolia today,
+// mainnet on T-0 swap). Used for Settler/Owner/Token links inside DETAILS
+// popup and for the ONCHAIN modal's "Read Contract" deep link.
+//
+// Function (not const) — `WALLET_TARGET_CHAIN_INFO` is declared LATER in the
+// script (~L9501). Top-level `const ETHERSCAN_BASE = WALLET_TARGET_CHAIN_INFO...`
+// crashes at parse with TDZ ReferenceError → halts the rest of the script
+// (Le 2026-05-11). Lazy evaluation defers the lookup to call time, by which
+// point the chain info constant is initialized.
+function _etherscanBase() {
+  return (
+    (typeof WALLET_TARGET_CHAIN_INFO !== 'undefined' &&
+     WALLET_TARGET_CHAIN_INFO.blockExplorerUrls &&
+     WALLET_TARGET_CHAIN_INFO.blockExplorerUrls[0]) || 'https://sepolia.etherscan.io'
+  );
+}
+
+// Trait label tables — full readable names. The on-chain engine uses
+// abbreviated codes (sm/md/lg, lo/hi/mx, x/plus/h/sq, etc.); the DETAILS
+// popup expands them so a viewer reading composition traits sees human terms.
+// Verbatim port from collection L3592-3598 — kept identical for cross-page
+// consistency (collection's expand details and artifact-expand details look
+// the same when describing the same artifact).
+const _DETAILS_MODE_NAMES = ['feedback','shift','noise','modulo','wave','jungle','sector','blocks'];
+const _DETAILS_SIZE_FULL  = ['small','medium','large'];                    // index = SIZE_INT
+const _DETAILS_RS_FULL    = ['small','medium','large','xlarge'];           // index = RS_INT
+const _DETAILS_RD_FULL    = ['low','medium','high','max'];                 // index = RD_INT
+const _DETAILS_DX_FULL    = ['cross','plus','horizontal','square','digit','digit-inv','mosaic','circle']; // index = DX_INT
+const _DETAILS_RV_NAMES   = ['core','mecha','hysteria','metro','side-b','earthquake','retro','ladder'];
+const _DETAILS_PALETTE    = ['#6363ff','#a040ff','#ff003a','#ff8c00','#ffbd2e','#28c840','#ff4080','#ff63ff','#1100ff','#63ff63','#57686e','#2a0b18','#23242a','#ab0a5f','#0f1021','#000000','#bfbcce','#8b8b8b'];
+
+// Close-dot HTML injected at top of every DETAILS popup body. Reused by both
+// the rendered-details path and the placeholder (loading/error) variants.
+const _DETAILS_CLOSE_HTML = '<div class="details-close-dot" title="close"></div>';
+
+// Format a Unix-second timestamp → YYYY-MM-DD HH:MM UTC. Locale-stable,
+// no DST surprises. Used in DETAILS popup's "Settled" row.
+function _formatSettledAt(unixSeconds) {
+  const d = new Date(Number(unixSeconds) * 1000);
+  if (isNaN(d.getTime())) return '—';
+  return d.toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+}
+
+// Standalone tokenURI decode helper — pulled out of `_maMountIframe`'s
+// inline version so other functions (_extractComposition, ONCHAIN modal)
+// can reuse. UTF-8-safe via TextDecoder (matches the My Artifacts iframe
+// mount path; atob alone produces mojibake on multibyte chars like
+// em-dash U+2014 / middle-dot U+00B7).
+function _decodeTokenURI(uri) {
+  if (typeof uri !== 'string') return null;
+  const comma = uri.indexOf(',');
+  if (comma < 0) return null;
+  try {
+    const binStr = atob(uri.slice(comma + 1));
+    const bytes = new Uint8Array(binStr.length);
+    for (let i = 0; i < binStr.length; i++) bytes[i] = binStr.charCodeAt(i);
+    return new TextDecoder('utf-8').decode(bytes);
+  } catch (_) { return null; }
+}
+
+// Normalize an artifact composition parsed from the engine HTML's
+// `const COMPOSITION = {...};` literal. Coerces bigints → Number, booleans,
+// trait arrays, so downstream renderers can rely on consistent types
+// regardless of the JSON parser quirks.
+function _normalizeComposition(raw) {
+  const num = v => (typeof v === 'bigint' ? Number(v) : Number(v)) | 0;
+  return {
+    artifactId: num(raw.artifactId),
+    moduloId:   num(raw.moduloId),
+    tokens:     raw.tokens.map(t => ({
+      tokenId:    num(t.tokenId),
+      rank:       num(t.rank),
+      seed:       String(t.seed),
+      hasMode:    !!t.hasMode,
+      hasSize:    !!t.hasSize,
+      hasRS:      !!t.hasRS,
+      hasRD:      !!t.hasRD,
+      hasBios:    !!t.hasBios,
+      hasDX:      !!t.hasDX,
+      modes:      Array.isArray(t.modes) ? t.modes.map(num) : [],
+      dx:         Array.isArray(t.dx)    ? t.dx.map(num)    : [],
+      rv:         Array.isArray(t.rv)    ? t.rv.map(num)    : [],
+      size:       num(t.size),
+      rectSize:   num(t.rectSize),
+      rectDim:    num(t.rectDim),
+      biosOn:     !!t.biosOn,
+      colorIndex: num(t.colorIndex),
+      speed:      num(t.speed),
+    })),
+  };
+}
+
+// Extract the COMPOSITION JSON literal from decoded tokenURI HTML.
+// HTMLBuilder.sol:65 substitutes `__MODULO_COMPOSITION__` with a JSON object
+// inside `const COMPOSITION=...;`. Regex it back, parse, normalize.
+function _extractComposition(decodedHtml) {
+  if (!decodedHtml) return null;
+  const m = decodedHtml.match(/const COMPOSITION\s*=\s*(\{[\s\S]*?\});/);
+  if (!m) return null;
+  try {
+    return _normalizeComposition(JSON.parse(m[1]));
+  } catch (err) {
+    console.error('[artifact] composition parse failed:', err);
+    return null;
+  }
+}
+
+// Per-artifact data cache. Shared between Round 3 ONCHAIN modal (reads
+// tokenURI string for the Copy URI textarea) and Round 4 DETAILS popup
+// (reads the full ArtifactData struct from getArtifact + the composition
+// parsed from tokenURI). Single fetch per artifactId per session.
+//
+// Reviewer P2-5 fix: fetch is triggered by `_artifactExpandOpen` (Round 2),
+// not by clicking individual popup buttons. That way both ONCHAIN and
+// DETAILS share the cache without each triggering a separate RPC.
+const _artifactFetchCache = new Map(); // artifactId(number) → Promise<{owner, tokenURI, artifact, composition}>
+
+function _fetchArtifactData(artifactId) {
+  const id = Number(artifactId);
+  if (_artifactFetchCache.has(id)) return _artifactFetchCache.get(id);
+  const provider = _getReadonlyProvider();
+  if (!provider) return Promise.resolve(null);
+  const p = (async () => {
+    try {
+      const contract = new window.ethers.Contract(SETTLE_ARTIFACT_ADDRESS, SETTLE_ARTIFACT_ABI, provider);
+      // Parallel fetch — `getArtifact` reads on-chain ArtifactData struct
+      // (composition refs, settler, settledAt). `tokenURI` returns the full
+      // HTML data URI; we decode + extract composition for trait rendering.
+      // `ownerOf` for current holder display in DETAILS popup.
+      const [art, uri, owner] = await Promise.all([
+        contract.getArtifact(id),
+        contract.tokenURI(id),
+        contract.ownerOf(id).catch(() => null),
+      ]);
+      let composition = null;
+      try {
+        const html = _decodeTokenURI(uri);
+        if (html) composition = _extractComposition(html);
+      } catch (_) { /* malformed HTML — popup falls back to "traits unavailable" */ }
+      return { owner, tokenURI: uri, artifact: art, composition };
+    } catch (err) {
+      console.warn('[artifact] fetch failed for', id, err);
+      return null;
+    }
+  })();
+  _artifactFetchCache.set(id, p);
+  return p;
+}
+
+// Add getArtifact + ownerOf to SETTLE_ARTIFACT_ABI if not already present.
+// SETTLE_ARTIFACT_ABI is defined earlier in the script; the additions are
+// idempotent (ethers tolerates duplicate ABI fragments). Future rounds
+// rely on these being callable.
+// Note: ABI defined as const at L8958-8969, can't push() onto it. The
+// duplicates would only fire if not already in the original definition.
+// Check: SETTLE_ARTIFACT_ABI already includes ownerOf (added in Round 0
+// for My Artifacts owner-map). getArtifact NOT present — must add to the
+// const definition above. (Deferred to a later Edit on the ABI const itself
+// so this file diff stays additive-only in Round 1.)
 
 // Cross-tab invalidation: if another tab settles a new artifact, its scanner
 // writes the cache; this tab's storage event clears our in-memory data so
@@ -9377,6 +9553,12 @@ const SETTLE_ARTIFACT_ABI = [
   'function totalArtifacts() view returns (uint256)',
   'function tokenURI(uint256) view returns (string)',
   'function ownerOf(uint256) view returns (address)',
+  // ArtifactData struct (SettleArtifact.sol L72-79) — used by artifact-expand
+  // DETAILS popup to render composition info. Added 2026-05-11 for the My
+  // Artifacts modal port. Tuple shape MUST match the contract exactly.
+  'function getArtifact(uint256) view returns (' +
+    'tuple(uint256 moduloId, uint256[] tokenIds, uint256[] seeds, uint16[] ranks, address settler, uint64 settledAt)' +
+  ')',
   'event Settled(uint256 indexed artifactId, uint256 indexed moduloId, address indexed settler)',
   'event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)',
 ];
