@@ -1754,24 +1754,133 @@ button, a, [role="button"], .pill, .info-btn, .toggle-btn, .modal-close,
   border:none; display:block;
   background:#000;
 }
-/* Details popup (Round 4) — placeholder rule for the empty div in markup.
-   Hidden by default; .visible class shown by populate handler. */
+/* Details popup — anchored bottom-right of #artifact-expand-window, toggled
+   by #artifact-expand-details-btn. Reads from `_artifactFetchCache` (already
+   triggered on expand open) so opening is instant — no extra RPC. */
 .artifact-expand-details-popup {
   display:none;
   position:absolute;
   right:14px; bottom:14px;
-  width:300px; max-height:60%;
-  background:rgba(20,20,22,0.96);
+  width:340px; max-height:78%;
+  background:rgba(20,20,22,0.97);
   border:0.5px solid rgba(255,255,255,0.12);
   border-radius:8px;
-  padding:14px;
+  padding:18px 18px 16px;
   color:rgba(255,255,255,0.85);
   font-size:10px; font-family:monospace;
+  letter-spacing:.03em;
+  line-height:1.55;
   overflow-y:auto;
   box-shadow:0 8px 24px rgba(0,0,0,0.40);
   z-index:1;
+  backdrop-filter:blur(4px);
+  -webkit-backdrop-filter:blur(4px);
 }
 .artifact-expand-details-popup.visible { display:block; }
+.artifact-expand-details-popup::-webkit-scrollbar { width:3px; }
+.artifact-expand-details-popup::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.25); border-radius:2px; }
+/* Close dot — red, top-right inside popup */
+.details-close-dot {
+  position:absolute;
+  top:10px; right:10px;
+  width:9px; height:9px;
+  border-radius:50%;
+  background:#ff5f57;
+  cursor:pointer;
+  transition:transform 0.15s;
+  z-index:2;
+}
+.details-close-dot:hover { transform:scale(1.25); }
+.details-row {
+  display:flex; align-items:baseline;
+  gap:10px;
+  padding:3px 0;
+}
+.details-label {
+  font-size:9px;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  color:rgba(255,255,255,0.42);
+  min-width:60px;
+  flex-shrink:0;
+}
+.details-value {
+  font-size:10.5px;
+  color:rgba(255,255,255,0.85);
+  word-break:break-all;
+}
+.details-link {
+  font-size:10.5px;
+  color:rgba(255,255,255,0.85);
+  text-decoration:none;
+  border-bottom:0.5px solid rgba(255,255,255,0.3);
+  padding-bottom:1px;
+  transition:color 0.14s, border-color 0.14s;
+}
+.details-link:hover {
+  color:#fff;
+  border-bottom-color:#fff;
+}
+.details-divider {
+  height:0.5px;
+  background:rgba(255,255,255,0.12);
+  margin:10px 0 8px;
+}
+.details-tokens-header {
+  font-size:9px;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  color:rgba(255,255,255,0.42);
+  margin-bottom:6px;
+}
+.details-token-block {
+  padding:8px 0;
+  border-top:0.5px solid rgba(255,255,255,0.08);
+}
+.details-token-block:first-of-type {
+  border-top:none;
+  padding-top:0;
+}
+.details-token-header {
+  display:flex; align-items:center; justify-content:space-between;
+  margin-bottom:6px;
+}
+.details-token-meta { color:rgba(255,255,255,0.9); font-size:10.5px; }
+.details-token-header a {
+  color:rgba(255,255,255,0.55);
+  text-decoration:none;
+  font-size:11px;
+  transition:color 0.14s;
+}
+.details-token-header a:hover { color:#fff; }
+.details-token-traits {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:3px 14px;
+  font-size:9.5px;
+}
+.details-trait {
+  display:flex; gap:6px; align-items:baseline;
+}
+.details-trait-label {
+  color:rgba(255,255,255,0.42);
+  letter-spacing:.04em;
+  text-transform:uppercase;
+  font-size:8.5px;
+  min-width:48px;
+}
+.details-trait-value {
+  color:rgba(255,255,255,0.85);
+  display:flex; align-items:center; gap:4px;
+}
+.details-trait-swatch {
+  display:inline-block;
+  width:9px; height:9px;
+  border-radius:50%;
+  border:0.5px solid rgba(255,255,255,0.25);
+  flex-shrink:0;
+}
+.details-trait-unavailable { opacity:0.5; }
 
 @media (max-width:768px), (max-height:768px) {
   #artifact-expand-window {
@@ -8705,11 +8814,15 @@ _artifactExpandResetBtn.addEventListener('click', () => {
 // Esc handler — capture phase + stopPropagation so it doesn't also trigger
 // other overlay close handlers (My Artifacts, lock-modal). Reviewer P2-1
 // flag honored: artifact-expand is the topmost modal when open, takes Esc.
-// EXCEPT when the ONCHAIN modal is open — that takes precedence (closest
-// to user focus). Handler below checks ONCHAIN active before expand-close.
+// Priority above expand: ONCHAIN modal AND DETAILS popup (innermost first).
+// Use typeof guards because `_artifactOnchainModal` and `_artifactDetailsPopup`
+// are declared LATER in the script (Round 3 + 4A respectively).
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && _artifactExpandOpenId !== null) {
-    if (_artifactOnchainModal.classList.contains('active')) return; // ONCHAIN handles
+    if (typeof _artifactOnchainModal !== 'undefined' && _artifactOnchainModal &&
+        _artifactOnchainModal.classList.contains('active')) return; // ONCHAIN handles
+    if (typeof _artifactDetailsPopup !== 'undefined' && _artifactDetailsPopup &&
+        _artifactDetailsPopup.classList.contains('visible')) return; // DETAILS handles
     e.stopPropagation();
     e.stopImmediatePropagation();
     _artifactExpandClose();
@@ -8833,6 +8946,182 @@ document.addEventListener('keydown', e => {
     _closeArtifactOnchainModal();
   }
 }, true);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ARTIFACT EXPAND MODAL — Round 4A: DETAILS popup
+// ═══════════════════════════════════════════════════════════════════════════
+// Anchored bottom-right of #artifact-expand-window. Shows artifact metadata:
+// settler, settled date, owner + per-token composition with full trait names.
+// Reads from _artifactFetchCache (populated by _artifactExpandOpen) — opening
+// is instant if cache resolved, otherwise spinner-text until ready.
+
+const _artifactDetailsPopup = document.getElementById('artifact-expand-details-popup');
+const _artifactDetailsBtn   = document.getElementById('artifact-expand-details-btn');
+
+function _artifactDetailsPlaceholder(text) {
+  return _DETAILS_CLOSE_HTML +
+    '<div class="details-row"><span class="details-label">' + text + '</span></div>';
+}
+
+// Build per-token trait rows in the same order as collection's expand panel:
+// color → speed → size → mode → rs → rv → rd → bios → dx. Returns HTML string
+// of `<div class="details-trait">...</div>` rows. Safe innerHTML use: all
+// interpolated values come from `_DETAILS_*` indexed by trait integers
+// (range-bound 0-17 for palette, 0-7 elsewhere) — no user input surface.
+function _artifactRenderDetailsTraitsForToken(t) {
+  const rows = [];
+  const hex = _DETAILS_PALETTE[t.colorIndex] || '#000000';
+  rows.push({
+    label:'color',
+    valueHTML:'<span class="details-trait-swatch" data-color="' + hex + '"></span>' + hex,
+  });
+  rows.push({ label:'speed', value:String(t.speed) });
+  if (t.hasSize) rows.push({ label:'size', value:_DETAILS_SIZE_FULL[t.size] || '—' });
+  if (t.hasMode && t.modes && t.modes.length) rows.push({ label:'mode', value:_DETAILS_MODE_NAMES[t.modes[0]] || '—' });
+  if (t.hasRS) rows.push({ label:'rect-size', value:_DETAILS_RS_FULL[t.rectSize] || '—' });
+  if (t.rv && t.rv.length) rows.push({ label:'rect-variant', value:_DETAILS_RV_NAMES[t.rv[0]] || '—' });
+  if (t.hasRD) rows.push({ label:'rect-density', value:_DETAILS_RD_FULL[t.rectDim] || '—' });
+  if (t.hasBios) rows.push({ label:'bios', value:t.biosOn ? 'on' : 'off' });
+  if (t.hasDX && t.dx && t.dx.length) rows.push({ label:'dx-pattern', value:_DETAILS_DX_FULL[t.dx[0]] || '—' });
+  return rows.map(r => {
+    const valueMarkup = r.valueHTML ? r.valueHTML : '<span>' + r.value + '</span>';
+    return '<div class="details-trait">' +
+      '<span class="details-trait-label">' + r.label + '</span>' +
+      '<span class="details-trait-value">' + valueMarkup + '</span>' +
+    '</div>';
+  }).join('');
+}
+
+function _artifactRenderDetails(data, artifactId) {
+  const art = data && data.artifact;
+  const composition = data && data.composition;
+  if (!art) {
+    _artifactDetailsPopup.innerHTML = _artifactDetailsPlaceholder('no data');
+    return;
+  }
+  const moduloId = Number(art.moduloId);
+  const settler  = String(art.settler);
+  const owner    = String(data.owner || '');
+  const dateStr  = _formatSettledAt(art.settledAt);
+  const tokenIds = Array.from(art.tokenIds).map(Number);
+  const ranks    = Array.from(art.ranks).map(Number);
+  const etherscanBase = _etherscanBase();
+
+  // Header rows. All interpolated values are deterministic projections of
+  // on-chain data (numbers via padStart, addresses via _shortAddr slice,
+  // ETHERSCAN_BASE / TOKEN_AGENT_ADDRESS hardcoded). No user input surface
+  // → safe innerHTML use. Port from collection L3674-3702.
+  const headerRows =
+    '<div class="details-row"><span class="details-label">Modulo</span>' +
+      '<span class="details-value">modulo_' + String(moduloId).padStart(2, '0') + '</span></div>' +
+    '<div class="details-row"><span class="details-label">Settled</span>' +
+      '<span class="details-value">' + dateStr + '</span></div>' +
+    '<div class="details-row"><span class="details-label">Settler</span>' +
+      '<a class="details-link" href="' + etherscanBase + '/address/' + settler +
+        '" target="_blank" rel="noopener noreferrer">' + _shortAddr(settler) + ' ↗</a></div>' +
+    '<div class="details-row"><span class="details-label">Owner</span>' +
+      '<a class="details-link" href="' + etherscanBase + '/address/' + owner +
+        '" target="_blank" rel="noopener noreferrer">' + _shortAddr(owner) + ' ↗</a></div>';
+
+  const tokenBlocks = tokenIds.map((id, i) => {
+    const headerHtml =
+      '<div class="details-token-header">' +
+        '<span class="details-token-meta">#' + String(id).padStart(4, '0') +
+          ' · R#' + String(ranks[i] || 0).padStart(4, '0') + '</span>' +
+        '<a href="' + etherscanBase + '/token/' + TOKEN_AGENT_ADDRESS + '?a=' + id +
+          '" target="_blank" rel="noopener noreferrer" title="View token on Etherscan">↗</a>' +
+      '</div>';
+    const compToken = composition && composition.tokens && composition.tokens[i];
+    const traitsHtml = compToken
+      ? '<div class="details-token-traits">' + _artifactRenderDetailsTraitsForToken(compToken) + '</div>'
+      : '<div class="details-trait-label details-trait-unavailable">traits unavailable</div>';
+    return '<div class="details-token-block">' + headerHtml + traitsHtml + '</div>';
+  }).join('');
+
+  _artifactDetailsPopup.innerHTML =
+    _DETAILS_CLOSE_HTML +
+    headerRows +
+    '<div class="details-divider"></div>' +
+    '<div class="details-tokens-header">Composition (' + tokenIds.length + ')</div>' +
+    tokenBlocks;
+
+  // Apply swatch colors via JS hook — keeps `style.background` out of the
+  // innerHTML string (CSP-friendly), and re-applies after each re-render.
+  _artifactDetailsPopup.querySelectorAll('.details-trait-swatch[data-color]').forEach(el => {
+    el.style.background = el.dataset.color;
+  });
+}
+
+function _artifactPopulateDetailsPopup(artifactId) {
+  _artifactDetailsPopup.innerHTML = _artifactDetailsPlaceholder('loading…');
+  const cached = _artifactFetchCache.get(Number(artifactId));
+  const promise = cached || _fetchArtifactData(artifactId);
+  promise.then(data => {
+    // Guard: still in same expand session (Le might have closed + opened
+    // a different artifact between fetch start + resolution).
+    if (_artifactExpandOpenId !== artifactId) return;
+    if (!_artifactDetailsPopup.classList.contains('visible')) return;
+    if (!data) {
+      _artifactDetailsPopup.innerHTML = _artifactDetailsPlaceholder('unavailable');
+      return;
+    }
+    _artifactRenderDetails(data, artifactId);
+  }).catch(err => {
+    if (_artifactExpandOpenId !== artifactId) return;
+    console.warn('[artifact-details] fetch failed:', err);
+    _artifactDetailsPopup.innerHTML = _artifactDetailsPlaceholder('error');
+  });
+}
+
+function _closeArtifactDetailsPopup() {
+  _artifactDetailsPopup.classList.remove('visible');
+  _artifactDetailsBtn.classList.remove('active');
+}
+
+// Wire DETAILS button — Round 4A enables it.
+_artifactDetailsBtn.disabled = false;
+_artifactDetailsBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  if (_artifactExpandOpenId === null) return;
+  const willOpen = !_artifactDetailsPopup.classList.contains('visible');
+  _artifactDetailsPopup.classList.toggle('visible', willOpen);
+  _artifactDetailsBtn.classList.toggle('active', willOpen);
+  if (willOpen) _artifactPopulateDetailsPopup(_artifactExpandOpenId);
+});
+
+// Close popup: red close dot inside the popup (delegated) + click outside.
+_artifactDetailsPopup.addEventListener('click', e => {
+  if (e.target && e.target.classList && e.target.classList.contains('details-close-dot')) {
+    _closeArtifactDetailsPopup();
+  }
+});
+// Click outside popup (but not on the DETAILS button itself) closes it.
+document.addEventListener('click', e => {
+  if (!_artifactDetailsPopup.classList.contains('visible')) return;
+  if (e.target === _artifactDetailsBtn || _artifactDetailsBtn.contains(e.target)) return;
+  if (_artifactDetailsPopup.contains(e.target)) return;
+  _closeArtifactDetailsPopup();
+});
+// Esc closes DETAILS popup (priority just above expand-close, below ONCHAIN).
+// Capture phase so it stops the expand-Esc handler from also firing.
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' &&
+      _artifactDetailsPopup.classList.contains('visible') &&
+      !_artifactOnchainModal.classList.contains('active')) {
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    _closeArtifactDetailsPopup();
+  }
+}, true);
+// Also close DETAILS popup when artifact-expand closes (clean teardown).
+// Hooks into the close-button / backdrop / Esc handlers from Round 2 by
+// registering ADDITIONAL listeners that fire alongside `_artifactExpandClose`.
+// (Wrapping the function reference doesn't work — Round 2 handlers captured
+// the original reference at registration time.)
+_artifactExpandCloseBtn.addEventListener('click', _closeArtifactDetailsPopup);
+_artifactExpandOverlay.addEventListener('click', e => {
+  if (e.target === _artifactExpandOverlay) _closeArtifactDetailsPopup();
+});
 
 // Cross-tab invalidation: if another tab settles a new artifact, its scanner
 // writes the cache; this tab's storage event clears our in-memory data so
