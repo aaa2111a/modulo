@@ -1563,10 +1563,12 @@ button, a, [role="button"], .pill, .info-btn, .toggle-btn, .modal-close,
 
 /* SETTLED badge — small chip top-right corner of card. Contrast >= 4.5:1
    per WCAG AA. aria-label on parent .ma-card-badge for AT. */
+/* Match collection/index.html `.mod-card` chrome dimensions (tbar 30px,
+   footer 7/9px padding, border-radius 12px). Le 2026-05-11. */
 .ma-card {
   background:var(--node-bg);
   border:0.5px solid var(--node-border);
-  border-radius:9px;
+  border-radius:12px;
   overflow:hidden;
   position:relative;
   display:flex; flex-direction:column;
@@ -1574,18 +1576,20 @@ button, a, [role="button"], .pill, .info-btn, .toggle-btn, .modal-close,
   transition:transform 0.22s cubic-bezier(0.4,0,0.2,1), opacity 0.22s;
   box-shadow:
     0 0 0 0.5px rgba(0,0,0,0.05),
-    0 2px 8px rgba(0,0,0,0.06);
+    0 2px 8px rgba(0,0,0,0.06),
+    0 8px 20px rgba(0,0,0,0.06);
 }
 .ma-card:hover { transform:scale(1.02); z-index:2; }
 .ma-card.ma-not-owned { opacity:0.45; }
 .ma-card.ma-not-owned:hover { opacity:0.6; }
 .ma-card-tbar {
-  height:22px;
+  height:30px;
   background:var(--tbar-bg);
   border-bottom:0.5px solid var(--tbar-border);
-  display:flex; align-items:center; padding:0 8px; gap:5px;
-  font-size:9px; font-family:monospace;
+  display:flex; align-items:center; padding:0 10px; gap:6px;
+  font-size:10px; font-family:monospace;
   color:var(--stats-title);
+  letter-spacing:.03em;
   flex-shrink:0;
 }
 .ma-card-canvas-wrap {
@@ -1602,24 +1606,27 @@ button, a, [role="button"], .pill, .info-btn, .toggle-btn, .modal-close,
   pointer-events:none;
 }
 .ma-card-footer {
-  padding:5px 8px;
+  padding:7px 9px;
   display:flex; align-items:center; justify-content:space-between;
   border-top:0.5px solid var(--divider);
   flex-shrink:0;
-  font-size:8px; font-family:monospace;
-  color:var(--sl); letter-spacing:.04em;
+  font-size:10px; font-family:monospace;
+  color:var(--sl); letter-spacing:.06em;
 }
+/* Settle badge — tbar-tinted to match the card's titlebar (Le 2026-05-11:
+   replaces the previous bright green chip). Border for definition since
+   bg sits very close to card-bg in day mode. */
 .ma-card-badge {
-  position:absolute; top:6px; right:6px;
-  background:rgba(40,200,64,0.92);
-  color:#0a2010;
+  position:absolute; top:7px; right:7px;
+  background:var(--tbar-bg);
+  border:0.5px solid var(--tbar-border);
+  color:var(--stats-title);
   font-size:8px; font-family:monospace; font-weight:700;
-  padding:2px 5px;
-  border-radius:3px;
+  padding:2px 6px;
+  border-radius:4px;
   letter-spacing:.08em;
   z-index:1;
   pointer-events:none;
-  box-shadow:0 1px 3px rgba(0,0,0,0.18);
 }
 
 #my-artifacts-empty,
@@ -7798,7 +7805,15 @@ async function _maScanAndRender() {
 }
 
 function _maApplyData(data) {
-  _maData = data;
+  // Defensive Set rehydration — cache reads from sessionStorage return arrays
+  // (Sets aren't JSON-serializable; `_maWriteCache` spreads to arrays). Fresh
+  // scans already produce Sets. Normalize both paths so `_maRenderGrid` can
+  // always call `.has()`. (Le 2026-05-11 — TypeError on cached open.)
+  _maData = {
+    ownedIds:   (data.ownedIds   instanceof Set) ? data.ownedIds   : new Set(data.ownedIds || []),
+    settledIds: (data.settledIds instanceof Set) ? data.settledIds : new Set(data.settledIds || []),
+    allIds:     (data.allIds     instanceof Set) ? data.allIds     : new Set(data.allIds || []),
+  };
   _maLoading.hidden = true;
   _maRenderGrid();
   _maUpdateChipCounts();
