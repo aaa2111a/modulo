@@ -1639,6 +1639,12 @@ button, a, [role="button"], .pill, .info-btn, .toggle-btn, .modal-close,
   padding:40px;
   text-align:center;
 }
+/* `[hidden]` attribute must override the explicit `display:flex` above —
+   without this rule the loading/empty banners stay visible behind the
+   rendered grid (Le 2026-05-11). HTML5 user-agent default is `display:none`
+   for `[hidden]` but author-set `display:flex` outranks it by CSS cascade. */
+#my-artifacts-empty[hidden],
+#my-artifacts-loading[hidden] { display:none; }
 
 #overview-blocker {
   display:none; position:absolute; inset:0; z-index:199;
@@ -7948,7 +7954,8 @@ function _maAttachLazyMount(card, artifactId) {
   io.observe(card);
 }
 
-async function _maMountIframe(wrap, artifactId) {
+async function _maMountIframe(wrap, artifactId, attempt) {
+  attempt = attempt || 1;
   try {
     const provider = _getReadonlyProvider();
     if (!provider) return;
@@ -7958,14 +7965,16 @@ async function _maMountIframe(wrap, artifactId) {
       provider
     );
     const uri = await contract.tokenURI(artifactId);
-    if (!uri || typeof uri !== 'string') return;
-    const comma = uri.indexOf(',');
-    if (comma < 0) return;
-    // UTF-8-safe atob (same pattern as collection/index.html _decodeTokenURI fix).
-    const binStr = atob(uri.slice(comma + 1));
-    const bytes = new Uint8Array(binStr.length);
-    for (let i = 0; i < binStr.length; i++) bytes[i] = binStr.charCodeAt(i);
-    const html = new TextDecoder('utf-8').decode(bytes);
+    if (!uri || typeof uri !== 'string') {
+      // Empty/invalid URI — schedule retry once (RPC may have transient drops
+      // when 10+ tokenURI calls fire in parallel). Le 2026-05-11.
+      if (attempt < 2) {
+        setTimeout(() => _maMountIframe(wrap, artifactId, attempt + 1), 600 + Math.random() * 400);
+      }
+      return;
+    }
+    const html = _decodeTokenURI(uri);
+    if (!html) return;
 
     const iframe = document.createElement('iframe');
     iframe.className = 'ma-card-iframe';
@@ -7975,7 +7984,14 @@ async function _maMountIframe(wrap, artifactId) {
     iframe.srcdoc = html;
     wrap.appendChild(iframe);
   } catch (err) {
-    console.warn('[my-artifacts] iframe mount failed for', artifactId, err);
+    // RPC error (rate-limit, network blip). Retry once with jittered delay
+    // before giving up — covers the "some cards don't load until I hit
+    // refresh" symptom Le 2026-05-11.
+    if (attempt < 2) {
+      setTimeout(() => _maMountIframe(wrap, artifactId, attempt + 1), 600 + Math.random() * 400);
+      return;
+    }
+    console.warn('[my-artifacts] iframe mount failed for', artifactId, 'after', attempt, 'attempts:', err);
   }
 }
 
