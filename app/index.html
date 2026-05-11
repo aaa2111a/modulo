@@ -2275,6 +2275,23 @@ body.night .artifact-onchain-uri { background:rgba(255,255,255,0.06); }
 .lock-modal .ms { font-size:12px; line-height:1.6; margin-bottom:22px; }
 .lock-modal .mbtn { font-size:12px; padding:8px 0; }
 .lock-modal .mbtn.p { border-color:var(--mbtn-border); }
+/* Settle modal — subtle red-tinted warn badge above buttons. Reuses
+   .lock-modal chrome (border, shadow, tbar) — only the warn line is new. */
+.settle-modal .settle-modal-warn {
+  font-size:11px; line-height:1.5;
+  font-family:monospace; letter-spacing:.02em;
+  color:#a83c3c;
+  background:rgba(168, 60, 60, 0.06);
+  border:0.5px solid rgba(168, 60, 60, 0.22);
+  border-radius:7px;
+  padding:8px 10px;
+  margin-bottom:16px;
+}
+html.dark .settle-modal .settle-modal-warn {
+  color:#e08585;
+  background:rgba(224, 133, 133, 0.07);
+  border-color:rgba(224, 133, 133, 0.22);
+}
 /* Duration selector — 4 small pill buttons in a row. Active state highlights
    the currently selected duration. Visual language matches .mbtn. */
 .lock-dur-row { display:flex; gap:6px; margin-bottom:18px; }
@@ -2973,6 +2990,36 @@ body.night .artifact-onchain-uri { background:rgba(255,255,255,0.06); }
         <div class="mbtns">
           <button class="mbtn" id="lock-modal-cancel">Cancel</button>
           <button class="mbtn p" id="lock-modal-confirm">Confirm Lock</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pre-settle confirmation modal (2026-05-11). Settle is irreversible:
+       burns the user's locked tokens in the target modulo and mints a new
+       artifact. Lock-modal precedent applies for chrome (.lock-modal class)
+       + Cancel/Confirm pattern. Token-id preview is computed client-side
+       at openSettleModal() time; CF re-filters by on-chain ownerOf at sign
+       time, so the displayed list is a "based on current state" hint. -->
+  <div class="overlay" id="settle-overlay">
+    <div class="modal lock-modal settle-modal">
+      <div class="lock-modal-tbar">
+        <span class="lock-modal-tbar-title">settle · modulo</span>
+      </div>
+      <div class="lock-modal-inner">
+        <div class="mt" id="settle-modal-title">Settle modulo?</div>
+        <div class="ms" id="settle-modal-body">
+          This will <strong>burn</strong> <span id="settle-modal-count">—</span>
+          of your tokens (<span id="settle-modal-tokens">—</span>) in modulo
+          <span id="settle-modal-modid">—</span> and mint a new
+          <strong>artifact</strong> to your wallet capturing the current
+          composition. Based on current state — server confirms exact set at
+          sign time.
+        </div>
+        <div class="settle-modal-warn">Irreversible. Burned tokens cannot be recovered, relocked, or resettled.</div>
+        <div class="mbtns">
+          <button class="mbtn" id="settle-modal-cancel">Cancel</button>
+          <button class="mbtn p" id="settle-modal-confirm">Confirm Settle</button>
         </div>
       </div>
     </div>
@@ -4219,52 +4266,18 @@ function buildModulo(mod) {
   // a real on-chain transaction that burns + mints the composition artifact.
   const settleBtn = card.querySelector('.card-settle-btn');
   if (settleBtn) {
-    settleBtn.addEventListener('click', async e => {
+    // 2026-05-11: click now opens the pre-settle confirmation modal instead
+    // of going straight to settleModulo(). The modal previews tokens-to-burn
+    // and warns the action is irreversible (burn + mint artifact). On Confirm
+    // the modal calls _runSettle(mod, settleBtn) which contains the original
+    // toast + settleModulo + result-dispatch body. Early-out checks happen
+    // inside openSettleModal — if gates fail (no-locked / need-multi-owner /
+    // no-tokens workshop) a toast is shown directly and the modal does not
+    // open, matching the openLockModal pre-check pattern.
+    settleBtn.addEventListener('click', e => {
       e.stopPropagation();
       if (settleBtn.disabled) return;
-      settleBtn.disabled = true;
-      // Tx-pending feedback: settle takes 10-30s on Sepolia (sign + nonce
-      // read + attestSettle + signTypedData + submit + tx.wait). Without this
-      // toast the user sees a frozen disabled button and assumes the click was lost.
-      // 2026-05-07: workshop migrated to on-chain settle, so it also shows toasts.
-      const _toast = _showToast('Settling…', { sticky: true, sub: 'sign + submit + confirm' });
-      try {
-        const result = await settleModulo(mod.id);
-        if (_toast) _dismissToast(_toast);
-        if (!result.ok) {
-          if (result.reason === 'guest-readonly') {
-            // Unreachable in practice — guest is view-only (no workshop, no
-            // inventory, no draft, no locks). The check in settleModulo()
-            // remains as silent defense-in-depth in case a future refactor
-            // introduces an upstream UI bug; no toast/alert needed here.
-            dbg.warn('[settle] guest reached settleModulo — upstream bug');
-          } else if (result.reason === 'user-rejected-tx' || result.reason === 'user-rejected-sig' || result.reason === 'user-rejected-auth') {
-            // user-rejected-auth = Step 2a (settlerAuthSig, audit Chunk 3 2026-05-07)
-            // user-rejected-sig  = Step 3  (settlerSig for on-chain settle)
-            // user-rejected-tx   = Step 4  (final tx submission)
-            _showToast('Tx cancelled', { ttlMs: 2500 });
-            dbg.log('[settle]', mod.id, 'cancelled by user');
-          } else if (result.reason === 'need-multi-owner') {
-            _showToast('Need ≥2 distinct wallets', {
-              sub: 'Shared modulo settle requires locks from at least 2 different users. (Workshop is solo, no minimum.)',
-              variant: 'warn',
-              ttlMs: 5000
-            });
-          } else {
-            const _msg = (result.err && (result.err.shortMessage || result.err.reason || result.err.message)) || result.reason;
-            _showToast('Settle failed', { sub: String(_msg).slice(0, 80), variant: 'error', ttlMs: 6000 });
-            dbg.warn('[settle]', mod.id, result.reason, result.err || '');
-          }
-        } else {
-          _showToast('Settle confirmed ✓', { ttlMs: 3000 });
-        }
-      } catch (err) {
-        if (_toast) _dismissToast(_toast);
-        console.error('[settle] unexpected', err);
-        _showToast('Settle error', { sub: String((err && (err.shortMessage || err.message)) || err).slice(0, 80), variant: 'error', ttlMs: 6000 });
-      } finally {
-        settleBtn.disabled = false;
-      }
+      openSettleModal(mod, settleBtn);
     });
   }
 
@@ -9870,6 +9883,11 @@ document.addEventListener('keydown', e => {
     if (typeof _artifactExpandOpenId !== 'undefined' && _artifactExpandOpenId !== null) return;
     if (typeof _artifactOnchainModal !== 'undefined' && _artifactOnchainModal &&
         _artifactOnchainModal.classList.contains('active')) return;
+    // Also yield to settle-modal (2026-05-11) — settle confirm overlay can
+    // be open above MA if Le opens MA, doesn't close, then clicks SETTLE
+    // on the world (unlikely UI flow but defensive).
+    const _settleOv = document.getElementById('settle-overlay');
+    if (_settleOv && _settleOv.classList.contains('open')) return;
     e.stopPropagation();
     _maClose();
   }
@@ -12933,11 +12951,273 @@ async function confirmLockModal() {
       _renderLockDurationSelector();
     });
   });
-  // ESC key also dismisses
+  // ESC key also dismisses.
+  // Capture phase + stopImmediatePropagation so the lock-modal handler is the
+  // ONLY listener that runs for Esc when the lock overlay is open. Without
+  // stopImmediatePropagation, sibling capture-phase listeners registered on
+  // `document` (e.g. settle-modal Esc) would also fire in registration order
+  // — see reviewer P1-1 (2026-05-11). Pattern matches artifact-expand /
+  // ONCHAIN / DETAILS Esc handlers which also use both stops.
+  // Skip if a higher-priority modal is open (artifact-expand, ONCHAIN modal,
+  // DETAILS popup, settle-modal). Those handlers (declared LATER in the
+  // script) take Esc first via their own stopImmediatePropagation.
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && overlay && overlay.classList.contains('open')) {
+      // Defense-in-depth: yield to higher-priority overlays if any are open.
+      if (typeof _artifactExpandOpenId !== 'undefined' && _artifactExpandOpenId !== null) return;
+      if (typeof _artifactOnchainModal !== 'undefined' && _artifactOnchainModal &&
+          _artifactOnchainModal.classList.contains('active')) return;
+      if (typeof _artifactDetailsPopup !== 'undefined' && _artifactDetailsPopup &&
+          _artifactDetailsPopup.classList.contains('visible')) return;
+      const _settleOv = document.getElementById('settle-overlay');
+      if (_settleOv && _settleOv.classList.contains('open')) return;
       e.stopPropagation();
+      e.stopImmediatePropagation();
       closeLockModal();
+    }
+  }, true);
+})();
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PRE-SETTLE CONFIRMATION MODAL (2026-05-11)
+// ═══════════════════════════════════════════════════════════════════════════
+// Settle is irreversible: burns the user's locked tokens in the target modulo
+// and mints a new artifact. Without an explicit confirm step, clicking SETTLE
+// went straight to settleModulo() + MetaMask. Reviewer brief flagged this as
+// a UX gap (lock-modal — which guards a REVERSIBLE action — already has a
+// confirm; settle did not). This block adds the gate.
+//
+// Architecture:
+//   - openSettleModal(mod, settleBtn): computes the tokens-to-burn preview
+//     client-side (workshop = mod.tokens; shared = locked tokens owned by
+//     SESSION_USER). Runs the same gates that settleModulo() would (no-tokens
+//     for workshop, no-locked + need-multi-owner for shared) and short-circuits
+//     with a toast if any fails — saves the user the extra "Confirm" click.
+//   - confirmSettleModal(): closes the modal then runs _runSettle, which is
+//     the original click-handler body (toast + settleModulo + result-dispatch).
+//   - closeSettleModal(): Cancel path, re-enables settleBtn (P2-1 fix).
+//   - Esc: capture phase + stopImmediatePropagation, yields to higher-priority
+//     overlays (artifact-expand / ONCHAIN / DETAILS) per cascade contract.
+//
+// Singleton state: only one settle-modal pending at a time. If openSettleModal
+// is invoked with another pending, the previous settleBtn is re-enabled first
+// (defensive — UI flow prevents this in practice since settleBtn.disabled is
+// set in openSettleModal and won't re-trigger).
+let _pendingSettle = null;
+
+/**
+ * Compute the tokens that would burn if settle ran NOW, based on client
+ * cache (TOKEN_DATA + fbLocked). The CF re-filters by on-chain ownerOf at
+ * sign time, so this is a "based on current state" hint — not authoritative.
+ *
+ * Returns { ok: true, tokens: number[], distinctOwners?: number } on success,
+ * or { ok: false, reason: 'no-tokens' | 'no-locked' | 'need-multi-owner' }
+ * mirroring settleModulo's gate failures.
+ */
+function _computeSettlePreview(mod) {
+  if (mod.personal) {
+    if (!mod.tokens || mod.tokens.length === 0) {
+      return { ok: false, reason: 'no-tokens' };
+    }
+    return { ok: true, tokens: mod.tokens.slice() };
+  }
+  // Shared modulo — filter locks by current on-chain ownership.
+  const locked = fbLocked[mod.id] || {};
+  const sessionLc = (SESSION_USER || '').toLowerCase();
+  const tokens = Object.keys(locked)
+    .filter(t => {
+      if (!locked[t]) return false;
+      const td = TOKEN_DATA[Number(t)];
+      return td && td.owner && td.owner.toLowerCase() === sessionLc;
+    })
+    .map(Number);
+  if (tokens.length === 0) return { ok: false, reason: 'no-locked' };
+  // Distinct-owners gate (revised 2026-05-08 — same as settleModulo L12193).
+  const _now = Date.now();
+  const _distinctOwners = new Set();
+  for (const k of Object.keys(locked)) {
+    const e = locked[k];
+    if (!e || !e.lockedUntil || e.lockedUntil <= _now) continue;
+    const td = TOKEN_DATA[Number(k)];
+    if (td && td.owner) _distinctOwners.add(td.owner.toLowerCase());
+  }
+  if (_distinctOwners.size < 2) return { ok: false, reason: 'need-multi-owner' };
+  return { ok: true, tokens, distinctOwners: _distinctOwners.size };
+}
+
+/**
+ * Open the pre-settle confirmation modal. Runs early-out gates first; if any
+ * fails, shows a toast and returns without opening (P2-2 reviewer rec).
+ */
+function openSettleModal(mod, settleBtn) {
+  // Guest check — should be unreachable from card UI (guests have no
+  // workshop, no inventory, no locks). Defense-in-depth.
+  if (_isGuest()) {
+    _showToast('Connect a wallet to settle', { variant: 'warn', ttlMs: 3000 });
+    return;
+  }
+  // Early-out gates (same as settleModulo would reject post-modal otherwise).
+  const preview = _computeSettlePreview(mod);
+  if (!preview.ok) {
+    if (preview.reason === 'no-tokens') {
+      _showToast('No tokens to settle', { sub: 'Place at least one token in this workshop first.', variant: 'warn', ttlMs: 4000 });
+    } else if (preview.reason === 'no-locked') {
+      _showToast('No locked tokens here', { sub: 'You need locked tokens you own in this modulo to settle.', variant: 'warn', ttlMs: 4000 });
+    } else if (preview.reason === 'need-multi-owner') {
+      _showToast('Need ≥2 distinct wallets', {
+        sub: 'Shared modulo settle requires locks from at least 2 different users.',
+        variant: 'warn',
+        ttlMs: 5000
+      });
+    }
+    return;
+  }
+  // If another settle-modal is already pending (unexpected — UI guards via
+  // disabled button — but defensive), re-enable the previous settleBtn before
+  // overwriting state.
+  if (_pendingSettle && _pendingSettle.settleBtn && _pendingSettle.settleBtn !== settleBtn) {
+    _pendingSettle.settleBtn.disabled = false;
+  }
+  _pendingSettle = { mod, settleBtn, tokens: preview.tokens };
+  // Disable the source button while the modal is up so a second click on the
+  // same card doesn't re-open the modal (and so the button visually reflects
+  // the in-flight state).
+  if (settleBtn) settleBtn.disabled = true;
+  // Populate modal text.
+  const tokens = preview.tokens;
+  const titleEl  = document.getElementById('settle-modal-title');
+  const countEl  = document.getElementById('settle-modal-count');
+  const tokensEl = document.getElementById('settle-modal-tokens');
+  const modidEl  = document.getElementById('settle-modal-modid');
+  if (titleEl) titleEl.textContent = `Settle ${mod.id}?`;
+  if (countEl) countEl.textContent = String(tokens.length);
+  if (tokensEl) {
+    const shown = tokens.slice(0, 5).map(n => '#' + String(n).padStart(3, '0')).join(', ');
+    tokensEl.textContent = tokens.length > 5
+      ? `${shown}, +${tokens.length - 5} more`
+      : shown;
+  }
+  if (modidEl) modidEl.textContent = mod.id;
+  // Open + autofocus Cancel (P3-2 — defensive default for destructive action).
+  const overlay = document.getElementById('settle-overlay');
+  if (overlay) overlay.classList.add('open');
+  // Defer focus to next frame so the overlay paint completes first.
+  requestAnimationFrame(() => {
+    const cancelBtn = document.getElementById('settle-modal-cancel');
+    if (cancelBtn) cancelBtn.focus();
+  });
+}
+
+/**
+ * Close without settling. Re-enables the source settleBtn (P2-1 fix — without
+ * this the button stays gray indefinitely until the card is rebuilt by sync).
+ */
+function closeSettleModal() {
+  const overlay = document.getElementById('settle-overlay');
+  if (overlay) overlay.classList.remove('open');
+  if (_pendingSettle && _pendingSettle.settleBtn) {
+    _pendingSettle.settleBtn.disabled = false;
+  }
+  _pendingSettle = null;
+}
+
+/**
+ * Confirm + run the actual settle flow. Closes the modal first (so the
+ * MetaMask popup doesn't stack on top of our confirm), then dispatches to
+ * _runSettle which contains the original click-handler body. _pendingSettle
+ * is captured locally because _runSettle's `finally` re-enables the button
+ * and we want to leave _pendingSettle == null during the await chain.
+ */
+async function confirmSettleModal() {
+  if (!_pendingSettle) { closeSettleModal(); return; }
+  const { mod, settleBtn } = _pendingSettle;
+  const overlay = document.getElementById('settle-overlay');
+  if (overlay) overlay.classList.remove('open');
+  // Do NOT call _pendingSettle.settleBtn.disabled = false here — _runSettle's
+  // finally re-enables it after the tx resolves/rejects.
+  _pendingSettle = null;
+  await _runSettle(mod, settleBtn);
+}
+
+/**
+ * The original settleBtn click handler body — pulled out so the confirm modal
+ * can dispatch to it. Owns the toast lifecycle + settleModulo invocation +
+ * result-dispatch (success / user-rejected / need-multi-owner / generic error).
+ * `settleBtn` is the SAME DOM reference passed through from the click handler
+ * (not a re-query), so the finally re-enables the exact button the user
+ * clicked. Reviewer P2-1 invariant.
+ */
+async function _runSettle(mod, settleBtn) {
+  if (settleBtn) settleBtn.disabled = true;
+  // Tx-pending feedback: settle takes 10-30s on Sepolia (sign + nonce
+  // read + attestSettle + signTypedData + submit + tx.wait). Without this
+  // toast the user sees a frozen disabled button and assumes the click was lost.
+  const _toast = _showToast('Settling…', { sticky: true, sub: 'sign + submit + confirm' });
+  try {
+    const result = await settleModulo(mod.id);
+    if (_toast) _dismissToast(_toast);
+    if (!result.ok) {
+      if (result.reason === 'guest-readonly') {
+        // Unreachable in practice — guest is view-only (no workshop, no
+        // inventory, no draft, no locks). The check in settleModulo()
+        // remains as silent defense-in-depth in case a future refactor
+        // introduces an upstream UI bug; no toast/alert needed here.
+        dbg.warn('[settle] guest reached settleModulo — upstream bug');
+      } else if (result.reason === 'user-rejected-tx' || result.reason === 'user-rejected-sig' || result.reason === 'user-rejected-auth') {
+        // user-rejected-auth = Step 2a (settlerAuthSig, audit Chunk 3 2026-05-07)
+        // user-rejected-sig  = Step 3  (settlerSig for on-chain settle)
+        // user-rejected-tx   = Step 4  (final tx submission)
+        _showToast('Tx cancelled', { ttlMs: 2500 });
+        dbg.log('[settle]', mod.id, 'cancelled by user');
+      } else if (result.reason === 'need-multi-owner') {
+        // Race: another user's lock may have expired between openSettleModal
+        // pre-check and the actual CF call. Fall back to the same toast.
+        _showToast('Need ≥2 distinct wallets', {
+          sub: 'Shared modulo settle requires locks from at least 2 different users. (Workshop is solo, no minimum.)',
+          variant: 'warn',
+          ttlMs: 5000
+        });
+      } else {
+        const _msg = (result.err && (result.err.shortMessage || result.err.reason || result.err.message)) || result.reason;
+        _showToast('Settle failed', { sub: String(_msg).slice(0, 80), variant: 'error', ttlMs: 6000 });
+        dbg.warn('[settle]', mod.id, result.reason, result.err || '');
+      }
+    } else {
+      _showToast('Settle confirmed ✓', { ttlMs: 3000 });
+    }
+  } catch (err) {
+    if (_toast) _dismissToast(_toast);
+    console.error('[settle] unexpected', err);
+    _showToast('Settle error', { sub: String((err && (err.shortMessage || err.message)) || err).slice(0, 80), variant: 'error', ttlMs: 6000 });
+  } finally {
+    if (settleBtn) settleBtn.disabled = false;
+  }
+}
+
+// Wire settle-modal buttons + Esc.
+(function wireSettleModal() {
+  const cancel  = document.getElementById('settle-modal-cancel');
+  const confirm = document.getElementById('settle-modal-confirm');
+  const overlay = document.getElementById('settle-overlay');
+  if (cancel)  cancel.addEventListener('click',  e => { e.stopPropagation(); closeSettleModal(); });
+  if (confirm) confirm.addEventListener('click', e => { e.stopPropagation(); confirmSettleModal(); });
+  if (overlay) overlay.addEventListener('click', e => {
+    // Click on the backdrop (outside the modal body) dismisses — same as Cancel.
+    if (e.target === overlay) closeSettleModal();
+  });
+  // ESC dismisses, capture phase + stopImmediatePropagation so sibling
+  // capture-phase Esc listeners (lock-modal, MA) don't ALSO fire (reviewer P1-1).
+  // Yield to higher-priority overlays (artifact-expand / ONCHAIN / DETAILS).
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && overlay && overlay.classList.contains('open')) {
+      if (typeof _artifactExpandOpenId !== 'undefined' && _artifactExpandOpenId !== null) return;
+      if (typeof _artifactOnchainModal !== 'undefined' && _artifactOnchainModal &&
+          _artifactOnchainModal.classList.contains('active')) return;
+      if (typeof _artifactDetailsPopup !== 'undefined' && _artifactDetailsPopup &&
+          _artifactDetailsPopup.classList.contains('visible')) return;
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      closeSettleModal();
     }
   }, true);
 })();
