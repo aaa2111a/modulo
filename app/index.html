@@ -1595,7 +1595,11 @@ button, a, [role="button"], .pill, .info-btn, .toggle-btn, .modal-close,
 .ma-card-canvas-wrap {
   position:relative;
   aspect-ratio:9/5;
-  background:var(--anim-panel-bg);
+  /* Wrap bg matches collection's `.mod-canvas-wrap` pattern: light surface
+     so the dark spinner contrasts. iframe paints over this with its own
+     dark bg from the srcdoc reset injection — brief flash of light is
+     acceptable (same UX as collection). */
+  background:var(--node-bg-solid);
   overflow:hidden;
 }
 .ma-card-iframe {
@@ -1656,23 +1660,23 @@ button, a, [role="button"], .pill, .info-btn, .toggle-btn, .modal-close,
 /* Card loading placeholder + spinner (port from collection's `.card-loading`
    + `.card-spinner`). Shown inside `.ma-card-canvas-wrap` until the iframe
    srcdoc mounts. 12-spoke macOS-style spinner with stepped rotation. */
+/* Loading overlay + spinner — port from collection's `.card-loading` +
+   `.card-spinner` exactly. Wrap bg is now `--node-bg-solid` (light/dark
+   theme-aware), so the dim overlay + dark spinner color give the same
+   visual as collection. */
 .ma-card-loading {
   position:absolute; inset:0;
   display:flex; align-items:center; justify-content:center;
-  background:transparent; /* wrap already has --anim-panel-bg dark — no overlay needed */
+  background:rgba(0,0,0,0.05);
   z-index:1;
 }
+body.night .ma-card-loading { background:rgba(255,255,255,0.04); }
 .ma-card-spinner {
   width:22px; height:22px;
-  /* Fixed light color because `.ma-card-canvas-wrap` bg is always dark
-     (`--anim-panel-bg` = #0e0e0e day / #080808 night) regardless of theme.
-     `var(--sl)` was dark-on-dark in day mode → invisible (Le 2026-05-11). */
-  color:rgba(255,255,255,0.55);
+  color:var(--sl);
   animation:ma-card-spinner-rotate 1.05s steps(12, end) infinite;
 }
-/* Bigger version used inside the loading banner above the text — that
-   one IS over the modal-body bg (var(--node-bg-solid), theme-dependent),
-   so it uses the theme-aware --sl color. */
+/* Bigger version inside the modal-body loading banner above the text. */
 #my-artifacts-loading .ma-card-spinner {
   width:28px; height:28px;
   color:var(--sl);
