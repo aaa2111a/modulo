@@ -1659,16 +1659,20 @@ button, a, [role="button"], .pill, .info-btn, .toggle-btn, .modal-close,
 .ma-card-loading {
   position:absolute; inset:0;
   display:flex; align-items:center; justify-content:center;
-  background:rgba(0,0,0,0.05);
+  background:transparent; /* wrap already has --anim-panel-bg dark — no overlay needed */
   z-index:1;
 }
-body.night .ma-card-loading { background:rgba(255,255,255,0.04); }
 .ma-card-spinner {
   width:22px; height:22px;
-  color:var(--sl);
+  /* Fixed light color because `.ma-card-canvas-wrap` bg is always dark
+     (`--anim-panel-bg` = #0e0e0e day / #080808 night) regardless of theme.
+     `var(--sl)` was dark-on-dark in day mode → invisible (Le 2026-05-11). */
+  color:rgba(255,255,255,0.55);
   animation:ma-card-spinner-rotate 1.05s steps(12, end) infinite;
 }
-/* Bigger version used inside the loading banner above the text */
+/* Bigger version used inside the loading banner above the text — that
+   one IS over the modal-body bg (var(--node-bg-solid), theme-dependent),
+   so it uses the theme-aware --sl color. */
 #my-artifacts-loading .ma-card-spinner {
   width:28px; height:28px;
   color:var(--sl);
