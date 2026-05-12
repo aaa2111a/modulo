@@ -6,35 +6,89 @@
 <!-- Fix #4: CSP defence-in-depth. Trimmed vs app/index.html — about page does
      not use Firebase, gstatic, cloudfunctions. Allows: jsdelivr (ethers SDK),
      Sepolia RPCs (publicnode + sepolia.org for fallback), data:/blob: for the
-     inline SVG MODULO blur background. frame-ancestors 'none' is informational
-     only via meta tag — real enforcement requires HTTP header (Cloudflare). -->
+     inline SVG MODULO blur background. Clickjacking defense lives in
+     Cloudflare X-Frame-Options DENY HTTP header (Transform Rule
+     security-headers-modulo, deployed 2026-05-07) + JS frame-buster runtime
+     below. frame-ancestors directive removed from this meta 2026-05-10
+     because browsers ignore it when delivered via meta tag.
+
+     Hash-based inline allowlist (2026-05-10): replaces 'unsafe-inline' with
+     SHA-256 hashes of the 6 inline blocks. See collection/index.html for
+     full rationale + recompute command.
+
+     Hashes (recomputed 2026-05-10 post innerHTML→createElement refactor —
+     frame-buster + deco-card builder + SVG trash icon):
+       script L48   frame-buster sha256-I9Yfcq7guXpscFi+G0+tohjedD6HTkxEQAMsmvRwWNM=
+       script L75   DEBUG wrapper sha256-A3ETGxrcp9DTjGzMeHPhzmYsPpIQYAylCdYHxrzxAos=
+       script L1727 (812B)        sha256-KjVWMhTuGbrm7UCORRBroU+iHvJEmhZBJglyBQ50lNQ=
+       script L2028 main mint     sha256-TzJnts+L4h00sfxSd8D3TrKgUzV0zBxwo8WkPW+PnPU=
+       script L3490 demoEngine    sha256-6F7b0Juy7qWeLSqKnqA2/2roBPfaTTp1HDMG+Hh6xNs=
+       style  L99   main CSS      sha256-dAAoDo2sWriyYphUxpC5//HacHuDrEzBzBPM21a+EJg=
+
+     KNOWN LIMITATION: frame-buster fallback (~L48) builds replacement body
+     via DOM element.style.cssText. Without 'unsafe-inline' in style-src those
+     inline styles are blocked → fallback unstyled in iframe-bust scenario
+     (rare; fallback text+link still readable). -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
-  script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net;
-  style-src 'self' 'unsafe-inline';
+  script-src 'self' 'sha256-I9Yfcq7guXpscFi+G0+tohjedD6HTkxEQAMsmvRwWNM=' 'sha256-A3ETGxrcp9DTjGzMeHPhzmYsPpIQYAylCdYHxrzxAos=' 'sha256-KjVWMhTuGbrm7UCORRBroU+iHvJEmhZBJglyBQ50lNQ=' 'sha256-TzJnts+L4h00sfxSd8D3TrKgUzV0zBxwo8WkPW+PnPU=' 'sha256-6F7b0Juy7qWeLSqKnqA2/2roBPfaTTp1HDMG+Hh6xNs=' https://cdn.jsdelivr.net;
+  style-src 'self' 'sha256-dAAoDo2sWriyYphUxpC5//HacHuDrEzBzBPM21a+EJg=';
   font-src 'self' data:;
   img-src 'self' data: blob:;
   connect-src 'self' https://rpc.sepolia.org https://ethereum-sepolia-rpc.publicnode.com;
-  frame-ancestors 'none';
   base-uri 'self';
   form-action 'self';
 ">
-<!-- Frame-buster: clickjacking defense for GitHub Pages where we can't send
-     X-Frame-Options or CSP frame-ancestors as headers (only via meta, ignored
-     by browsers). Critical here because of the mint flow + wallet connect. -->
+<!-- Frame-buster: clickjacking defense runtime fallback. Cloudflare Transform
+     Rule security-headers-modulo (deployed 2026-05-07) sends X-Frame-Options:
+     DENY as HTTP header — primary defense. This JS buster activates if the
+     Cloudflare layer is bypassed (IP-direct GitHub Pages access, cached
+     response without header, etc.). Critical here: page has mint flow +
+     wallet connect. frame-ancestors removed from meta CSP 2026-05-10 because
+     browsers ignore it there (was generating a console warning). -->
 <script>
+  // Frame-buster (same pattern as homepage L33). Refactored 2026-05-10 from
+  // innerHTML to createElement chain. `window.stop()` aborts pending parsing;
+  // `replaceChildren` wipes <head>+<body> defensively.
   if (window !== window.top) {
     try { window.top.location = window.location.href; } catch (_) {}
-    document.documentElement.innerHTML =
-      '<body style="background:#000;color:#fff;font-family:monospace;' +
-      'padding:40px;text-align:center"><h2>modulo</h2>' +
-      '<p>This page cannot be embedded in a frame. Open ' +
-      '<a href="https://modulo.ubk.art" style="color:#fff" target="_top" rel="noopener noreferrer">' +
-      'modulo.ubk.art</a> directly.</p></body>';
+    const body = document.createElement('body');
+    body.style.cssText = 'background:#000;color:#fff;font-family:monospace;padding:40px;text-align:center';
+    const h2 = document.createElement('h2');
+    h2.textContent = 'modulo';
+    body.appendChild(h2);
+    const p = document.createElement('p');
+    p.appendChild(document.createTextNode('This page cannot be embedded in a frame. Open '));
+    const a = document.createElement('a');
+    a.href = 'https://modulo.ubk.art';
+    a.style.color = '#fff';
+    a.target = '_top';
+    a.rel = 'noopener noreferrer';
+    a.textContent = 'modulo.ubk.art';
+    p.appendChild(a);
+    p.appendChild(document.createTextNode(' directly.'));
+    body.appendChild(p);
+    window.stop?.();
+    document.documentElement.replaceChildren(body);
     throw new Error('embedded in iframe — execution halted');
   }
 </script>
-<title>About</title>
+<script>
+  // ── DEBUG WRAPPER (global, mirrors app/index.html pattern) ─────────────────
+  // `dbg.log` and `dbg.warn` are no-ops in production (DEBUG=false).
+  // `console.error` is intentionally left untouched — real errors must always
+  // surface to the user / telemetry layer.
+  // To re-enable verbose logs during local debugging, flip DEBUG to true and
+  // reload. There is NO localStorage toggle by design (Opción B): the switch
+  // lives in the source so an attacker cannot enable internal logs from the
+  // client side. Exposed as window.dbg so subsequent IIFEs can reach it.
+  window.DEBUG = false;
+  window.dbg = {
+    log:  window.DEBUG ? console.log.bind(console)  : function () {},
+    warn: window.DEBUG ? console.warn.bind(console) : function () {},
+  };
+</script>
+<title>Mint</title>
 <!-- ethers v6 — same pinned version + SRI as app/index.html.
      Used only for the mint flow on this page; safe to remove if mint moves elsewhere. -->
 <script
@@ -44,6 +98,9 @@
   referrerpolicy="no-referrer"></script>
 <style>
 * { box-sizing:border-box; margin:0; padding:0; }
+/* SVG defs container — refactored from inline style="position:absolute"
+   2026-05-10 as part of CSP 'unsafe-inline' removal pass. */
+.svg-defs { position:absolute; }
 
 :root {
   --tbar-bg:      #c9c6c0;
@@ -233,7 +290,7 @@ html, body {
 .qty-val::selection { background:#000; color:#fff; }
 .qty-val::-moz-selection { background:#000; color:#fff; }
 .qty-cost {
-  font-size:9px; font-family:monospace;
+  font-size:18px; font-family:monospace;
   letter-spacing:.14em; text-transform:uppercase;
   color:var(--text-meta);
   text-align:center;
@@ -530,8 +587,21 @@ body.night .meta-mint.pre-mint .qty-btn { background:#444; }
   100% { transform:translateX(-100vw) translateY(-50%); opacity:0; }
 }
 .long-inner {
-  max-width:1200px; margin:0 auto;
-  display:grid; grid-template-columns:1fr 1fr; gap:40px;
+  /* No max-width cap — section uses the full viewport width. Text cols pinned
+     to original 580px (with graceful shrink to 280 on narrower viewports);
+     demo at 1007px in the middle. Texts pushed to the extremes via
+     `justify-content: space-between`, leftover viewport space distributes
+     as breathing room around the demo.
+
+     Why 1007px: the app modulo card is 700×418 in source but RENDERED at
+     ~1259×752 due to the world's zoom scale (~1.8x — Le's measurement).
+     20% smaller of rendered size: 1259×752 × 0.8 = 1007×602. */
+  max-width:none;
+  margin:0 auto;
+  padding:0 40px;
+  display:grid;
+  grid-template-columns:minmax(280px, 580px) 1007px minmax(280px, 580px);
+  justify-content:space-between;
   align-items:start;
   position:relative; z-index:1;
 }
@@ -540,6 +610,844 @@ body.night .meta-mint.pre-mint .qty-btn { background:#444; }
 }
 /* Right column drops down so the eye reads the left column first, then the right. */
 .long-col:last-child { margin-top:180px; }
+
+/* ── Demo center column — interactive 1-modulo + inventory + settle ──────────
+   Sized 1007×602 — 20% smaller than the app's RENDERED card (~1259×752 per
+   Le's measurement, after the world zoom of ~1.8x). Aspect ≈ 5:3 preserved.
+
+   Sticky vertical-center via transform — `top:50vh` + `translateY(-50%)`
+   keeps the demo at viewport vertical center while the user scrolls through
+   the long-section.
+
+   The card itself is rendered at the app's NATIVE 700×418 size and scaled up
+   via CSS `transform: scale(1.439)` (= 1007/700) so internal pixel values
+   match the app source 1:1. Same trick the app uses with world-zoom.
+*/
+.long-demo {
+  position:sticky;
+  top:50vh;
+  transform:translateY(-50%);
+  width:1007px; height:602px;
+}
+.demo-scale-wrap {
+  width:700px; height:418px;
+  transform:scale(1.439);
+  transform-origin:top left;
+}
+
+/* ── Demo theme tokens — EXACT mirror of app's :root and body.night vars.
+     Scoped to .long-demo so they don't leak into the rest of the about page. ─ */
+.long-demo {
+  --demo-node-bg:rgba(219,216,209,0.97);
+  --demo-node-border:rgba(0,0,0,0.12);
+  --demo-tbar-bg:rgba(201,198,192,0.99);
+  --demo-tbar-border:rgba(0,0,0,0.07);
+  --demo-divider:rgba(0,0,0,0.08);
+  --demo-stats-title:rgba(0,0,0,0.52);
+  --demo-sl:rgba(0,0,0,0.35);
+  --demo-sv:rgba(0,0,0,0.78);
+  --demo-addr-color:rgba(0,0,0,0.38);
+  --demo-card-name:rgba(0,0,0,0.80);
+  --demo-row-hover:rgba(0,0,0,0.04);
+  --demo-row-active-bg:rgba(50,50,180,0.07);
+  --demo-row-active-border:rgba(50,50,180,0.22);
+  /* Anim-bg matches the empty-palette canvas color (rgb 209,207,199 — the
+     gray that paints when no tokens are placed; see L4997 setPalette empty
+     branch). Sub-pixel scaling at canvas edges could otherwise expose a dark
+     #0e0e0e seam against the light canvas content in empty state (Le
+     2026-05-10). During animation the canvas covers this bg fully, so this
+     change has no visible effect on the active animation state. */
+  --demo-anim-bg:rgb(209,207,199);
+  --demo-settle-bg:rgb(219,216,209);
+  --demo-settle-border:rgba(0,0,0,0.22);
+  --demo-settle-color:#5c5852;
+  --demo-settle-hbg:rgba(195,220,200,0.97);
+  --demo-settle-hborder:rgba(40,150,70,0.4);
+  --demo-settle-hcolor:#1e7a35;
+  --demo-shadow:0 24px 64px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.08);
+  /* Backwards-compat alias — older rules still reference --demo-cs-label */
+  --demo-cs-label:var(--demo-sl);
+}
+body.night .long-demo {
+  --demo-node-bg:rgba(30,30,30,0.94);
+  --demo-node-border:rgba(255,255,255,0.10);
+  --demo-tbar-bg:rgba(44,44,44,0.97);
+  --demo-tbar-border:rgba(255,255,255,0.06);
+  --demo-divider:rgba(255,255,255,0.07);
+  --demo-stats-title:rgba(255,255,255,0.52);
+  --demo-sl:rgba(255,255,255,0.32);
+  --demo-sv:rgba(255,255,255,0.80);
+  --demo-addr-color:rgba(255,255,255,0.30);
+  --demo-card-name:rgba(255,255,255,0.82);
+  --demo-row-hover:rgba(255,255,255,0.04);
+  --demo-row-active-bg:rgba(150,150,170,0.09);
+  --demo-row-active-border:rgba(150,150,170,0.26);
+  --demo-anim-bg:rgb(38,37,36); /* matches empty-palette night canvas color, see L4997 */
+  --demo-settle-bg:rgb(30,30,30);
+  --demo-settle-border:rgba(255,255,255,0.18);
+  --demo-settle-color:#a0a0a0;
+  --demo-settle-hbg:rgba(45,62,50,0.94);
+  --demo-settle-hborder:rgba(140,180,150,0.45);
+  --demo-settle-hcolor:#a8ccb2;
+  --demo-shadow:0 24px 64px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.30);
+}
+
+/* ── Modulo card (700×418 native; scaled via .demo-scale-wrap) ───────────── */
+.demo-modulo-card {
+  width:700px; height:418px;
+  background:var(--demo-node-bg);
+  border:0.5px solid var(--demo-node-border);
+  border-radius:11px;
+  overflow:hidden;
+  box-shadow:var(--demo-shadow);
+  display:flex; flex-direction:column;
+}
+
+.demo-card-tbar {
+  flex:0 0 28px;
+  background:var(--demo-tbar-bg);
+  border-bottom:0.5px solid var(--demo-tbar-border);
+  display:flex; align-items:center; padding:0 10px; gap:5px;
+}
+/* Base .demo-dot — applies to all titlebars (modulo card, inventory, snapshot,
+   expand). Background is overridden per-context. */
+.demo-dot {
+  width:8px; height:8px;
+  border-radius:50%;
+  flex-shrink:0;
+  display:inline-block;
+}
+.demo-card-tbar .demo-dot {
+  background:#28c840;
+  cursor:pointer;
+  transition:transform 0.15s ease;
+}
+.demo-card-tbar .demo-dot:hover { transform:scale(1.25); }
+.demo-card-tbar-title {
+  font-size:10px; font-family:monospace;
+  color:var(--demo-stats-title);
+  letter-spacing:.03em;
+  margin-left:6px;
+}
+
+.demo-card-body {
+  flex:1;
+  display:flex;
+  min-height:0;
+}
+.demo-card-left {
+  flex:0 0 47%;
+  display:flex; flex-direction:column;
+  border-right:0.5px solid var(--demo-divider);
+  overflow:hidden;
+}
+.demo-card-right {
+  flex:1;
+  position:relative;
+  background:var(--demo-anim-bg);
+  overflow:hidden;
+}
+.demo-card-canvas {
+  position:absolute; inset:0;
+  width:100%; height:100%;
+  display:block;
+  image-rendering:pixelated;
+  image-rendering:crisp-edges;
+}
+
+/* Settle button — bottom-right of right panel */
+.demo-card-settle-btn {
+  position:absolute; right:11px; bottom:11px;
+  display:inline-flex; align-items:center; gap:5px;
+  padding:5px 8px;
+  border-radius:6px;
+  border:0.5px solid var(--demo-settle-border);
+  background:var(--demo-settle-bg);
+  color:var(--demo-settle-color);
+  font-family:monospace; font-size:10px;
+  cursor:pointer;
+  box-shadow:0 2px 6px rgba(0,0,0,0.18);
+  transition:background 0.18s, border-color 0.18s, color 0.18s, opacity 0.18s;
+}
+.demo-card-settle-btn:disabled {
+  opacity:0.4; cursor:not-allowed;
+}
+.demo-card-settle-btn .demo-settle-txt {
+  font-family:'Times New Roman', Times, serif;
+  font-size:9px; font-weight:200;
+  letter-spacing:.07em;
+  text-transform:uppercase;
+}
+.demo-card-settle-btn .demo-settle-sq {
+  width:6px; height:6px;
+  background:currentColor;
+  display:inline-block;
+}
+.demo-card-settle-btn:not(:disabled):hover {
+  background:var(--demo-settle-hbg);
+  border-color:var(--demo-settle-hborder);
+  color:var(--demo-settle-hcolor);
+}
+
+/* Left side — header + stats row + token list + add row */
+.demo-modulo-header {
+  flex:0 0 auto;
+  padding:14px 15px 8px;
+  position:relative;
+}
+.demo-modulo-name {
+  font-family:'Times New Roman', Times, serif;
+  font-size:32px; font-weight:200;
+  color:var(--demo-card-name);
+  letter-spacing:.02em;
+  margin-bottom:8px;
+}
+.demo-stats-row {
+  display:flex; gap:10px; flex-wrap:wrap;
+  font-family:monospace;
+}
+.demo-cs-item {
+  display:flex; flex-direction:column;
+  gap:1px;
+}
+.demo-cs-label {
+  font-size:7.5px;
+  text-transform:uppercase;
+  letter-spacing:.07em;
+  color:var(--demo-sl);
+  font-family:monospace;
+}
+.demo-cs-value {
+  font-family:'Times New Roman', Times, serif;
+  font-size:16px; font-weight:500;
+  color:var(--demo-sv);
+  letter-spacing:-.01em;
+}
+/* Randomize-all button — small empty circular dot bottom-right of header.
+   Matches app's `.stats-randomize-btn` (6×6 circle, no glyph inside, just the
+   ring; hover changes color, active scales, .spin keyframe rotates 360°). */
+.demo-stats-randomize-btn {
+  position:absolute;
+  right:8px; bottom:6px;
+  width:6px; height:6px;
+  border-radius:50%;
+  background:var(--demo-node-bg);
+  border:0.5px solid var(--demo-sl);
+  color:var(--demo-sl);
+  padding:0;
+  cursor:pointer;
+  transition:color 120ms ease, border-color 120ms ease, transform 120ms ease;
+  user-select:none;
+}
+.demo-stats-randomize-btn:hover {
+  color:var(--demo-sv);
+  border-color:var(--demo-tbar-border);
+}
+.demo-stats-randomize-btn:active { transform:scale(0.92); }
+.demo-stats-randomize-btn.spin { animation: demo-stats-rand-spin 600ms ease; }
+@keyframes demo-stats-rand-spin {
+  from { transform:rotate(0deg); }
+  to   { transform:rotate(360deg); }
+}
+
+.demo-token-list {
+  flex:1;
+  overflow-y:auto;
+  border-top:0.5px solid var(--demo-divider);
+}
+.demo-token-list::-webkit-scrollbar { width:3px; }
+.demo-token-list::-webkit-scrollbar-thumb { background:var(--demo-divider); }
+.demo-token-list-empty {
+  padding:24px 15px;
+  font-family:monospace; font-size:9px;
+  color:var(--demo-sl);
+  text-align:center;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+
+.demo-add-row {
+  flex:0 0 32px;
+  border-top:0.5px solid var(--demo-divider);
+  display:flex; align-items:center; justify-content:center;
+  font-family:monospace; font-size:14px;
+  color:var(--demo-sl);
+  cursor:pointer;
+  transition:background 0.18s, color 0.18s;
+}
+.demo-add-row:hover {
+  background:var(--demo-row-hover);
+  color:var(--demo-sv);
+}
+.demo-add-row.disabled {
+  opacity:0.3; cursor:not-allowed;
+}
+
+/* ── Inventory panel (slides in from the left of the demo modulo) ─────────
+   Sibling of .demo-scale-wrap inside .long-demo, so it sits at NATIVE 1x
+   scale (the scale-wrap is scaled 1.439x; the inventory is not — it lives
+   alongside, anchored to the modulo's left edge).
+
+   Le's call 2026-05-07: "el inventory si puede tapar la columna izquierda" —
+   so this overlays the long-col-left text when open. Matches app's floating
+   inventory-window pattern.
+*/
+.demo-inventory {
+  position:absolute;
+  top:0;
+  /* Right edge of inventory flush with left edge of modulo card — pegado,
+     no gap (Le's call 2026-05-07). */
+  right:100%;
+  width:240px;
+  max-height:600px;
+  background:var(--demo-node-bg);
+  border:0.5px solid var(--demo-node-border);
+  /* All 4 corners rounded — mirror app/'s `#inventory-window` pattern
+     (Le 2026-05-10: replaces previous "only left rounded" design which
+     looked broken because the right edge's sharp corners weren't visually
+     anchored to anything when the inventory pegado against the modulo
+     card's own rounded corners). Asymmetric shadow (left/top/bottom only)
+     prevents the shadow bleeding into the modulo card on the right. */
+  border-radius:8px;
+  box-shadow:-12px 24px 64px rgba(0,0,0,0.18), -2px 4px 8px rgba(0,0,0,0.08);
+  display:flex; flex-direction:column;
+  opacity:0;
+  pointer-events:none;
+  transform:translateX(8px);
+  transition:opacity 0.22s ease, transform 0.22s ease;
+  z-index:5;
+}
+body.night .demo-inventory {
+  box-shadow:-12px 24px 64px rgba(0,0,0,0.55), -2px 4px 8px rgba(0,0,0,0.30);
+}
+.demo-inventory.open {
+  opacity:1;
+  pointer-events:auto;
+  transform:translateX(0);
+}
+.demo-inv-tbar {
+  flex:0 0 28px;
+  background:var(--demo-tbar-bg);
+  border-bottom:0.5px solid var(--demo-tbar-border);
+  border-radius:8px 8px 0 0; /* match parent — top corners rounded both sides */
+  display:flex; align-items:center; padding:0 10px; gap:6px;
+}
+.demo-inv-tbar .demo-dot.demo-dot-r {
+  background:#ff5f57;
+  cursor:pointer;
+}
+.demo-inv-tbar-title {
+  font-family:monospace; font-size:10px;
+  color:var(--demo-stats-title);
+  letter-spacing:.03em;
+  margin-left:4px;
+}
+.demo-inv-header {
+  flex:0 0 auto;
+  padding:8px 12px;
+  border-bottom:0.5px solid var(--demo-divider);
+  display:flex; align-items:center; justify-content:space-between;
+  font-family:monospace; font-size:9px;
+  color:var(--demo-sl);
+  letter-spacing:.06em;
+  text-transform:uppercase;
+}
+.demo-inv-count { font-weight:400; }
+.demo-inv-grid {
+  flex:1;
+  overflow-y:auto;
+  padding:0;
+}
+.demo-inv-grid::-webkit-scrollbar { width:3px; }
+.demo-inv-grid::-webkit-scrollbar-thumb { background:var(--demo-divider); }
+
+.demo-inv-tile {
+  display:flex; align-items:center;
+  padding:7px 12px;
+  gap:8px;
+  border-bottom:0.5px solid var(--demo-divider);
+  cursor:pointer;
+  transition:background 120ms ease;
+  font-family:monospace;
+}
+.demo-inv-tile:hover { background:var(--demo-row-hover); }
+.demo-inv-tile.placed {
+  opacity:0.3;
+  pointer-events:none;
+}
+.demo-inv-tile-id {
+  font-size:9px;
+  color:var(--demo-sl);
+  min-width:36px;
+}
+.demo-inv-tile-swatch {
+  width:11px; height:11px;
+  border-radius:50%;
+  border:0.5px solid var(--demo-node-border);
+  flex-shrink:0;
+}
+.demo-inv-tile-tags {
+  display:flex; gap:4px;
+  margin-left:auto;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+}
+/* Match app's .tr-tag (lines 868) */
+.demo-inv-tile-tag {
+  font-size:8px;
+  padding:1px 4px;
+  border:0.5px solid var(--demo-node-border);
+  border-radius:4px;
+  color:var(--demo-addr-color);
+  letter-spacing:.04em;
+}
+
+/* Empty state when all 20 tokens placed */
+.demo-inv-empty {
+  padding:24px 16px;
+  text-align:center;
+  font-family:monospace; font-size:9px;
+  color:var(--demo-sl);
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+
+/* ── Placed token row (inside .demo-card-left .demo-token-list) ────────── */
+.demo-token-row {
+  display:flex; flex-direction:column;
+  border-bottom:0.5px solid var(--demo-divider);
+  font-family:monospace;
+}
+.demo-token-row:last-child { border-bottom:none; }
+.demo-token-row-head {
+  display:flex; align-items:center;
+  padding:6px 24px 6px 15px;
+  gap:8px;
+  cursor:pointer;
+  transition:background 120ms ease;
+  position:relative;
+}
+.demo-token-row-head:hover { background:var(--demo-row-hover); }
+.demo-token-row.expanded .demo-token-row-head {
+  background:var(--demo-row-active-bg);
+  border-left:2px solid var(--demo-row-active-border);
+  padding-left:13px;
+}
+.demo-token-row-rank {
+  font-size:9px;
+  color:var(--demo-sl);
+  min-width:32px;
+}
+.demo-token-row-swatch {
+  width:11px; height:11px;
+  border-radius:50%;
+  border:0.5px solid var(--demo-node-border);
+  flex-shrink:0;
+}
+.demo-token-row-tags {
+  display:flex; gap:4px;
+  margin-left:auto;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+}
+.demo-token-row-arrow {
+  position:absolute;
+  right:8px;
+  font-size:7px;
+  color:var(--demo-addr-color);
+  transition:transform 180ms ease;
+  pointer-events:none;
+}
+
+/* Per-token randomize button — sits between tags and arrow in the row head.
+   Mirror of app's `.tr-rand` (line 869). 15×15 circle, hover rotates -180°. */
+.demo-tr-rand {
+  width:15px; height:15px;
+  border-radius:50%;
+  border:0.5px solid var(--demo-node-border);
+  background:transparent;
+  color:var(--demo-addr-color);
+  font-size:11px; line-height:1;
+  cursor:pointer;
+  display:inline-flex; align-items:center; justify-content:center;
+  flex-shrink:0;
+  padding:0;
+  margin-left:4px;
+  transition:background 0.15s, color 0.15s, transform 0.35s;
+}
+.demo-tr-rand:hover {
+  background:var(--demo-row-hover);
+  color:var(--demo-sv);
+  transform:rotate(-180deg);
+}
+.demo-token-row.expanded .demo-token-row-arrow {
+  transform:rotate(90deg);
+}
+/* ── Expanded trait editor — direct port of app's .tr-traits structure ────
+   Same class names with `demo-` prefix. Values copied verbatim from app
+   (lines 758-940) so the editor looks pixel-identical to the app's. */
+.demo-token-row-body {
+  position:relative;
+  display:none;
+  padding:5px 15px 9px 24px;
+}
+.demo-token-row.expanded .demo-token-row-body {
+  display:block;
+}
+
+/* Identity row at top of expanded body — ID + RANK + trash button.
+   Matches app's `.tr-ident` (lines 950-958). */
+.demo-tr-ident {
+  display:flex; align-items:center; gap:6px;
+  padding:4px 0 8px;
+  border-bottom:0.5px solid var(--demo-divider);
+  margin-bottom:5px;
+}
+.demo-tr-ident-label {
+  font-size:7.5px; font-family:monospace;
+  color:var(--demo-sl);
+  letter-spacing:.07em;
+  text-transform:uppercase;
+}
+.demo-tr-ident-val {
+  font-size:9px; font-family:monospace;
+  color:var(--demo-sv);
+  letter-spacing:.02em;
+}
+.demo-tr-ident-sep {
+  font-size:8px;
+  color:var(--demo-sl);
+  opacity:.5;
+}
+.demo-tr-ident + .demo-tg { border-top:none; }
+
+/* Trash button — flush right inside .demo-tr-ident. Matches app's `.tr-trash`
+   (lines 894-912). 16×16 button with SVG bin icon, red on hover. */
+.demo-tr-trash {
+  margin-left:auto;
+  width:16px; height:16px;
+  display:flex; align-items:center; justify-content:center;
+  background:transparent;
+  border:0.5px solid var(--demo-divider);
+  border-radius:3px;
+  color:var(--demo-sl);
+  cursor:pointer;
+  transition:background 0.15s, color 0.15s, border-color 0.15s;
+  padding:0;
+}
+.demo-tr-trash:hover {
+  background:var(--demo-row-hover);
+  color:#ff5f57;
+  border-color:#ff5f57;
+}
+.demo-tr-trash svg { display:block; }
+
+/* Collapsible group (Color / DT / etc.) */
+.demo-tg { border-top:0.5px solid var(--demo-divider); }
+.demo-token-row-body > .demo-tg:first-child { border-top:none; }
+.demo-tg-hdr {
+  display:flex; align-items:center; gap:5px;
+  padding:4px 0;
+  cursor:pointer;
+  user-select:none;
+}
+.demo-tg-name {
+  font-size:7.5px; font-family:monospace;
+  color:var(--demo-sl);
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.demo-tg-arrow {
+  font-size:7px;
+  color:var(--demo-sl);
+  display:inline-block;
+  transition:transform .15s;
+}
+.demo-tg-arrow.open { transform:rotate(90deg); }
+.demo-tg-body {
+  display:none;
+  flex-direction:column;
+  gap:2px;
+  padding-top:4px;
+  padding-bottom:5px;
+  padding-left:4px;
+}
+.demo-tg-body.open { display:flex; }
+
+/* Trait line (label + buttons or controls) */
+.demo-tr-trait-line {
+  display:flex; align-items:center;
+  gap:6px;
+  margin-bottom:5px;
+}
+.demo-tr-trait-line:last-child { margin-bottom:0; }
+.demo-tr-trait-label {
+  font-size:7px;
+  color:var(--demo-sl);
+  font-family:monospace;
+  letter-spacing:.05em;
+  flex-shrink:0;
+}
+
+/* dlang-btns row + button */
+.demo-dlang-btns {
+  display:flex; gap:4px;
+  flex-wrap:wrap;
+}
+.demo-dlang-btn {
+  font-size:7px; font-family:monospace;
+  padding:2px 5px;
+  border:0.5px solid var(--demo-divider);
+  background:transparent;
+  color:var(--demo-sl);
+  cursor:pointer;
+  border-radius:2px;
+  letter-spacing:.05em;
+}
+.demo-dlang-btn.active {
+  background:var(--demo-row-active-bg);
+  color:var(--demo-sv);
+  border-color:var(--demo-row-active-border);
+}
+
+/* Color picker — column of rows of 13×13 dots with inner .cdot-bg circle */
+.demo-tr-colors-inline {
+  display:flex; flex-direction:column;
+  gap:4px;
+}
+.demo-tr-colors-row {
+  display:flex; gap:4px;
+}
+.demo-cdot {
+  width:13px; height:13px;
+  flex-shrink:0;
+  cursor:pointer;
+  transition:opacity 0.1s;
+  position:relative;
+}
+.demo-cdot-bg {
+  position:absolute; inset:0;
+  border-radius:50%;
+  border:1.5px solid transparent;
+  transition:transform 0.1s, border-color 0.15s;
+}
+.demo-cdot:hover .demo-cdot-bg { transform:scale(1.18); }
+.demo-cdot.sel .demo-cdot-bg { border-color:rgba(0,0,0,0.55); }
+.demo-cdot.black .demo-cdot-bg { border-color:rgba(255,255,255,0.4); }
+body.night .demo-cdot.sel .demo-cdot-bg { border-color:rgba(255,255,255,0.85); }
+
+/* Speed slider — thin 2px track + 8px circular thumb */
+.demo-speed-slider {
+  -webkit-appearance:none; appearance:none;
+  height:2px;
+  flex:1;
+  min-width:60px;
+  background:var(--demo-divider);
+  border-radius:1px;
+  outline:none;
+  cursor:pointer;
+}
+.demo-speed-slider::-webkit-slider-thumb {
+  -webkit-appearance:none;
+  width:8px; height:8px;
+  border-radius:50%;
+  background:var(--demo-sv);
+  cursor:pointer;
+}
+.demo-speed-slider::-moz-range-thumb {
+  width:8px; height:8px;
+  border-radius:50%;
+  background:var(--demo-sv);
+  border:none;
+  cursor:pointer;
+}
+.demo-speed-val {
+  font-size:7.5px; font-family:monospace;
+  color:var(--demo-sv);
+  min-width:14px;
+}
+
+/* ── Settle snapshot modal (2G) ─────────────────────────────────────────────
+   Full-screen overlay that appears when SETTLE is clicked. Shows a frozen
+   snapshot of the current modulo canvas — the educational analog of the
+   artifact NFT that would be minted on a real settle. "Try again" resets
+   the placed tokens so the user can keep exploring.
+
+   Lives at the document root (not inside .long-demo) so it overlays the
+   entire viewport rather than being clipped by any parent transform / overflow.
+*/
+.demo-snapshot-overlay {
+  position:fixed; inset:0;
+  background:rgba(0,0,0,0.92);
+  backdrop-filter:blur(8px);
+  -webkit-backdrop-filter:blur(8px);
+  display:none;
+  align-items:center; justify-content:center;
+  z-index:2000;
+  opacity:0;
+  transition:opacity 0.22s ease;
+}
+.demo-snapshot-overlay.open {
+  display:flex;
+  opacity:1;
+}
+.demo-snapshot-modal {
+  /* 3× the previous size (560 → ~1680, capped at 92vw for narrower viewports). */
+  width:min(1680px, 92vw);
+  max-height:92vh;
+  /* Fully opaque so the overlay's backdrop blur doesn't bleed through
+     the 0.97-alpha node-bg into the modal content. */
+  background:rgb(219,216,209);
+  border:0.5px solid var(--demo-node-border);
+  border-radius:11px;
+  overflow:hidden;
+  box-shadow:0 24px 64px rgba(0,0,0,0.5);
+  display:flex; flex-direction:column;
+}
+body.night .demo-snapshot-modal {
+  background:rgb(30,30,30);
+}
+.demo-snapshot-tbar {
+  flex:0 0 28px;
+  background:var(--demo-tbar-bg);
+  border-bottom:0.5px solid var(--demo-tbar-border);
+  display:flex; align-items:center; padding:0 10px; gap:6px;
+}
+.demo-snapshot-tbar .demo-dot.demo-dot-r {
+  background:#ff5f57;
+  cursor:pointer;
+}
+.demo-snapshot-title {
+  font-family:monospace; font-size:10px;
+  color:var(--demo-stats-title);
+  letter-spacing:.03em;
+  margin-left:4px;
+}
+.demo-snapshot-body {
+  padding:20px 24px 24px;
+  display:flex; flex-direction:column;
+  gap:14px;
+  align-items:center;
+  overflow-y:auto;
+}
+.demo-snapshot-canvas-wrap {
+  width:100%;
+  /* 3× canvas — was 500, now 1500. Capped to fit inside the modal. */
+  max-width:1500px;
+  /* Wider 5:3 framing — same aspect as the modulo CARD (700×418). The
+     snapshot canvas renders a wider slice of the grid (100×60 cells vs
+     the live canvas's 61×65), which feels more "artifact-like". */
+  aspect-ratio:5 / 3;
+  background:#0e0e0e;
+  border-radius:8px;
+  overflow:hidden;
+  position:relative;
+}
+body.night .demo-snapshot-canvas-wrap {
+  background:#080808;
+}
+.demo-snapshot-canvas-wrap canvas {
+  position:absolute; inset:0;
+  width:100%; height:100%;
+  display:block;
+  image-rendering:pixelated;
+  image-rendering:crisp-edges;
+}
+.demo-snapshot-info {
+  text-align:center;
+  font-family:monospace;
+  color:var(--demo-stats-title);
+}
+.demo-snapshot-info p {
+  margin:0 0 4px;
+  font-size:12px;
+  letter-spacing:.02em;
+}
+.demo-snapshot-info p:last-child { margin-bottom:0; }
+.demo-snapshot-meta {
+  font-size:10px !important;
+  color:var(--demo-cs-label) !important;
+  letter-spacing:.06em !important;
+  text-transform:uppercase;
+  margin-top:8px !important;
+}
+.demo-snapshot-tryagain {
+  padding:9px 24px;
+  border-radius:6px;
+  border:0.5px solid var(--demo-settle-border);
+  background:var(--demo-settle-bg);
+  color:var(--demo-settle-color);
+  font-family:'Times New Roman', Times, serif;
+  font-size:11px; font-weight:200;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  cursor:pointer;
+  transition:background 0.18s, border-color 0.18s, color 0.18s;
+}
+.demo-snapshot-tryagain:hover {
+  background:#d8e8c8;
+  border-color:#5a8a3a;
+  color:#3a5a20;
+}
+
+/* ── Expand modal (green dot click) — fullscreen view of live canvas ─────── */
+.demo-expand-overlay {
+  position:fixed; inset:0;
+  background:rgba(0,0,0,0.92);
+  backdrop-filter:blur(8px);
+  -webkit-backdrop-filter:blur(8px);
+  display:none;
+  align-items:center; justify-content:center;
+  z-index:1900;
+  opacity:0;
+  transition:opacity 0.22s ease;
+}
+.demo-expand-overlay.open {
+  display:flex;
+  opacity:1;
+}
+.demo-expand-modal {
+  width:min(92vw, 1280px);
+  max-height:92vh;
+  background:rgb(219,216,209);
+  border:0.5px solid var(--demo-node-border);
+  border-radius:11px;
+  overflow:hidden;
+  box-shadow:0 24px 64px rgba(0,0,0,0.5);
+  display:flex; flex-direction:column;
+}
+body.night .demo-expand-modal { background:rgb(30,30,30); }
+.demo-expand-tbar {
+  flex:0 0 28px;
+  background:var(--demo-tbar-bg);
+  border-bottom:0.5px solid var(--demo-tbar-border);
+  display:flex; align-items:center; padding:0 10px; gap:6px;
+}
+.demo-expand-tbar .demo-dot.demo-dot-r {
+  background:#ff5f57;
+  cursor:pointer;
+}
+.demo-expand-title {
+  font-family:monospace; font-size:10px;
+  color:var(--demo-stats-title);
+  letter-spacing:.03em;
+  margin-left:4px;
+}
+.demo-expand-canvas-wrap {
+  flex:1;
+  background:#0e0e0e;
+  position:relative;
+  min-height:50vh;
+  aspect-ratio:5/3;
+}
+body.night .demo-expand-canvas-wrap { background:#080808; }
+.demo-expand-canvas-wrap canvas {
+  position:absolute; inset:0;
+  width:100%; height:100%;
+  display:block;
+  image-rendering:pixelated;
+  image-rendering:crisp-edges;
+}
 
 .long-text {
   font-size:13px; font-family:monospace;
@@ -781,6 +1689,21 @@ body.night .specs-title      { color:rgba(255,255,255,0.78); }
 body.night .sys-diagram      { color:rgba(255,255,255,0.32); }
 body.night .sys-entry-label  { color:rgba(255,255,255,0.30); }
 
+/* Intermediate breakpoint — demo at 1007px needs ~1647px viewport for the
+   3-col layout to fit (1007 + 280×2 min text cols + 80 padding). Below that
+   the demo + texts can't coexist horizontally, so fall back to single col. */
+@media (max-width:1647px) {
+  .long-inner { grid-template-columns:1fr; gap:22px; }
+  .long-col:last-child { margin-top:0; }
+  .long-demo {
+    position:static;
+    transform:none;
+    width:100%; max-width:900px;
+    height:auto; aspect-ratio:5/3;
+    margin:0 auto;
+  }
+}
+
 @media (max-width:768px) {
   .page-header, .body-section, .specs-section { padding-left:24px; padding-right:24px; }
   .body-inner { grid-template-columns:1fr; }
@@ -788,8 +1711,8 @@ body.night .sys-entry-label  { color:rgba(255,255,255,0.30); }
   .left-col { padding-right:0; }
   .right-col { padding-left:0; }
   .body-text { columns:1; }
-  .long-inner { grid-template-columns:1fr; gap:22px; }
-  .long-col:last-child { margin-top:0; }
+  /* Demo cap shrinks further on small mobile so it doesn't dominate. */
+  .long-demo { max-width:480px; }
   .long-section {
     clip-path:none; -webkit-clip-path:none; padding-top:80px;
     border-top:0.5px solid var(--border-mid);
@@ -804,7 +1727,7 @@ body.night .sys-entry-label  { color:rgba(255,255,255,0.30); }
 <body>
 <!-- Folder-tab clip path for the long-section. Coords are fractions (0..1)
      of the section's bounding box so the shape scales with any height/width. -->
-<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<svg width="0" height="0" class="svg-defs" aria-hidden="true">
   <defs>
     <clipPath id="folder-clip" clipPathUnits="objectBoundingBox">
       <path d="M 0,0 L 0.44,0 C 0.48,0 0.48,0.055 0.54,0.055 L 1,0.055 L 1,1 L 0,1 Z" />
@@ -842,7 +1765,7 @@ body.night .sys-entry-label  { color:rgba(255,255,255,0.30); }
   <div class="tbar-left">
     <a class="tbar-back" href="../#app" title="back to home"></a>
   </div>
-  <span class="tbar-center">About</span>
+  <span class="tbar-center">Mint</span>
   <div class="tbar-right">
     <button class="tbar-night" id="night-toggle" title="toggle night mode"></button>
   </div>
@@ -934,6 +1857,89 @@ body.night .sys-entry-label  { color:rgba(255,255,255,0.30); }
       <p class="long-text">When a token is called, the contract doesn't return a URL. It builds the entire document on the fly, injecting each token's traits directly into the HTML, and returns it as a self-contained data URI that runs in the browser without a single external request.</p>
       <p class="long-text">There's no server that can go offline. No platform that can shut it down or change the rules. A call to any token will return the same engine, the same seed, the same behavior — in a year, in twenty years, under any condition short of the network itself disappearing. Permanence here isn't a promise. It's a property of how it's built.</p>
     </div>
+
+    <!-- ── Demo center column ─────────────────────────────────────────────
+         Interactive 1-modulo + inventory + settle popup. Visual structure
+         (Chunk 2A) — engine port + tokens + interactions land in 2B-2G.
+         The card itself is rendered at app NATIVE 700×418 inside .demo-scale-wrap
+         and scaled up to fill the 1007×602 cell via transform: scale(1.439).
+    -->
+    <div class="long-demo">
+      <div class="demo-scale-wrap">
+        <!-- Inventory panel — slides in from the LEFT when "+" is clicked.
+             Lives INSIDE .demo-scale-wrap so it picks up the same scale(1.439x)
+             as the modulo card. That way its dimensions match the app's
+             original inventory-window (240px native → ~345px on screen, the
+             same visual size as the app's inventory at its zoom of ~1.8x).
+        -->
+        <div class="demo-inventory" id="demo-inventory" aria-hidden="true">
+          <div class="demo-inv-tbar">
+            <span class="demo-dot demo-dot-r" id="demo-inv-close" title="Close inventory"></span>
+            <span class="demo-inv-tbar-title">inventory</span>
+          </div>
+          <div class="demo-inv-header">
+            <span class="demo-inv-count" id="demo-inv-count">20 / 20</span>
+          </div>
+          <div class="demo-inv-grid" id="demo-inv-grid"></div>
+        </div>
+        <div class="demo-modulo-card" id="demo-card">
+          <div class="demo-card-tbar">
+            <div class="demo-dot" id="demo-expand-trigger" title="Expand"></div>
+            <span class="demo-card-tbar-title"></span>
+          </div>
+          <div class="demo-card-body">
+            <div class="demo-card-left" id="demo-left">
+              <div class="demo-modulo-header">
+                <div class="demo-modulo-name">DEMO:STATS</div>
+                <div class="demo-stats-row">
+                  <div class="demo-cs-item">
+                    <span class="demo-cs-label">Tokens</span>
+                    <span class="demo-cs-value" id="demo-stat-tokens">0/8</span>
+                  </div>
+                  <div class="demo-cs-item">
+                    <span class="demo-cs-label">Colors</span>
+                    <span class="demo-cs-value" id="demo-stat-colors">0</span>
+                  </div>
+                  <div class="demo-cs-item">
+                    <span class="demo-cs-label">DT.Speed</span>
+                    <span class="demo-cs-value" id="demo-stat-speed">0</span>
+                  </div>
+                  <div class="demo-cs-item">
+                    <span class="demo-cs-label">DT.Size</span>
+                    <span class="demo-cs-value" id="demo-stat-size">—</span>
+                  </div>
+                  <div class="demo-cs-item">
+                    <span class="demo-cs-label">DT.Mode</span>
+                    <span class="demo-cs-value" id="demo-stat-mode">—</span>
+                  </div>
+                  <div class="demo-cs-item">
+                    <span class="demo-cs-label">R.Size</span>
+                    <span class="demo-cs-value" id="demo-stat-rsize">—</span>
+                  </div>
+                  <div class="demo-cs-item">
+                    <span class="demo-cs-label">R.Var</span>
+                    <span class="demo-cs-value" id="demo-stat-rvar">—</span>
+                  </div>
+                </div>
+                <button class="demo-stats-randomize-btn" id="demo-randomize-btn" title="Randomize all" aria-label="Randomize"></button>
+              </div>
+              <div class="demo-token-list" id="demo-tlist">
+                <div class="demo-token-list-empty">empty · drop tokens from inventory</div>
+              </div>
+              <div class="demo-add-row disabled" id="demo-add-btn" title="Add token from inventory">+</div>
+            </div>
+            <div class="demo-card-right">
+              <canvas class="demo-card-canvas" id="demo-canvas"></canvas>
+              <button class="demo-card-settle-btn" id="demo-settle-btn" disabled>
+                <span class="demo-settle-txt">SETTLE</span>
+                <span class="demo-settle-sq"></span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="long-col">
       <p class="long-text">When the mint window closes, ownership of the contract itself is renounced. From that block onward, no one — not even its author — can change a setting, swap a renderer, or alter behavior. What was provisional becomes fixed. The transaction that records the renunciation is part of the work as much as anything visible inside it.</p>
       <p class="long-text">Each token can be placed across the shared modulos or the owner's personal workshop (modulo 00) — up to eight per modulo, drawn one at a time from the owner's inventory. A token can only occupy one modulo at a time, and only its owner can place or remove it. Where it is placed is chosen. What that choice allows is not fixed. What can be done alone does not remain so.</p>
@@ -955,7 +1961,7 @@ body.night .sys-entry-label  { color:rgba(255,255,255,0.30); }
     <div class="sys-diagram-wrap"><pre class="sys-diagram">ETHEREUM                INTERFACE                 SYNC
 ───────────────────     ──────────────────       ──────────────────
 TokenAgent (ERC-721)     Web Application          Real-time layer
-  open supply             reads ownership          locks state
+  secret supply           reads ownership          locks state
   immutable seeds         reads token traits       activity stream
   on-chain rendering      composes modulos         presence
   EthFS storage           configures active        propagates within
@@ -1762,12 +2768,34 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
     for (let i = 0; i < names.length; i++) {
       const _el = document.createElement('div');
       _el.className = 'deco-card';
-      _el.innerHTML =
-        '<div class="deco-tbar">' +
-        _DDOTS.map(d => `<span class="deco-tbar-dot" style="background:${d}"></span>`).join('') +
-        `<span class="deco-tbar-label">${names[i]}</span>` +
-        '</div><div class="deco-canvas-wrap"><canvas class="deco-canvas"></canvas></div>';
+      // DOM construction via createElement (refactored 2026-05-10 from innerHTML).
+      // _DDOTS is a hardcoded hex array; names[i] a hardcoded category string.
+      const tbar = document.createElement('div');
+      tbar.className = 'deco-tbar';
+      _DDOTS.forEach(d => {
+        const dot = document.createElement('span');
+        dot.className = 'deco-tbar-dot';
+        dot.dataset.color = d;
+        tbar.appendChild(dot);
+      });
+      const lbl = document.createElement('span');
+      lbl.className = 'deco-tbar-label';
+      lbl.textContent = names[i];
+      tbar.appendChild(lbl);
+      const wrap = document.createElement('div');
+      wrap.className = 'deco-canvas-wrap';
+      const canvas = document.createElement('canvas');
+      canvas.className = 'deco-canvas';
+      wrap.appendChild(canvas);
+      _el.append(tbar, wrap);
       _dsec.appendChild(_el);
+      // Apply per-dot bg via JS-set element.style (NOT gated by CSP style-src,
+      // unlike inline style="" attrs in innerHTML strings). data-color carries
+      // the hex literal from _DDOTS hardcoded const (3 colors, 18-char strings).
+      // CSP 'unsafe-inline' removal pass 2026-05-10.
+      _el.querySelectorAll('.deco-tbar-dot[data-color]').forEach(dot => {
+        dot.style.background = dot.dataset.color;
+      });
 
       const _cv = _el.querySelector('.deco-canvas');
       const _cx = _cv.getContext('2d');
@@ -2011,7 +3039,12 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
     // Fix #5: chain-mismatch + Fix #3: cap-reached states surfaced via the
     // MINT button. Order of precedence: not connected → cap reached → wrong
     // chain → ready.
-    const wrongChain = _address && _chainId !== null && _chainId !== CHAIN_ID;
+    // 2026-05-08 fix: treat _chainId === null (chain detection in flight or
+    // failed silently post-reconnect) as wrong-chain. Otherwise the button
+    // renders "MINT" enabled while we have no proof the wallet is on Sepolia
+    // — user click would either prompt chain-switch (best case) or submit a
+    // tx on wrong chain that fails at the provider level (gas wasted).
+    const wrongChain = _address && (_chainId === null || _chainId !== CHAIN_ID);
     const capReached = _address && _quotaLoaded && _remaining === 0;
     if (_address) {
       _wlAddr.textContent = _short(_address);
@@ -2399,5 +3432,2515 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
   }
 })();
 </script>
+
+<!-- ── Expand modal — opens when the green titlebar dot is clicked.
+     Shows the live canvas at fullscreen size. The render loop paints the
+     same engine state to this canvas while the modal is open.
+-->
+<div class="demo-expand-overlay" id="demo-expand-overlay" aria-hidden="true">
+  <div class="demo-expand-modal">
+    <div class="demo-expand-tbar">
+      <span class="demo-dot demo-dot-r" id="demo-expand-close" title="Close"></span>
+      <span class="demo-expand-title">expand</span>
+    </div>
+    <div class="demo-expand-canvas-wrap">
+      <canvas id="demo-expand-canvas"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- ── Settle snapshot modal (2G) ────────────────────────────────────────────
+     Lives at the document root so it overlays the entire viewport. Hidden
+     until the SETTLE button is clicked.
+-->
+<div class="demo-snapshot-overlay" id="demo-snapshot-overlay" aria-hidden="true">
+  <div class="demo-snapshot-modal">
+    <div class="demo-snapshot-tbar">
+      <span class="demo-dot demo-dot-r" id="demo-snapshot-close" title="Close"></span>
+      <span class="demo-snapshot-title">artifact preview</span>
+    </div>
+    <div class="demo-snapshot-body">
+      <div class="demo-snapshot-canvas-wrap">
+        <canvas id="demo-snapshot-canvas"></canvas>
+      </div>
+      <div class="demo-snapshot-info">
+        <p>This snapshot is what a settle would mint as an artifact NFT.</p>
+        <p class="demo-snapshot-meta" id="demo-snapshot-meta">— tokens · — colors · —</p>
+      </div>
+      <button class="demo-snapshot-tryagain" id="demo-snapshot-tryagain">TRY AGAIN</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     DEMO ENGINE (Chunk 2B — engine core + 1 mode `feedback`)
+
+     Self-contained port of the cellular automaton engine from app/index.html.
+     Wrapped in an IIFE so nothing leaks to global scope.
+
+     Chunk 2B scope:
+       - Grid + double buffer (Uint8Array, GRID_COLS×GRID_ROWS)
+       - Pyramid color distribution (_palThresholds + _pickWeighted)
+       - One mode: feedback (4-neighbour majority vote with 5% pyramid reseed)
+       - Static test palette (3 colors) — wired to actual placed tokens in 2D/2E
+       - rAF loop driving step + render
+       - paintTo via ImageData
+
+     Subsequent chunks will add:
+       2C — other 7 modes + cycling + crossfade
+       2D — traits + per-modulo setters
+       2E — 20 tokens + inventory + click-place
+       2F — render layers (dither, rect-shift, BIOS)
+       2G — settle snapshot popup + try again
+═══════════════════════════════════════════════════════════════════════ -->
+<script>
+(function _demoEngine() {
+  // ── Constants (mirror app/index.html lines 4268-4270) ─────────────────────
+  const PIXEL     = 6;
+  const GRID_COLS = 450;
+  const GRID_ROWS = 250;
+  // Canvas natural size = card-right panel at NATIVE app scale (700×0.53 wide × 390 tall).
+  // CSS transform: scale(SCALE) on .demo-scale-wrap blows the whole card up to fit
+  // the 1007×602 grid cell. image-rendering: pixelated keeps the cells crisp.
+  const BASE_W = Math.round(700 * 0.53); // 371 ≈ card-right width
+  const BASE_H = 390;                     // card-right height (CARD_H 418 - tbar 28)
+  // Scale factor must stay in sync with `.demo-scale-wrap { transform: scale(...) }`
+  // CSS rule at L634. Derived from 1007/700 = 602/418 = 1.4385714... — the ratio
+  // that fits the 700×418 native card into the 1007×602 grid cell. Used to size
+  // the canvas bitmap to match POST-scale display pixels (mirror app/'s pattern
+  // at app/index.html L4371-L4378). Without this, `width:100%` on the canvas
+  // stretches a 366×390 native bitmap to 371×390 CSS, then the wrap transform
+  // scales to ~534×561 display → non-integer native→display ratio → uneven
+  // cells visible as a thin artifact at the right edge (Le 2026-05-10).
+  const SCALE = 1007/700;
+
+  const canvas = document.getElementById('demo-canvas');
+  if (!canvas) { dbg.warn('[demo] canvas not found'); return; }
+
+  // ── Visible slice — sized to POST-scale display pixels (not pre-scale CSS px).
+  // After CSS width:100% + transform:scale, the bitmap renders 1:1 with display
+  // pixels. visCols × visRows determines the world slice that's rendered;
+  // _applyDither (~L3673) iterates only this slice, no broader coupling.
+  const visCols = Math.min(Math.floor(Math.round(BASE_W * SCALE) / PIXEL), GRID_COLS);
+  const visRows = Math.min(Math.floor(Math.round(BASE_H * SCALE) / PIXEL), GRID_ROWS);
+  canvas.width  = visCols * PIXEL;
+  canvas.height = visRows * PIXEL;
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) { console.error('[demo] getContext failed'); return; }
+  ctx.imageSmoothingEnabled = false;
+
+  // ── Grid storage (double-buffered, full GRID_COLS×GRID_ROWS world) ────────
+  // App allocates the full world even though only a centered slice is rendered,
+  // so rect-shift / wave / shift modes work seamlessly across the wrap. We
+  // mirror that for engine fidelity.
+  let grid = new Uint8Array(GRID_COLS * GRID_ROWS);
+  let next = new Uint8Array(GRID_COLS * GRID_ROWS);
+
+  // ── Palette ────────────────────────────────────────────────────────────────
+  // Static test palette for 2B — 3 vivid colors so feedback mode is visually
+  // legible immediately. Real palette derives from placed tokens (2D/2E).
+  // Format: [[R,G,B], …] integers 0-255.
+  let PAL = [
+    [99, 99, 255],   // blue-violet  (#6363ff — vivid row 0)
+    [255, 0, 58],    // red          (#ff003a — vivid row 0)
+    [40, 200, 64],   // green        (#28c840 — vivid row 0)
+  ];
+
+  // Pyramid color distribution — lower index gets more cells. Counter-balances
+  // feedback's natural drift toward whichever color happens to dominate first.
+  // App lines 4388-4404 — same formula.
+  let _palThresholds = [];
+  function _recomputeThresholds(N) {
+    _palThresholds = new Array(N);
+    let wSum = 0;
+    const weights = new Array(N);
+    for (let k = 0; k < N; k++) {
+      const w = Math.pow(N - k, 1.5);
+      weights[k] = w; wSum += w;
+    }
+    let acc = 0;
+    for (let k = 0; k < N; k++) {
+      acc += weights[k] / wSum;
+      _palThresholds[k] = acc;
+    }
+  }
+  function _pickWeighted() {
+    const r = Math.random();
+    const N = _palThresholds.length;
+    for (let k = 0; k < N; k++) if (r < _palThresholds[k]) return k;
+    return N - 1;
+  }
+
+  // ── Toroidal index helper (app line 4461) ─────────────────────────────────
+  function idx(c, r) {
+    return ((r + GRID_ROWS) % GRID_ROWS) * GRID_COLS + ((c + GRID_COLS) % GRID_COLS);
+  }
+
+  // ── Rect spawner — size scaled by _sizeScale (hardcoded for 2B) ───────────
+  let _sizeScale = 1.0; // wired to traits in 2D
+  function makeRect() {
+    return {
+      x: Math.floor(Math.random() * GRID_COLS),
+      y: Math.floor(Math.random() * GRID_ROWS),
+      w: 2 + Math.floor(Math.random() * Math.max(1, Math.round(12 * _sizeScale))),
+      h: 2 + Math.floor(Math.random() * Math.max(1, Math.round( 6 * _sizeScale))),
+    };
+  }
+
+  // ── Shift mode hot zones (for shift + jungle modes) ───────────────────────
+  // App lines 4465-4489. Hot zones use _shiftZoneScale; rest uses _shiftBaseScale.
+  // Zones rotate every 1200 ops to keep the spatial intensity moving.
+  let _shiftBaseScale = 0.4; // wired to traits in 2D
+  let _shiftZoneScale = 1.0;
+  const _SHIFT_ZONE_R2 = Math.round(GRID_COLS * 0.12) ** 2;
+  let _shiftZones = [];
+  let _shiftZoneTimer = 0;
+  function _refreshShiftZones() {
+    const n = 3 + Math.floor(Math.random() * 2); // 3-4 zones
+    _shiftZones = Array.from({ length: n }, () => ({
+      cx: Math.floor(Math.random() * GRID_COLS),
+      cy: Math.floor(Math.random() * GRID_ROWS),
+    }));
+  }
+  _refreshShiftZones();
+
+  // ── Phase counters for time-dependent modes ────────────────────────────────
+  let _waveT = 0;     // wave mode (line 4536)
+  let _sectorT = 0;   // sector mode (line 4598)
+  let _blocksT = 0;   // blocks mode (line 4743)
+  const _BAYER2 = [[0, 2], [3, 1]]; // 2×2 ordered-dither matrix for sector quantize burst
+
+  // ── Blocks mode tuning (app line 2383, normally on window for tuning UI) ──
+  // Inlined for the demo — values match the user-tuned defaults from app.
+  const BLOCKS_TUNING = {
+    skipPct: 50, feedbackMix: 73, pBands: 87, pPeaks: 13,
+    bandShortMaxW: 47, bandMedMaxW: 1, bandLongMaxW: 1,
+    bandMaxH: 16, bandWaveAmp: 7,
+    peakMaxH: 17, peakBaseW: 2,
+    erosionMaxW: 18, erosionMaxH: 10,
+  };
+
+  // ── 2F-A: Dither (DX) — overlay patterns on rendered ImageData ───────────
+  // Direct port of app's _applyDither (lines 5703-5802). All 12 patterns +
+  // digit stamps + multi-composite + lego-stud blend supported.
+  // Target = PAL[0] (dominant color); mark color = PAL[1].
+
+  // Pattern coordinate arrays — each pattern is a list of [row, col] pixel
+  // offsets within a PIXEL×PIXEL (6×6) cell. App lines 2178-2194.
+  const DX_PATTERNS = {
+    x:        [[0,0],[0,5],[1,1],[1,4],[2,2],[2,3],[3,2],[3,3],[4,1],[4,4],[5,0],[5,5]],
+    plus:     [[0,2],[0,3],[1,2],[1,3],[2,0],[2,1],[2,2],[2,3],[2,4],[2,5],[3,0],[3,1],[3,2],[3,3],[3,4],[3,5],[4,2],[4,3],[5,2],[5,3]],
+    h:        [[2,0],[2,1],[2,2],[2,3],[2,4],[2,5],[3,0],[3,1],[3,2],[3,3],[3,4],[3,5]],
+    sq:       [[0,0],[0,1],[0,2],[0,3],[0,4],[0,5],[5,0],[5,1],[5,2],[5,3],[5,4],[5,5],[1,0],[2,0],[3,0],[4,0],[1,5],[2,5],[3,5],[4,5]],
+    // Internal — used only as components of the "m" multi pattern
+    tri:      [[1,2],[1,3],[2,1],[2,2],[2,3],[2,4],[3,1],[3,2],[3,3],[3,4],[4,0],[4,1],[4,2],[4,3],[4,4],[4,5]],
+    circle:   [[0,1],[0,2],[0,3],[0,4],[1,0],[1,5],[2,0],[2,5],[3,0],[3,5],[4,0],[4,5],[5,1],[5,2],[5,3],[5,4]],
+    diamond:  [[0,2],[0,3],[1,1],[1,4],[2,0],[2,5],[3,0],[3,5],[4,1],[4,4],[5,2],[5,3]],
+    checker:  [[0,0],[0,1],[0,4],[0,5],[1,0],[1,1],[1,4],[1,5],[2,2],[2,3],[3,2],[3,3],[4,0],[4,1],[4,4],[4,5],[5,0],[5,1],[5,4],[5,5]],
+    // 'o' lego-stud — small ring centered in 6×6, used with manual alpha-blend
+    legoStud: [[1,2],[1,3],[2,1],[2,4],[3,1],[3,4],[4,2],[4,3]],
+  };
+  const _DX_MULTI = ['tri','circle','diamond','checker'];
+
+  // Digit patterns — 5×7 font centered in 12×12 (offsets +2 row, +3 col).
+  // App lines 2199-2210.
+  const DX_DIGIT_PATTERNS = [
+    [[2,4],[2,5],[2,6],[3,3],[3,7],[4,3],[4,7],[5,3],[5,7],[6,3],[6,7],[7,3],[7,7],[8,4],[8,5],[8,6]], // 0
+    [[2,5],[3,4],[3,5],[4,5],[5,5],[6,5],[7,5],[8,4],[8,5],[8,6]],                                       // 1
+    [[2,4],[2,5],[2,6],[3,3],[3,7],[4,7],[5,6],[6,5],[7,4],[8,3],[8,4],[8,5],[8,6],[8,7]],               // 2
+    [[2,4],[2,5],[2,6],[3,3],[3,7],[4,7],[5,5],[5,6],[6,7],[7,3],[7,7],[8,4],[8,5],[8,6]],               // 3
+    [[2,6],[3,5],[3,6],[4,4],[4,6],[5,3],[5,6],[6,3],[6,4],[6,5],[6,6],[6,7],[7,6],[8,6]],               // 4
+    [[2,3],[2,4],[2,5],[2,6],[2,7],[3,3],[4,3],[5,3],[5,4],[5,5],[5,6],[6,7],[7,7],[8,3],[8,4],[8,5],[8,6]], // 5
+    [[2,4],[2,5],[2,6],[3,3],[4,3],[5,3],[5,4],[5,5],[5,6],[6,3],[6,7],[7,3],[7,7],[8,4],[8,5],[8,6]],   // 6
+    [[2,3],[2,4],[2,5],[2,6],[2,7],[3,7],[4,6],[5,5],[6,4],[7,4],[8,4]],                                  // 7
+    [[2,4],[2,5],[2,6],[3,3],[3,7],[4,3],[4,7],[5,4],[5,5],[5,6],[6,3],[6,7],[7,3],[7,7],[8,4],[8,5],[8,6]], // 8
+    [[2,4],[2,5],[2,6],[3,3],[3,7],[4,3],[4,7],[5,4],[5,5],[5,6],[5,7],[6,7],[7,7],[8,4],[8,5],[8,6]],   // 9
+  ];
+  // Inverted digit patterns — full 12×12 minus the digit cells.
+  const DX_DIGIT_PATTERNS_INV = DX_DIGIT_PATTERNS.map(pattern => {
+    const set = new Set(pattern.map(([r,c]) => r * 12 + c));
+    const inv = [];
+    for (let r = 0; r < 12; r++) for (let c = 0; c < 12; c++) {
+      if (!set.has(r * 12 + c)) inv.push([r, c]);
+    }
+    return inv;
+  });
+
+  // Per-cell noise buffer — slowly churned each frame so dither marks have
+  // a ~2s lifetime (app lines 5408-5419). Same dimensions as the grid so
+  // marks stay aligned to cells.
+  const DITHER_DENSITY = 0.025;
+  const DITHER_CHURN   = 0.008;
+  const _ditherNoise = new Float32Array(GRID_COLS * GRID_ROWS);
+  for (let i = 0; i < _ditherNoise.length; i++) _ditherNoise[i] = Math.random();
+  function _churnDither() {
+    const count = Math.ceil(_ditherNoise.length * DITHER_CHURN);
+    for (let i = 0; i < count; i++) {
+      _ditherNoise[Math.floor(Math.random() * _ditherNoise.length)] = Math.random();
+    }
+  }
+
+  // Active dither pattern — set by setDxPattern(). null = no dither.
+  let _activeDxPattern = null;
+  let _ditherTarget    = 0; // PAL index to dither over (always 0 — dominant color)
+  let _ditherColorIdx  = 1; // PAL index to use for mark color
+
+  // Direct port of app's _applyDither (lines 5703-5802). Mutates the
+  // RGBA buffer in place, no separate canvas.
+  function _applyDither(buf, W, visCols, visRows, offC, offR) {
+    if (!_activeDxPattern) return;
+
+    // 'o' — small gray Lego-stud rings, hardcoded gray + 40% alpha blend.
+    if (_activeDxPattern === 'o') {
+      const O_DENSITY = 0.90;
+      const O_R = 106, O_G = 98, O_B = 98;
+      const ALPHA = 0.40;
+      const INV   = 1 - ALPHA;
+      const pattern = DX_PATTERNS.legoStud;
+      for (let r = 0; r < visRows; r++) {
+        for (let c = 0; c < visCols; c++) {
+          const gi = (offR + r) * GRID_COLS + (offC + c);
+          if (_ditherNoise[gi] > O_DENSITY) continue;
+          const baseRow = r * PIXEL, baseCol = c * PIXEL;
+          for (let k = 0; k < pattern.length; k++) {
+            const idx2 = ((baseRow + pattern[k][0]) * W + (baseCol + pattern[k][1])) * 4;
+            buf[idx2]   = (O_R * ALPHA + buf[idx2]   * INV) | 0;
+            buf[idx2+1] = (O_G * ALPHA + buf[idx2+1] * INV) | 0;
+            buf[idx2+2] = (O_B * ALPHA + buf[idx2+2] * INV) | 0;
+            buf[idx2+3] = 255;
+          }
+        }
+      }
+      return;
+    }
+
+    if (_ditherTarget < 0 || _ditherTarget >= PAL.length) return;
+    const ci = Math.min(_ditherColorIdx, PAL.length - 1);
+    if (ci === _ditherTarget) return;
+    const [R, G, B] = PAL[ci];
+
+    if (_activeDxPattern === 'num' || _activeDxPattern === 'numi') {
+      const maxRow = visRows * PIXEL, maxCol = W;
+      const NUM_DENSITY = DITHER_DENSITY * 1.95;
+      for (let r = 0; r < visRows - 1; r += 2) {
+        for (let c = 0; c < visCols - 1; c += 2) {
+          const gi = (offR + r) * GRID_COLS + (offC + c);
+          if (_ditherNoise[gi] > NUM_DENSITY) continue;
+          // All 4 cells in the 2×2 block must be target color
+          if (grid[gi]                                         !== _ditherTarget) continue;
+          if (grid[(offR + r)     * GRID_COLS + (offC + c+1)] !== _ditherTarget) continue;
+          if (grid[(offR + r + 1) * GRID_COLS + (offC + c)]   !== _ditherTarget) continue;
+          if (grid[(offR + r + 1) * GRID_COLS + (offC + c+1)] !== _ditherTarget) continue;
+          const digit = ((offR + r) * 7 + (offC + c) * 13) % 10;
+          const pattern = _activeDxPattern === 'numi' ? DX_DIGIT_PATTERNS_INV[digit] : DX_DIGIT_PATTERNS[digit];
+          const baseRow = r * PIXEL, baseCol = c * PIXEL;
+          for (let k = 0; k < pattern.length; k++) {
+            const pr = baseRow + pattern[k][0], pc = baseCol + pattern[k][1];
+            if (pr >= maxRow || pc >= maxCol) continue;
+            const idx2 = (pr * W + pc) * 4;
+            buf[idx2] = R; buf[idx2+1] = G; buf[idx2+2] = B; buf[idx2+3] = 255;
+          }
+        }
+      }
+    } else if (_activeDxPattern === 'm') {
+      const N = _DX_MULTI.length;
+      const bandWidth = DITHER_DENSITY / N;
+      for (let r = 0; r < visRows; r++) {
+        for (let c = 0; c < visCols; c++) {
+          const gi = (offR + r) * GRID_COLS + (offC + c);
+          if (grid[gi] !== _ditherTarget) continue;
+          if (_ditherNoise[gi] > DITHER_DENSITY) continue;
+          const shapeIdx = Math.min(N - 1, Math.floor(_ditherNoise[gi] / bandWidth));
+          const pattern = DX_PATTERNS[_DX_MULTI[shapeIdx]];
+          const baseRow = r * PIXEL, baseCol = c * PIXEL;
+          for (let k = 0; k < pattern.length; k++) {
+            const idx2 = ((baseRow + pattern[k][0]) * W + (baseCol + pattern[k][1])) * 4;
+            buf[idx2] = R; buf[idx2+1] = G; buf[idx2+2] = B; buf[idx2+3] = 255;
+          }
+        }
+      }
+    } else {
+      const pattern = DX_PATTERNS[_activeDxPattern] || DX_PATTERNS.x;
+      for (let r = 0; r < visRows; r++) {
+        for (let c = 0; c < visCols; c++) {
+          const gi = (offR + r) * GRID_COLS + (offC + c);
+          if (grid[gi] !== _ditherTarget) continue;
+          if (_ditherNoise[gi] > DITHER_DENSITY) continue;
+          const baseRow = r * PIXEL, baseCol = c * PIXEL;
+          for (let k = 0; k < pattern.length; k++) {
+            const idx2 = ((baseRow + pattern[k][0]) * W + (baseCol + pattern[k][1])) * 4;
+            buf[idx2] = R; buf[idx2+1] = G; buf[idx2+2] = B; buf[idx2+3] = 255;
+          }
+        }
+      }
+    }
+  }
+
+  function setDxPattern(key) {
+    // Accepts a DX_KEYS key (or null). Only set if known; otherwise null.
+    if (key && DX_PATTERNS[key]) {
+      _activeDxPattern = key;
+    } else if (key === 'num' || key === 'numi' || key === 'm') {
+      // These don't have direct DX_PATTERNS entries but are still valid.
+      _activeDxPattern = key;
+    } else {
+      _activeDxPattern = null;
+    }
+  }
+
+  // ── 2F-B: Rect-shift (RS / RV / RD) — 8 variants, 10 rects, density timings ──
+  // Direct port of app's rect-shift system (lines 4841-5369). Rewrites grid
+  // in place each frame, displacing rectangular regions in 8 directions.
+  // Also displaces _ditherNoise so dither marks ride along with the shift.
+
+  const DIRS_RS = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1],[1,-1],[-1,1]];
+  const RECT_COUNT = 10;
+
+  // RS_PARAMS — size buckets in cells (app line 2429).
+  const RS_PARAMS = {
+    sm: { min:4,  max:20 },
+    md: { min:10, max:30 },
+    lg: { min:20, max:50 },
+    xl: { min:40, max:80 },
+  };
+  // RD_PARAMS — density timings in ms (app line 2458).
+  const RD_PARAMS = {
+    lo: { offMin:5000, offMax:12000, onMin:500,  onMax:1500  },
+    md: { offMin:1000, offMax:6000,  onMin:1500, onMax:6500  },
+    hi: { offMin:200,  offMax:1000,  onMin:3000, onMax:8000  },
+    mx: { offMin:50,   offMax:200,   onMin:5000, onMax:12000 },
+  };
+
+  // Active rect-shift state. _activeRectVariant = null gates the system OFF.
+  let _rsSize             = 'md';
+  let _rdDensity          = 'md';
+  let _activeRectVariant  = null; // null = no rect-shift (matches app's _rvDistinct.length===0 gate)
+  let rectShifts          = [];
+
+  // Second dither buffer — applyRectShifts displaces noise alongside grid.
+  const _ditherNext = new Float32Array(GRID_COLS * GRID_ROWS);
+
+  // Convert RD_PARAMS ms → frame counts at 60fps.
+  function _rdFrameCount(field) {
+    const dp = RD_PARAMS[_rdDensity] || RD_PARAMS.md;
+    const ms = dp[field + 'Min'] + Math.random() * (dp[field + 'Max'] - dp[field + 'Min']);
+    return Math.max(1, Math.round(ms / (1000 / 60)));
+  }
+
+  // ── 8 rect-make functions (one per RV variant) — direct ports app 4860-5143 ──
+
+  function _makeRect_core() {
+    const p  = RS_PARAMS[_rsSize] || RS_PARAMS.md;
+    const cw = p.min + Math.floor(Math.random() * (p.max - p.min));
+    const ch = p.min + Math.floor(Math.random() * (p.max - p.min));
+    const cx = Math.floor(Math.random() * Math.max(1, GRID_COLS - cw));
+    const cy = Math.floor(Math.random() * Math.max(1, GRID_ROWS - ch));
+    const [ddx, ddy] = DIRS_RS[Math.floor(Math.random() * DIRS_RS.length)];
+    return { cx, cy, cw, ch, dx:ddx, dy:ddy, tiles:null };
+  }
+
+  function _makeRect_mecha() {
+    const p  = RS_PARAMS[_rsSize] || RS_PARAMS.md;
+    const cw = Math.min(GRID_COLS, Math.round((p.min + Math.floor(Math.random() * (p.max - p.min))) * 1.3));
+    const ch = Math.min(GRID_ROWS, Math.round((p.min + Math.floor(Math.random() * (p.max - p.min))) * 1.3));
+    const cx = Math.floor(Math.random() * Math.max(1, GRID_COLS - cw));
+    const cy = Math.floor(Math.random() * Math.max(1, GRID_ROWS - ch));
+    const [ddx, ddy] = DIRS_RS[Math.floor(Math.random() * DIRS_RS.length)];
+    return { cx, cy, cw, ch, dx: ddx, dy: ddy, tiles: null, walkRate: 0.10 };
+  }
+
+  function _makeRect_hysteria() {
+    const p  = RS_PARAMS[_rsSize] || RS_PARAMS.md;
+    const cw = Math.min(GRID_COLS, Math.round((p.min + Math.floor(Math.random() * (p.max - p.min))) * 1.4));
+    const ch = Math.min(GRID_ROWS, Math.round((p.min + Math.floor(Math.random() * (p.max - p.min))) * 1.4));
+    const cx = Math.floor(Math.random() * Math.max(1, GRID_COLS - cw));
+    const cy = Math.floor(Math.random() * Math.max(1, GRID_ROWS - ch));
+    const tw = Math.max(2, Math.round(cw * (0.35 + Math.random() * 0.15)));
+    const th = Math.max(2, Math.round(ch * (0.35 + Math.random() * 0.15)));
+    const stepX = Math.max(1, Math.floor((cw - tw) / 2));
+    const stepY = Math.max(1, Math.floor((ch - th) / 2));
+    const shape = Math.floor(Math.random() * 4);
+    let rects;
+    if      (shape === 0) rects = [{x:cx, y:cy, w:tw, h:th},               {x:cx+stepX, y:cy+stepY, w:tw, h:th},     {x:cx+stepX*2, y:cy+stepY*2, w:tw, h:th}];
+    else if (shape === 1) rects = [{x:cx, y:cy+stepY*2, w:tw, h:th},       {x:cx+stepX, y:cy+stepY, w:tw, h:th},     {x:cx+stepX*2, y:cy, w:tw, h:th}];
+    else if (shape === 2) rects = [{x:cx+stepX*2, y:cy, w:tw, h:th},       {x:cx+stepX, y:cy+stepY, w:tw, h:th},     {x:cx, y:cy+stepY*2, w:tw, h:th}];
+    else                  rects = [{x:cx+stepX*2, y:cy+stepY*2, w:tw, h:th}, {x:cx+stepX, y:cy+stepY, w:tw, h:th},   {x:cx, y:cy, w:tw, h:th}];
+    const phaseOffsets = [0, 3, 5];
+    const tiles = rects.map((r, i) => {
+      const ph = phaseOffsets[i];
+      const [pdx, pdy] = DIRS_RS[ph];
+      return { x:r.x, y:r.y, w:r.w, h:r.h, dx:pdx, dy:pdy, phaseIdx:ph, phaseTimer:0 };
+    });
+    return { cx, cy, cw, ch, dx:1, dy:0, tiles };
+  }
+
+  function _makeRect_metro() {
+    const p  = RS_PARAMS[_rsSize] || RS_PARAMS.md;
+    const cw = p.min + Math.floor(Math.random() * (p.max - p.min));
+    const ch = p.min + Math.floor(Math.random() * (p.max - p.min));
+    const cx = Math.floor(Math.random() * Math.max(1, GRID_COLS - cw));
+    const cy = Math.floor(Math.random() * Math.max(1, GRID_ROWS - ch));
+    const horiz = Math.random() < 0.5;
+    const sign  = Math.random() < 0.5 ? 1 : -1;
+    const tiles = [];
+    if (horiz) {
+      const nBands = Math.min(ch, 4 + Math.floor(Math.random() * 3));
+      const bandH  = Math.max(1, Math.floor(ch / nBands));
+      for (let k = 0; k < nBands; k++) {
+        const yk = cy + k * bandH;
+        const hk = (k === nBands - 1) ? (cy + ch - yk) : bandH;
+        const mag = 1 + Math.floor(k / 2);
+        tiles.push({ x:cx, y:yk, w:cw, h:hk, dx:sign * mag, dy:0 });
+      }
+    } else {
+      const nBands = Math.min(cw, 4 + Math.floor(Math.random() * 3));
+      const bandW  = Math.max(1, Math.floor(cw / nBands));
+      for (let k = 0; k < nBands; k++) {
+        const xk = cx + k * bandW;
+        const wk = (k === nBands - 1) ? (cx + cw - xk) : bandW;
+        const mag = 1 + Math.floor(k / 2);
+        tiles.push({ x:xk, y:cy, w:wk, h:ch, dx:0, dy:sign * mag });
+      }
+    }
+    return { cx, cy, cw, ch, dx:sign, dy:0, tiles };
+  }
+
+  function _makeRect_sideb() {
+    const p  = RS_PARAMS[_rsSize] || RS_PARAMS.md;
+    const cw = Math.min(GRID_COLS, Math.round((p.min + Math.floor(Math.random() * (p.max - p.min))) * 1.3));
+    const ch = Math.min(GRID_ROWS, Math.round((p.min + Math.floor(Math.random() * (p.max - p.min))) * 1.3));
+    const cx = Math.floor(Math.random() * Math.max(1, GRID_COLS - cw));
+    const cy = Math.floor(Math.random() * Math.max(1, GRID_ROWS - ch));
+    const nSubs = 3 + Math.floor(Math.random() * 2);
+    const tiles = [];
+    for (let i = 0; i < nSubs; i++) {
+      const tw = Math.max(2, Math.round(cw * (0.25 + Math.random() * 0.35)));
+      const th = Math.max(2, Math.round(ch * (0.25 + Math.random() * 0.35)));
+      const tx = cx + Math.floor(Math.random() * Math.max(1, cw - tw));
+      const ty = cy + Math.floor(Math.random() * Math.max(1, ch - th));
+      const [tdx, tdy] = DIRS_RS[Math.floor(Math.random() * DIRS_RS.length)];
+      tiles.push({
+        x:tx, y:ty, w:tw, h:th, dx:tdx, dy:tdy,
+        resetIn: 40 + Math.floor(Math.random() * 41),
+        _box: { cx, cy, cw, ch }
+      });
+    }
+    return { cx, cy, cw, ch, dx:1, dy:0, tiles };
+  }
+
+  function _pickDirSet() {
+    const n = 1 + Math.floor(Math.random() * 3);
+    const pool = DIRS_RS.slice();
+    const picks = [];
+    for (let i = 0; i < n && pool.length; i++) {
+      picks.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+    }
+    return picks;
+  }
+  function _makeRect_earthquake() {
+    const p  = RS_PARAMS[_rsSize] || RS_PARAMS.md;
+    const cw = Math.min(GRID_COLS, Math.round((p.min + Math.floor(Math.random() * (p.max - p.min))) * 1.4));
+    const ch = Math.min(GRID_ROWS, Math.round((p.min + Math.floor(Math.random() * (p.max - p.min))) * 1.4));
+    const cx = Math.floor(Math.random() * Math.max(1, GRID_COLS - cw));
+    const cy = Math.floor(Math.random() * Math.max(1, GRID_ROWS - ch));
+    const tw = Math.max(2, Math.round(cw * (0.35 + Math.random() * 0.15)));
+    const th = Math.max(2, Math.round(ch * (0.35 + Math.random() * 0.15)));
+    const stepX = Math.max(1, Math.floor((cw - tw) / 2));
+    const stepY = Math.max(1, Math.floor((ch - th) / 2));
+    const shape = Math.floor(Math.random() * 4);
+    let tiles;
+    if      (shape === 0) tiles = [{x:cx, y:cy, w:tw, h:th},                 {x:cx+stepX, y:cy+stepY, w:tw, h:th},  {x:cx+stepX*2, y:cy+stepY*2, w:tw, h:th}];
+    else if (shape === 1) tiles = [{x:cx, y:cy+stepY*2, w:tw, h:th},          {x:cx+stepX, y:cy+stepY, w:tw, h:th}, {x:cx+stepX*2, y:cy, w:tw, h:th}];
+    else if (shape === 2) tiles = [{x:cx+stepX*2, y:cy, w:tw, h:th},          {x:cx+stepX, y:cy+stepY, w:tw, h:th}, {x:cx, y:cy+stepY*2, w:tw, h:th}];
+    else                  tiles = [{x:cx+stepX*2, y:cy+stepY*2, w:tw, h:th},  {x:cx+stepX, y:cy+stepY, w:tw, h:th}, {x:cx, y:cy, w:tw, h:th}];
+    const nTiles = 1 + Math.floor(Math.random() * 3);
+    tiles = tiles.slice(0, nTiles);
+    const rerollIn = 5 + Math.floor(Math.random() * 11);
+    return { cx, cy, cw, ch, dx:1, dy:0, tiles, rerollIn, dirs:_pickDirSet() };
+  }
+
+  function _makeRect_retro() {
+    const p  = RS_PARAMS[_rsSize] || RS_PARAMS.md;
+    const cw = p.min + Math.floor(Math.random() * (p.max - p.min));
+    const ch = p.min + Math.floor(Math.random() * (p.max - p.min));
+    const cx = Math.floor(Math.random() * Math.max(1, GRID_COLS - cw));
+    const cy = Math.floor(Math.random() * Math.max(1, GRID_ROWS - ch));
+    const CARDINAL = [[1,0],[-1,0],[0,1],[0,-1]];
+    const [wdx, wdy] = CARDINAL[Math.floor(Math.random() * 4)];
+    const tiles = [];
+    const N_BANDS = 4;
+    if (wdx !== 0) {
+      const waveW   = Math.max(2, Math.floor(cw * 0.4));
+      const impactW = Math.max(1, Math.floor(cw * 0.2));
+      const sprayW  = Math.max(2, cw - waveW - impactW);
+      let waveX, impactX, sprayX;
+      if (wdx > 0) { waveX = cx;        impactX = cx + waveW;          sprayX = cx + waveW + impactW; }
+      else         { sprayX = cx;       impactX = cx + sprayW;         waveX  = cx + sprayW + impactW; }
+      tiles.push({ x:waveX,   y:cy, w:waveW,   h:ch, dx: wdx, dy:0 });
+      tiles.push({ x:impactX, y:cy, w:impactW, h:ch, dx:-wdx, dy:0 });
+      const bandH = Math.max(1, Math.floor(ch / N_BANDS));
+      for (let k = 0; k < N_BANDS; k++) {
+        const yk = cy + k * bandH;
+        const hk = (k === N_BANDS - 1) ? (cy + ch - yk) : bandH;
+        tiles.push({ x:sprayX, y:yk, w:sprayW, h:hk, dx:0, dy:(k % 2 === 0) ? 1 : -1 });
+      }
+    } else {
+      const waveH   = Math.max(2, Math.floor(ch * 0.4));
+      const impactH = Math.max(1, Math.floor(ch * 0.2));
+      const sprayH  = Math.max(2, ch - waveH - impactH);
+      let waveY, impactY, sprayY;
+      if (wdy > 0) { waveY = cy;        impactY = cy + waveH;          sprayY = cy + waveH + impactH; }
+      else         { sprayY = cy;       impactY = cy + sprayH;         waveY  = cy + sprayH + impactH; }
+      tiles.push({ x:cx, y:waveY,   w:cw, h:waveH,   dx:0, dy: wdy });
+      tiles.push({ x:cx, y:impactY, w:cw, h:impactH, dx:0, dy:-wdy });
+      const bandW = Math.max(1, Math.floor(cw / N_BANDS));
+      for (let k = 0; k < N_BANDS; k++) {
+        const xk = cx + k * bandW;
+        const wk = (k === N_BANDS - 1) ? (cx + cw - xk) : bandW;
+        tiles.push({ x:xk, y:sprayY, w:wk, h:sprayH, dx:(k % 2 === 0) ? 1 : -1, dy:0 });
+      }
+    }
+    return { cx, cy, cw, ch, dx:wdx, dy:wdy, tiles };
+  }
+
+  function _makeRect_ladder() {
+    const p  = RS_PARAMS[_rsSize] || RS_PARAMS.md;
+    const bw = Math.min(GRID_COLS, Math.round((p.min + Math.floor(Math.random() * (p.max - p.min))) * 2.112));
+    const bh = Math.min(GRID_ROWS, Math.round((p.min + Math.floor(Math.random() * (p.max - p.min))) * 1.584));
+    const bx = Math.floor(Math.random() * Math.max(1, GRID_COLS - bw));
+    const by = Math.floor(Math.random() * Math.max(1, GRID_ROWS - bh));
+    const FREQ_PAIRS = [[2,3],[3,5],[2,5],[3,4],[4,7]];
+    const [f1, f2] = FREQ_PAIRS[Math.floor(Math.random() * FREQ_PAIRS.length)];
+    const ph1 = Math.random() * Math.PI * 2;
+    const ph2 = Math.random() * Math.PI * 2;
+    const ampBase = bh * (0.22 + Math.random() * 0.08);
+    const nTiles = 6 + Math.floor(Math.random() * 4);
+    const tw     = Math.max(3, Math.round(bw * (0.198 + Math.random() * 0.132)));
+    const thBase = Math.max(3, Math.round(bh * (0.242 + Math.random() * 0.132)));
+    const thMin  = Math.max(2, Math.round(thBase * 0.25));
+    const tiles  = [];
+    for (let i = 0; i < nTiles; i++) {
+      const t = i / Math.max(1, nTiles - 1);
+      const w1 = Math.sin(t * f1 * Math.PI * 2 + ph1);
+      const w2 = Math.sin(t * f2 * Math.PI * 2 + ph2);
+      const compound = (w1 + w2) * 0.5;
+      const th = Math.round(thMin + (thBase - thMin) * Math.abs(compound));
+      const tx = bx + Math.round(t * (bw - tw));
+      const ty = by + Math.round(bh * 0.5 + compound * ampBase - th * 0.5);
+      const [tdx, tdy] = DIRS_RS[Math.floor(Math.random() * DIRS_RS.length)];
+      tiles.push({
+        x: Math.max(bx, Math.min(bx + bw - tw, tx)),
+        y: Math.max(by, Math.min(by + bh - th, ty)),
+        w:tw, h:th, dx:tdx, dy:tdy
+      });
+    }
+    return { cx:bx, cy:by, cw:bw, ch:bh, dx:1, dy:0, tiles };
+  }
+
+  // Variant dispatch — null = no rect-shift active.
+  const RECT_SHIFT_VARIANTS = {
+    core:        _makeRect_core,
+    mecha:       _makeRect_mecha,
+    hysteria:    _makeRect_hysteria,
+    metro:       _makeRect_metro,
+    'side-b':    _makeRect_sideb,
+    earthquake:  _makeRect_earthquake,
+    retro:       _makeRect_retro,
+    ladder:      _makeRect_ladder,
+  };
+  function makeRandomRect() {
+    const fn = RECT_SHIFT_VARIANTS[_activeRectVariant] || RECT_SHIFT_VARIANTS.core;
+    return fn();
+  }
+
+  function buildRectShifts() {
+    rectShifts = [];
+    for (let i = 0; i < RECT_COUNT; i++) {
+      rectShifts.push({ ...makeRandomRect(), active: false, countdown: _rdFrameCount('off') });
+    }
+  }
+  buildRectShifts();
+
+  // tickRects — advances countdowns + per-tile state. Direct port app 5176.
+  const CONVERGE_FRAMES = 15;
+  function tickRects() {
+    // Gate: rect-shift requires an explicit RV. Without it, deactivate all.
+    if (!_activeRectVariant) {
+      for (let i = 0; i < rectShifts.length; i++) {
+        if (rectShifts[i].active) {
+          rectShifts[i].active = false;
+          rectShifts[i].countdown = _rdFrameCount('off');
+          rectShifts[i]._converging = 0;
+        }
+      }
+      return;
+    }
+    for (let i = 0; i < rectShifts.length; i++) {
+      const rs = rectShifts[i];
+      rs.countdown--;
+      // Convergence: lock all tiles to one shared direction in last 15 frames
+      if (rs.active && rs.countdown <= CONVERGE_FRAMES && !rs._converging) {
+        rs._converging = 1;
+        const d = DIRS_RS[Math.floor(Math.random() * DIRS_RS.length)];
+        rs.dx = d[0]; rs.dy = d[1];
+        if (rs.dirs) rs.dirs = [[d[0], d[1]]];
+        if (rs.tiles) for (const t of rs.tiles) { t.dx = d[0]; t.dy = d[1]; }
+      }
+      // Earthquake — periodic dir-set reroll
+      if (rs.active && rs.rerollIn !== undefined && !rs._converging) {
+        rs.rerollIn--;
+        if (rs.rerollIn <= 0) {
+          rs.dirs = _pickDirSet();
+          rs.rerollIn = 5 + Math.floor(Math.random() * 11);
+        }
+      }
+      // Mecha — random walk + periodic ping-pong bursts
+      if (rs.active && rs.walkRate !== undefined && !rs._converging) {
+        if (rs.pingPongLeft > 0) {
+          rs.pingPongLeft--;
+          if (rs.pingPongLeft === 0) rs.dirs = null;
+        } else {
+          if (Math.random() < rs.walkRate) {
+            if (Math.random() < 0.5) rs.dx = Math.max(-1, Math.min(1, rs.dx + (Math.random() < 0.5 ? -1 : 1)));
+            else                     rs.dy = Math.max(-1, Math.min(1, rs.dy + (Math.random() < 0.5 ? -1 : 1)));
+            if (rs.dx === 0 && rs.dy === 0) {
+              if (Math.random() < 0.5) rs.dx = Math.random() < 0.5 ? 1 : -1;
+              else                     rs.dy = Math.random() < 0.5 ? 1 : -1;
+            }
+          }
+          if (rs.pingPongIn === undefined) rs.pingPongIn = 90 + Math.floor(Math.random() * 120);
+          rs.pingPongIn--;
+          if (rs.pingPongIn <= 0) {
+            const idx = Math.floor(Math.random() * 4) * 2;
+            rs.dirs = [DIRS_RS[idx], DIRS_RS[idx + 1]];
+            rs.pingPongLeft = 5 + Math.floor(Math.random() * 10);
+            rs.pingPongIn   = 90 + Math.floor(Math.random() * 120);
+          }
+        }
+      }
+      // Per-tile: hysteria phase cycling + side-b reset
+      if (rs.active && rs.tiles && !rs._converging) {
+        for (const t of rs.tiles) {
+          if (t.phaseIdx !== undefined) {
+            t.phaseTimer = (t.phaseTimer || 0) + 1;
+            if (t.phaseTimer >= 15) {
+              t.phaseTimer = 0;
+              if (!t.boomerangDone) {
+                t.phaseIdx = (t.phaseIdx + 1) % DIRS_RS.length;
+                t.boomerangDone = 1;
+              } else {
+                const inverseIdx = t.phaseIdx ^ 1;
+                let nextIdx;
+                do { nextIdx = Math.floor(Math.random() * DIRS_RS.length); }
+                while (nextIdx === inverseIdx || nextIdx === t.phaseIdx);
+                t.phaseIdx = nextIdx;
+              }
+              t.dx = DIRS_RS[t.phaseIdx][0];
+              t.dy = DIRS_RS[t.phaseIdx][1];
+            }
+          }
+          if (t.resetIn !== undefined && t._box) {
+            t.resetIn--;
+            if (t.resetIn <= 0) {
+              const b = t._box;
+              const tw = Math.max(2, Math.round(b.cw * (0.25 + Math.random() * 0.35)));
+              const th = Math.max(2, Math.round(b.ch * (0.25 + Math.random() * 0.35)));
+              t.x = b.cx + Math.floor(Math.random() * Math.max(1, b.cw - tw));
+              t.y = b.cy + Math.floor(Math.random() * Math.max(1, b.ch - th));
+              t.w = tw; t.h = th;
+              const d = DIRS_RS[Math.floor(Math.random() * DIRS_RS.length)];
+              t.dx = d[0]; t.dy = d[1];
+              t.resetIn = 40 + Math.floor(Math.random() * 41);
+            }
+          }
+        }
+      }
+      if (rs.countdown <= 0) {
+        if (rs.active) {
+          rs.active = false;
+          rs.countdown = _rdFrameCount('off');
+          rs._converging = 0;
+        } else {
+          rectShifts[i] = {
+            ...makeRandomRect(),
+            active: true,
+            countdown: _rdFrameCount('on'),
+            _converging: 0
+          };
+          if (rectShifts[i].rerollIn !== undefined) {
+            rectShifts[i].countdown = Math.max(60, rectShifts[i].countdown - 240);
+          }
+        }
+      }
+    }
+  }
+
+  // applyRectShifts — rewrite grid + dither in place, displacing rect regions.
+  // Direct port app 5318.
+  function applyRectShifts() {
+    let any = false;
+    for (let i = 0; i < rectShifts.length; i++) if (rectShifts[i].active) { any = true; break; }
+    if (!any) return;
+    next.set(grid);
+    _ditherNext.set(_ditherNoise);
+    for (let s = 0; s < rectShifts.length; s++) {
+      const rs = rectShifts[s];
+      if (!rs.active) continue;
+      if (rs.tiles) {
+        let rdx = rs.dx, rdy = rs.dy;
+        if (rs.dirs && rs.dirs.length) {
+          const d = rs.dirs[Math.floor(Math.random() * rs.dirs.length)];
+          rdx = d[0]; rdy = d[1];
+        }
+        for (const t of rs.tiles) {
+          const tdx = t.dx !== undefined ? t.dx : rdx;
+          const tdy = t.dy !== undefined ? t.dy : rdy;
+          for (let r = t.y; r < t.y + t.h; r++) {
+            const rr = r % GRID_ROWS;
+            for (let c = t.x; c < t.x + t.w; c++) {
+              const cc = c % GRID_COLS;
+              const sr = ((rr - tdy) + GRID_ROWS) % GRID_ROWS;
+              const sc = ((cc - tdx) + GRID_COLS) % GRID_COLS;
+              next[rr * GRID_COLS + cc]        = grid[sr * GRID_COLS + sc];
+              _ditherNext[rr * GRID_COLS + cc] = _ditherNoise[sr * GRID_COLS + sc];
+            }
+          }
+        }
+      } else {
+        let rdx = rs.dx, rdy = rs.dy;
+        if (rs.dirs && rs.dirs.length) {
+          const d = rs.dirs[Math.floor(Math.random() * rs.dirs.length)];
+          rdx = d[0]; rdy = d[1];
+        }
+        for (let r = rs.cy; r < rs.cy + rs.ch; r++)
+          for (let c = rs.cx; c < rs.cx + rs.cw; c++) {
+            const sr = ((r - rdy) + GRID_ROWS) % GRID_ROWS;
+            const sc = ((c - rdx) + GRID_COLS) % GRID_COLS;
+            next[r * GRID_COLS + c]        = grid[sr * GRID_COLS + sc];
+            _ditherNext[r * GRID_COLS + c] = _ditherNoise[sr * GRID_COLS + sc];
+          }
+      }
+    }
+    grid.set(next);
+    _ditherNoise.set(_ditherNext);
+  }
+
+  // Setters wired into _refreshModuloState.
+  function setRsSize(key)  { if (RS_PARAMS[key]) _rsSize = key; }
+  function setRdDensity(k) { if (RD_PARAMS[k])  _rdDensity = k; }
+  function setRectVariant(v) {
+    _activeRectVariant = (v && RECT_SHIFT_VARIANTS[v]) ? v : null;
+  }
+
+  // ── 2F-C: BIOS — text stamping into grid ────────────────────────────────
+  // Direct port of app's BIOS system (lines 2325-2354 + 5371-5701). Stamps
+  // BIOS-style dialog windows (title + message + 2 buttons) directly into
+  // the cellular grid as palette indices. CA evolution erodes them, rect-shift
+  // deforms them — intentional "decay" effect.
+
+  // Sample BIOS-style text content (English subset of app's BIOS_DATA).
+  const BIOS_DATA = [
+    { title: 'save & exit setup',   msg: 'save configuration and exit?', btns: ['yes', 'no'] },
+    { title: 'boot order',          msg: 'set boot device?',             btns: ['ok',  'no'] },
+    { title: 'load defaults',       msg: 'load optimal defaults?',       btns: ['yes', 'no'] },
+    { title: 'clear cmos',          msg: 'reset all settings?',          btns: ['yes', 'no'] },
+    { title: 'exit without saving', msg: 'discard changes?',             btns: ['yes', 'no'] },
+  ];
+
+  // 5-row pixel-art bitmap font — verbatim port from app line 5375-5405.
+  const GLYPH_H   = 5;
+  const GLYPH_GAP = 1;
+  const _BMPFONT  = {
+    ' ':['000','000','000','000','000'],
+    'a':['0110','1001','1111','1001','1001'],
+    'c':['0111','1000','1000','1000','0111'],
+    'd':['1110','1001','1001','1001','1110'],
+    'e':['1111','1000','1110','1000','1111'],
+    'f':['111','100','110','100','100'],
+    'h':['1001','1001','1111','1001','1001'],
+    'i':['111','010','010','010','111'],
+    'j':['011','001','001','101','011'],
+    'l':['10','10','10','10','11'],
+    'n':['1001','1101','1011','1001','1001'],
+    'o':['0110','1001','1001','1001','0110'],
+    'p':['1110','1001','1110','1000','1000'],
+    'q':['0111','1001','0111','0001','0001'],
+    'r':['110','101','110','100','100'],
+    's':['0111','1000','0110','0001','1110'],
+    't':['111','010','010','010','011'],
+    'u':['1001','1001','1001','1001','0110'],
+    'v':['101','101','101','010','010'],
+    'z':['1111','0001','0110','1000','1111'],
+    'g':['0111','1000','1011','1001','0111'],
+    'm':['11011','10101','10101','10001','10001'],
+    'w':['10001','10001','10101','01010','01010'],
+    'y':['1001','1001','0111','0001','0110'],
+    'b':['100','110','101','101','110'],
+    'k':['101','110','100','110','101'],
+    'x':['10001','01010','00100','01010','10001'],
+    '&':['010','101','010','10101','01101'],
+    '?':['110','001','010','000','010'],
+  };
+
+  // Rasterize a word string into a bitmap (Uint8ClampedArray of RGBA pixels —
+  // alpha channel marks "on" cells). Direct port app 5488-5505.
+  function _rasterWord(word) {
+    const norm   = word.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    const glyphs = [...norm].map(ch => _BMPFONT[ch] || _BMPFONT[' ']);
+    const fw = glyphs.reduce((s, g, i) => s + g[0].length + (i < glyphs.length - 1 ? GLYPH_GAP : 0), 0);
+    const fh = GLYPH_H;
+    const imgData = new Uint8ClampedArray(fw * fh * 4);
+    let x = 0;
+    for (let gi = 0; gi < glyphs.length; gi++) {
+      const g = glyphs[gi];
+      const gw = g[0].length;
+      for (let r = 0; r < GLYPH_H; r++) {
+        for (let c = 0; c < gw; c++) {
+          if (g[r][c] === '1') imgData[(r * fw + x + c) * 4 + 3] = 255;
+        }
+      }
+      x += gw + GLYPH_GAP;
+    }
+    return { imgData, fw, fh };
+  }
+
+  // Text instance state (single instance for the demo).
+  const _txtInst = [null];
+  let   _txtPalIdx  = 0;
+  let   _txtPalIdx2 = 1;
+  // Re-pick BIOS bg/accent palette indices. Called when the palette changes
+  // so the text colors update with the modulo. App line 4415.
+  function _pickTxtColors() {
+    if (!PAL || PAL.length === 0) { _txtPalIdx = 0; _txtPalIdx2 = 0; return; }
+    _txtPalIdx  = Math.floor(Math.random() * PAL.length);
+    _txtPalIdx2 = PAL.length > 1
+      ? (_txtPalIdx + 1 + Math.floor(Math.random() * (PAL.length - 1))) % PAL.length
+      : _txtPalIdx;
+  }
+
+  // pickText — pick a BIOS entry, rasterize all 4 lines, set instance state.
+  // Direct port app 5511-5541.
+  function pickText(slotIdx) {
+    if (PAL.length < 2) { _txtInst[0] = null; return; }
+    const t      = (slotIdx != null) ? slotIdx : Math.floor(Math.random() * 100);
+    const entry  = BIOS_DATA[t % BIOS_DATA.length];
+    const s      = 1;
+    const rTitle = _rasterWord(entry.title);
+    const rMsg   = _rasterWord(entry.msg);
+    const rBtn0  = _rasterWord(entry.btns[0]);
+    const rBtn1  = _rasterWord(entry.btns[1]);
+    const gcols  = 142;
+    const grows  = 57;
+    const maxSX = Math.max(1, GRID_COLS - gcols - 1);
+    const maxSY = Math.max(1, GRID_ROWS - grows - 1);
+    const bestX = Math.floor(Math.random() * maxSX);
+    const bestY = Math.floor(Math.random() * maxSY);
+    _txtInst[0] = {
+      sx: bestX, sy: bestY, gcols, grows, s,
+      palIdx: _txtPalIdx, palIdx2: _txtPalIdx2,
+      rTitle, rMsg, rBtn0, rBtn1,
+    };
+    _stampBiosToGrid();
+  }
+
+  // _stampBiosToGrid — paints the BIOS window directly into grid as palette
+  // indices. Called every frame after step() so DT doesn't erase the text.
+  // applyRectShifts then deforms the freshly-stamped pixels naturally.
+  // Direct port app 5634-5700.
+  function _stampBiosToGrid() {
+    for (let i = 0; i < _txtInst.length; i++) {
+      const inst = _txtInst[i];
+      if (!inst) continue;
+      const { sx, sy, gcols, grows, s, palIdx, palIdx2, rTitle, rMsg, rBtn0, rBtn1 } = inst;
+
+      const setCell = (gc, gr, pi) => {
+        if (gc >= 0 && gc < GRID_COLS && gr >= 0 && gr < GRID_ROWS) {
+          grid[gr * GRID_COLS + gc] = pi;
+        }
+      };
+      const fillBox = (gx, gy, gw, gh, pi) => {
+        for (let gr = gy; gr < gy + gh; gr++)
+          for (let gc = gx; gc < gx + gw; gc++)
+            setCell(gc, gr, pi);
+      };
+      const stampGlyph = (raster, gx, gy, pi) => {
+        const { imgData, fw, fh } = raster;
+        for (let fr = 0; fr < fh; fr++)
+          for (let fc = 0; fc < fw; fc++)
+            if (imgData[(fr * fw + fc) * 4 + 3] > 128)
+              setCell(gx + fc, gy + fr, pi);
+      };
+
+      const lh   = GLYPH_H * s;
+      const msgY = sy + 16;
+      const sepY = sy + 36;
+      const btnY = sy + 44;
+
+      // Outer 1-cell fg border
+      const bx = Math.max(0, sx - 1), by = Math.max(0, sy - 1);
+      fillBox(bx, by, gcols + 2, grows + 2, palIdx);
+
+      // Body fill (fg)
+      fillBox(sx, sy, gcols, grows, palIdx);
+
+      // Left / right / bottom borders (bd = palIdx2)
+      fillBox(sx,             sy + 1,         1,     grows - 2, palIdx2);
+      fillBox(sx + gcols - 1, sy + 1,         1,     grows - 2, palIdx2);
+      fillBox(sx,             sy + grows - 1, gcols, 1,         palIdx2);
+
+      // Title row corners + dashes
+      setCell(sx,             sy, palIdx2);
+      setCell(sx + gcols - 1, sy, palIdx2);
+      const titleX = sx + 1 + Math.floor((gcols - 2 - rTitle.fw) / 2);
+      if (titleX - 2 > sx + 1) fillBox(sx + 1, sy, titleX - sx - 2, 1, palIdx2);
+      const dashRx = titleX + rTitle.fw + 1;
+      if (dashRx < sx + gcols - 1) fillBox(dashRx, sy, sx + gcols - 1 - dashRx, 1, palIdx2);
+      stampGlyph(rTitle, titleX, sy, palIdx2);
+
+      // Message
+      const msgX = sx + 1 + Math.floor((gcols - 2 - rMsg.fw) / 2);
+      stampGlyph(rMsg, msgX, msgY, palIdx2);
+
+      // Separator
+      fillBox(sx, sepY, gcols, 1, palIdx2);
+
+      // Buttons
+      const btn0BW  = rBtn0.fw + 2;
+      const btnGap  = 6;
+      const totalBW = btn0BW + btnGap + rBtn1.fw;
+      const btn0X   = sx + 1 + Math.floor((gcols - 2 - totalBW) / 2);
+      const btn1X   = btn0X + btn0BW + btnGap;
+      fillBox(btn0X, btnY, btn0BW, lh, palIdx2);
+      stampGlyph(rBtn0, btn0X + 1, btnY, palIdx);
+      stampGlyph(rBtn1, btn1X,     btnY, palIdx2);
+    }
+  }
+
+  // BIOS cycling state — every BIOS_CYCLE frames, switch to the next bios-on
+  // slot's text. App line 5423.
+  const BIOS_CYCLE = 300;
+  let   _txtFrame    = 0;
+  let   _biosCycleIdx = 0;
+
+  // Called once per frame from step() — advances cycle counter.
+  // Text stamping happens ONCE per pickText() call (not every frame), so DT
+  // erodes it naturally and rect-shift's deformation accumulates over time.
+  // Matches app behavior (pickText line 5540 stamps once into grid).
+  function _biosTick() {
+    _txtFrame++;
+    if (_txtFrame % BIOS_CYCLE === 0) {
+      const onIdxs = [];
+      for (let i = 0; i < placedTokens.length; i++) {
+        if (placedTokens[i].bios === true) onIdxs.push(i);
+      }
+      if (onIdxs.length === 0) {
+        _txtInst[0] = null;
+      } else if (onIdxs.length === 1) {
+        pickText(onIdxs[0]);
+      } else {
+        _biosCycleIdx = (_biosCycleIdx + 1) % onIdxs.length;
+        pickText(onIdxs[_biosCycleIdx]);
+      }
+    }
+  }
+
+  // Manually trigger pickText on a slot — called when user toggles bios=true
+  // so text appears immediately (not waiting for the next BIOS_CYCLE tick).
+  function triggerBios(slotIdx) {
+    pickText(slotIdx);
+  }
+  // Reset BIOS state — called when no token has bios=true.
+  function clearBios() {
+    _txtInst[0] = null;
+    _biosCycleIdx = 0;
+  }
+
+  // ── Modes (8 total — direct ports from app/index.html) ────────────────────
+
+  // Feedback (app 4575-4590) — 4-neighbor majority vote w/ 5% pyramid reseed.
+  function animFeedback() {
+    const r = makeRect();
+    for (let dy = 0; dy < r.h; dy++) for (let dx = 0; dx < r.w; dx++) {
+      const cx = r.x + dx, cy = r.y + dy;
+      if (Math.random() < 0.05) { next[idx(cx, cy)] = _pickWeighted(); continue; }
+      const nb = [
+        grid[idx(cx - 1, cy)], grid[idx(cx + 1, cy)],
+        grid[idx(cx,     cy - 1)], grid[idx(cx, cy + 1)],
+      ];
+      const count = new Array(PAL.length).fill(0);
+      for (const n of nb) if (n < PAL.length) count[n]++;
+      let max = 0, best = grid[idx(cx, cy)];
+      for (let v = 0; v < PAL.length; v++) {
+        if (count[v] > max) { max = count[v]; best = v; }
+      }
+      next[idx(cx, cy)] = best;
+    }
+  }
+
+  // Noise (app 4492-4500) — fill rect with pyramid-weighted random palette idx.
+  function animNoise() {
+    const r = makeRect();
+    for (let dy = 0; dy < r.h; dy++) for (let dx = 0; dx < r.w; dx++) {
+      next[idx(r.x + dx, r.y + dy)] = _pickWeighted();
+    }
+  }
+
+  // Shift (app 4502-4513) — pick rect, shift 1-3 cells horizontally OR vertically.
+  function animShift() {
+    const rx = Math.floor(Math.random() * GRID_COLS);
+    const ry = Math.floor(Math.random() * GRID_ROWS);
+    const inZone = _shiftZones.some(z => {
+      const dx = rx - z.cx, dy = ry - z.cy;
+      return dx * dx + dy * dy < _SHIFT_ZONE_R2;
+    });
+    const sc = inZone ? _shiftZoneScale : _shiftBaseScale;
+    const r = {
+      x: rx, y: ry,
+      w: 2 + Math.floor(Math.random() * Math.max(1, Math.round(12 * sc))),
+      h: 2 + Math.floor(Math.random() * Math.max(1, Math.round( 6 * sc))),
+    };
+    const horiz = Math.random() < 0.5;
+    const dist = inZone ? (1 + Math.floor(Math.random() * (horiz ? 2 : 3))) : 1;
+    const dir  = (Math.random() < 0.5 ? 1 : -1) * dist;
+    for (let dy = 0; dy < r.h; dy++) for (let dx = 0; dx < r.w; dx++) {
+      next[idx(r.x + dx, r.y + dy)] = grid[
+        horiz ? idx(r.x + dx + dir, r.y + dy)
+              : idx(r.x + dx,       r.y + dy + dir)
+      ];
+    }
+    if (++_shiftZoneTimer > 1200) { _shiftZoneTimer = 0; _refreshShiftZones(); }
+  }
+
+  // Jungle (app 4515-4525) — same as shift but BOTH axes shift simultaneously.
+  function animJungle() {
+    const rx = Math.floor(Math.random() * GRID_COLS);
+    const ry = Math.floor(Math.random() * GRID_ROWS);
+    const inZone = _shiftZones.some(z => {
+      const dx = rx - z.cx, dy = ry - z.cy;
+      return dx * dx + dy * dy < _SHIFT_ZONE_R2;
+    });
+    const sc = inZone ? _shiftZoneScale : _shiftBaseScale;
+    const r = {
+      x: rx, y: ry,
+      w: 2 + Math.floor(Math.random() * Math.max(1, Math.round(12 * sc))),
+      h: 2 + Math.floor(Math.random() * Math.max(1, Math.round( 6 * sc))),
+    };
+    const dirH = (Math.random() < 0.5 ? 1 : -1) * (1 + Math.floor(Math.random() * (inZone ? 3 : 2)));
+    const dirV = (Math.random() < 0.5 ? 1 : -1) * (1 + Math.floor(Math.random() * (inZone ? 4 : 2)));
+    for (let dy = 0; dy < r.h; dy++) for (let dx = 0; dx < r.w; dx++) {
+      next[idx(r.x + dx, r.y + dy)] = grid[idx(r.x + dx + dirH, r.y + dy + dirV)];
+    }
+    if (++_shiftZoneTimer > 1200) { _shiftZoneTimer = 0; _refreshShiftZones(); }
+  }
+
+  // Modulo (app 4527-4534) — 50% chance per cell to add `step` to its palette idx.
+  function animModulo() {
+    if (PAL.length < 2) return;
+    const r = makeRect();
+    const step = 1 + Math.floor(Math.random() * (PAL.length - 1));
+    for (let dy = 0; dy < r.h; dy++) for (let dx = 0; dx < r.w; dx++) {
+      const i = idx(r.x + dx, r.y + dy);
+      if (Math.random() < 0.5) next[i] = (grid[i] + step) % PAL.length;
+    }
+  }
+
+  // Wave (app 4536-4574) — horizontal sinusoidal displacement w/ zonal amplitude
+  // + occasional tapered vertical "spike".
+  function animWave() {
+    _waveT += 0.003;
+    const r = makeRect();
+    const zoneAmp = Math.pow(
+      Math.max(0, Math.sin(r.x * 0.018 + _waveT * 0.4) * Math.sin(r.y * 0.022 + _waveT * 0.25)),
+      1.5
+    );
+    const amp = 1 + Math.round(11 * zoneAmp);
+    for (let dy = 0; dy < r.h; dy++) {
+      const cy  = r.y + dy;
+      const wcy = cy % GRID_ROWS;
+      const speedMod = 1 + Math.sin(wcy * 0.03) * 0.5;
+      const offset = Math.round(Math.sin(wcy * 0.08 + _waveT * speedMod) * amp);
+      for (let dx = 0; dx < r.w; dx++) {
+        next[idx(r.x + dx, cy)] = grid[idx(r.x + dx - offset, cy)];
+      }
+    }
+    if (PAL.length >= 2 && Math.random() < 0.005) {
+      const sx    = Math.floor(Math.random() * GRID_COLS);
+      const baseY = Math.floor(Math.random() * GRID_ROWS);
+      const sh    = 8 + Math.floor(Math.random() * 20);
+      const halfW = 1 + Math.floor(Math.random() * 2);
+      for (let h = 0; h < sh; h++) {
+        const taper = 1 - h / sh;
+        const wHere = Math.max(1, Math.round(halfW * taper));
+        const y = (baseY - h + GRID_ROWS) % GRID_ROWS;
+        for (let w = -wHere; w <= wHere; w++) {
+          const x = (sx + w + GRID_COLS) % GRID_COLS;
+          if (Math.random() < 0.8) next[idx(x, y)] = _pickWeighted();
+        }
+      }
+    }
+  }
+
+  // Sector (app 4602-4707) — 65% skip, then horizontal displacement (4 sub-shapes)
+  // / vertical "tear" / Bayer-dither quantize burst. Heavy mode — skip rate is
+  // intentional so it doesn't erase the grid at high ops/frame.
+  function animSector() {
+    if (Math.random() < 0.65) return;
+    _sectorT += 0.012;
+    const roll = Math.random();
+    if (roll < 0.60) {
+      const shape = Math.random();
+      const amp = 2 + Math.round(8 * _sizeScale);
+      if (shape < 0.04) {
+        const x = Math.floor(Math.random() * GRID_COLS);
+        const y = Math.floor(Math.random() * GRID_ROWS);
+        const wRand = Math.pow(Math.random(), 1.6);
+        const w = 2 + Math.floor(wRand * Math.max(1, Math.round(19 * _sizeScale)));
+        const h = 1 + (Math.random() < 0.4 ? 1 : 0);
+        const wcy = y % GRID_ROWS;
+        const off = Math.round(Math.sin(wcy * 0.11 + _sectorT * 1.4) * amp + (Math.random() - 0.5) * 4);
+        for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) {
+          next[idx(x + dx, y + dy)] = grid[idx(x + dx + off, y + dy)];
+        }
+      } else if (shape < 0.60) {
+        const y = Math.floor(Math.random() * GRID_ROWS);
+        const wcy = y % GRID_ROWS;
+        const segCount = 2 + Math.floor(Math.random() * 6);
+        for (let s = 0; s < segCount; s++) {
+          if (Math.random() < 0.35) continue;
+          const x = Math.floor(Math.random() * GRID_COLS);
+          const tier = Math.random();
+          let w;
+          if      (tier < 0.30) w = 1 + Math.floor(Math.random() * 1);
+          else if (tier < 0.75) w = 2 + Math.floor(Math.random() * Math.max(1, Math.round(4 * _sizeScale)));
+          else                  w = 5 + Math.floor(Math.random() * Math.max(1, Math.round(14 * _sizeScale)));
+          const off = Math.round(Math.sin(wcy * 0.11 + _sectorT * 1.4) * amp + (Math.random() - 0.5) * 6);
+          const h = 1 + Math.floor(Math.random() * 3);
+          for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) {
+            next[idx(x + dx, y + dy)] = grid[idx(x + dx + off, y + dy)];
+          }
+        }
+      } else {
+        const x = Math.floor(Math.random() * GRID_COLS);
+        const y = Math.floor(Math.random() * GRID_ROWS);
+        const square = Math.random() < 0.5;
+        const tier = Math.random();
+        let baseSz;
+        if      (tier < 0.25) baseSz = 1 + Math.floor(Math.random() * 2);
+        else if (tier < 0.65) baseSz = 3 + Math.floor(Math.random() * 4);
+        else if (tier < 0.92) baseSz = 7 + Math.floor(Math.random() * Math.max(1, Math.round(7 * _sizeScale)));
+        else                  baseSz = 13 + Math.floor(Math.random() * Math.max(1, Math.round(13 * _sizeScale)));
+        const w = square ? baseSz : baseSz + Math.floor(Math.random() * Math.max(2, baseSz));
+        const h = square ? baseSz : Math.max(2, Math.floor(baseSz * (0.3 + Math.random() * 0.9)));
+        const off = Math.round((Math.random() - 0.5) * 2 * amp);
+        for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) {
+          next[idx(x + dx, y + dy)] = grid[idx(x + dx + off, y + dy)];
+        }
+      }
+    } else if (roll < 0.85) {
+      const cx = Math.floor(Math.random() * GRID_COLS);
+      const halfW = 1 + Math.floor(Math.random() * Math.max(1, Math.round(2 * _sizeScale)));
+      const yStart = Math.floor(Math.random() * GRID_ROWS);
+      const tier = Math.random();
+      let len;
+      if      (tier < 0.40) len = 2 + Math.floor(Math.random() * 4);
+      else if (tier < 0.85) len = 5 + Math.floor(Math.random() * 8);
+      else if (tier < 0.96) len = 12 + Math.floor(Math.random() * 13);
+      else                  len = 30 + Math.floor(Math.random() * Math.max(1, Math.round(20 * _sizeScale)));
+      const srcY = (yStart + (Math.random() < 0.5 ? -20 : 20) + GRID_ROWS) % GRID_ROWS;
+      for (let h = 0; h < len; h++) {
+        const cy = (yStart + h) % GRID_ROWS;
+        for (let w = -halfW; w <= halfW; w++) {
+          next[idx(cx + w, cy)] = grid[idx(cx + w, srcY)];
+        }
+      }
+    } else {
+      if (PAL.length < 2) return;
+      const r = makeRect();
+      const N = PAL.length;
+      const last = N - 1;
+      for (let dy = 0; dy < r.h; dy++) for (let dx = 0; dx < r.w; dx++) {
+        const i = idx(r.x + dx, r.y + dy);
+        const v = grid[i];
+        const bayer = _BAYER2[dy & 1][dx & 1] / 4 - 0.375;
+        const norm  = v / last;
+        const jit   = (Math.random() - 0.5) * 0.25;
+        const q     = Math.max(0, Math.min(1, norm + bayer * (1 / N) + jit));
+        next[i]     = Math.round(q * last);
+      }
+    }
+  }
+
+  // Blocks helpers (app 4711-4736) — local feedback at given position +
+  // mode dispatcher used by blocks gradient.
+  function _localFeedbackAt(ox, oy) {
+    const w = 2 + Math.floor(Math.random() * Math.max(1, Math.round(12 * _sizeScale)));
+    const h = 2 + Math.floor(Math.random() * Math.max(1, Math.round( 6 * _sizeScale)));
+    const sx = ox - (w >> 1), sy = oy - (h >> 1);
+    for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) {
+      const cx = sx + dx, cy = sy + dy;
+      const nb = [grid[idx(cx-1,cy)], grid[idx(cx+1,cy)], grid[idx(cx,cy-1)], grid[idx(cx,cy+1)]];
+      const count = new Array(PAL.length).fill(0);
+      for (const n of nb) if (n < PAL.length) count[n]++;
+      let max = 0, best = grid[idx(cx,cy)];
+      for (let v = 0; v < PAL.length; v++) if (count[v] > max) { max = count[v]; best = v; }
+      next[idx(cx,cy)] = best;
+    }
+  }
+  function _runFeedbackModeOpAt(ox, oy) {
+    const r = Math.random();
+    if      (r < 0.70) _localFeedbackAt(ox, oy);
+    else if (r < 0.80) animShift();
+    else if (r < 0.90) animNoise();
+    else               animModulo();
+  }
+
+  // Blocks (app 4744-4839) — spatial feedback gradient (TL=blocks / BR=feedback)
+  // + bands / peaks / erosion sub-modes weighted by BLOCKS_TUNING.
+  function animBlocks() {
+    const T = BLOCKS_TUNING;
+    const ox = Math.floor(Math.random() * GRID_COLS);
+    const oy = Math.floor(Math.random() * GRID_ROWS);
+    if (T.feedbackMix > 0) {
+      const tBlend = (ox / GRID_COLS + oy / GRID_ROWS) / 2;
+      const v = Math.pow(T.feedbackMix / 100, 0.4);
+      const prob = v <= 0.5 ? (2 * v * tBlend) : (tBlend * (2 - 2 * v) + (2 * v - 1));
+      if (Math.random() < prob) {
+        _runFeedbackModeOpAt(ox, oy);
+        return;
+      }
+    }
+    if (Math.random() < T.skipPct / 100) return;
+    _blocksT += 0.008;
+    if (PAL.length < 2) return;
+    const last = PAL.length - 1;
+    const pB = T.pBands / 100;
+    const pP = T.pPeaks / 100;
+    const roll = Math.random();
+    const _pickLit = () => {
+      const N = PAL.length;
+      if (N <= 2) return last;
+      const r = Math.pow(Math.random(), 2.2);
+      return 1 + Math.floor(r * last);
+    };
+    if (roll < pB) {
+      const cy = oy;
+      const tier = Math.random();
+      let h;
+      if      (tier < 0.60) h = 2 + Math.floor(Math.random() * Math.max(1, Math.round((T.bandMaxH * 0.25) * _sizeScale)));
+      else if (tier < 0.93) h = Math.round(T.bandMaxH * 0.31) + Math.floor(Math.random() * Math.max(1, Math.round((T.bandMaxH * 0.31) * _sizeScale)));
+      else                  h = Math.round(T.bandMaxH * 0.56) + Math.floor(Math.random() * Math.max(1, Math.round((T.bandMaxH * 0.44) * _sizeScale)));
+      const bx = ox;
+      const wTier = Math.random();
+      const isMd = _sizeScale >= 0.99 && _sizeScale <= 1.01;
+      let bw;
+      if      (wTier < 0.55) bw = 4 + Math.floor(Math.random() * (isMd ? 17 : 12));
+      else if (wTier < 0.92) bw = (isMd ? 16 : 13) + Math.floor(Math.random() * (isMd ? 7 : 6));
+      else                   bw = (isMd ? 28 : 23) + Math.floor(Math.random() * (isMd ? 2 : 3));
+      const ampY = 1 + Math.floor(Math.random() * Math.max(1, T.bandWaveAmp));
+      const freq = 0.025 + Math.random() * 0.05;
+      const phase = _blocksT * 1.2 + Math.random() * 6.28;
+      const halfH = h / 2;
+      const v = _pickLit();
+      for (let dx = 0; dx < bw; dx++) {
+        const wave = Math.sin((bx + dx) * freq + phase) * ampY;
+        const top = Math.round(cy + wave - halfH);
+        for (let dy = 0; dy < h; dy++) next[idx(bx + dx, top + dy)] = v;
+      }
+    } else if (roll < pB + pP) {
+      const cx = ox, baseY = oy;
+      const tier = Math.random();
+      let height;
+      if      (tier < 0.55) height = 4  + Math.floor(Math.random() * Math.max(1, Math.round(T.peakMaxH * 0.16)));
+      else if (tier < 0.92) height = Math.round(T.peakMaxH * 0.26) + Math.floor(Math.random() * Math.max(1, Math.round(T.peakMaxH * 0.29)));
+      else                  height = Math.round(T.peakMaxH * 0.52) + Math.floor(Math.random() * Math.max(1, Math.round(T.peakMaxH * 0.48 * _sizeScale)));
+      const baseHalfW = 1 + Math.floor(Math.random() * Math.max(1, T.peakBaseW));
+      const v = _pickLit();
+      for (let h = 0; h < height; h++) {
+        const taper = 1 - h / height;
+        const halfW = Math.max(0, Math.floor(baseHalfW * taper));
+        for (let w = -halfW; w <= halfW; w++) next[idx(cx + w, baseY - h)] = v;
+      }
+    } else {
+      const cx = ox, cy = oy;
+      const w = 2 + Math.floor(Math.random() * Math.max(1, Math.round(T.erosionMaxW * _sizeScale)));
+      const h = 2 + Math.floor(Math.random() * Math.max(1, Math.round(T.erosionMaxH * _sizeScale)));
+      for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) next[idx(cx + dx, cy + dy)] = 0;
+    }
+  }
+
+  // ── Mode dispatch: probabilities + cycle (app 5805-5896) ──────────────────
+  const MODE_NAMES = ['feedback','shift','noise','modulo','wave','jungle','sector','blocks'];
+  // Each mode has 70-100% probability of its own anim-fn; remaining is filled
+  // with feedback/shift/noise/modulo so the visual stays alive even on a
+  // sparse mode (e.g. blocks alone has 50% skipPct).
+  const MODE_PROBS = {
+    feedback: [0.70, 0.10, 0.10, 0.10, 0.00, 0.00, 0.00, 0.00],
+    shift:    [0.00, 1.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00],
+    noise:    [0.10, 0.10, 0.70, 0.10, 0.00, 0.00, 0.00, 0.00],
+    modulo:   [0.30, 0.25, 0.20, 0.25, 0.00, 0.00, 0.00, 0.00],
+    wave:     [0.00, 0.00, 0.00, 0.00, 1.00, 0.00, 0.00, 0.00],
+    jungle:   [0.00, 0.00, 0.00, 0.00, 0.00, 1.00, 0.00, 0.00],
+    sector:   [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 1.00, 0.00],
+    blocks:   [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 1.00],
+  };
+  const CYCLE_FRAMES  = 300;                           // 5s @ 60fps
+  const XFADE_FRAMES  = Math.round(CYCLE_FRAMES * 0.2); // 60 frames overlap
+  const BREATH_FRAMES = 300;                           // noise breath cycle
+
+  // For 2C: cycle through ALL 8 modes. In 2D this becomes derived from the
+  // distinct modes of placed tokens (= app's `moduloDistinctModes(mod)`).
+  let _cycleModes  = [...MODE_NAMES];
+  let _cycleIdx    = 0;
+  let _cycleFrames = 0;
+  let _dtMode      = _cycleModes[0];
+  let _xfadeT      = XFADE_FRAMES; // ≥ XFADE_FRAMES means inactive
+  let _xfadeFrom   = _dtMode;
+  let _xfadeTo     = _dtMode;
+  let _breathFrame = 0;
+
+  // Optional: live-update the DT.Mode stat label. Title shows current mode.
+  const _modeStatEl = document.getElementById('demo-stat-mode');
+  function _updateModeStat() {
+    if (_modeStatEl) _modeStatEl.textContent = _dtMode;
+  }
+  _updateModeStat();
+
+  // ── step (app 5829-5932) — full mode dispatch + cycle + crossfade ─────────
+  function step(ops) {
+    next.set(grid);
+    let pFb, pSh, pNo, pMo, pWv, pJg, pSe, pBl;
+    if (_xfadeT < XFADE_FRAMES && _cycleModes.length > 1) {
+      // Crossfade: lerp probs between _xfadeFrom and _xfadeTo over XFADE_FRAMES.
+      const alpha = _xfadeT / XFADE_FRAMES;
+      const fP = MODE_PROBS[_xfadeFrom] || MODE_PROBS.feedback;
+      const tP = MODE_PROBS[_xfadeTo]   || MODE_PROBS.feedback;
+      [pFb, pSh, pNo, pMo, pWv, pJg, pSe, pBl] = fP.map((p, i) => p * (1 - alpha) + tP[i] * alpha);
+      _xfadeT++;
+    } else {
+      [pFb, pSh, pNo, pMo, pWv, pJg, pSe, pBl] = MODE_PROBS[_dtMode] || MODE_PROBS.feedback;
+      // Noise breath envelope — 3 dips over BREATH_FRAMES so noise pulses
+      // instead of reading as static white-noise (app 5841-5859).
+      if (_dtMode === 'noise') {
+        const PHASE1 = 225;
+        if (_breathFrame < PHASE1) {
+          const t = _breathFrame / BREATH_FRAMES;
+          const env = Math.sin(Math.PI * 2 * t) ** 2;
+          pNo = 0.50 * (1 - env);
+          pFb = pFb + (0.70 - pNo);
+          _breathFrame++;
+        } else if (_breathFrame < BREATH_FRAMES) {
+          const tRamp = (_breathFrame - PHASE1) / (BREATH_FRAMES - PHASE1);
+          pNo = 0.30 * tRamp;
+          pFb = pFb + (0.70 - pNo);
+          _breathFrame++;
+        } else {
+          _breathFrame = 0;
+          pNo = 0.50;
+          pFb = pFb + 0.20;
+        }
+      }
+    }
+    // Cumulative thresholds — pick which anim runs per random pick.
+    const cFb = pFb,
+          cSh = cFb + pSh,
+          cNo = cSh + pNo,
+          cMo = cNo + pMo,
+          cWv = cMo + pWv,
+          cJg = cWv + pJg,
+          cSe = cJg + pSe,
+          cBl = cSe + pBl;
+    for (let i = 0; i < (ops || 8); i++) {
+      const r = Math.random();
+      if      (r < cFb) animFeedback();
+      else if (r < cSh) animShift();
+      else if (r < cNo) animNoise();
+      else if (r < cMo) animModulo();
+      else if (r < cWv) animWave();
+      else if (r < cJg) animJungle();
+      else if (r < cSe) animSector();
+      else if (r < cBl) animBlocks();
+    }
+    grid.set(next);
+
+    // Cycle progression — start crossfade 10% before the mode switch
+    _cycleFrames++;
+    if (_cycleModes.length > 1 &&
+        _cycleFrames === Math.round(CYCLE_FRAMES * 0.9) &&
+        _xfadeT >= XFADE_FRAMES) {
+      _xfadeFrom = _dtMode;
+      _xfadeTo   = _cycleModes[(_cycleIdx + 1) % _cycleModes.length];
+      _xfadeT    = 0;
+    }
+    if (_cycleFrames >= CYCLE_FRAMES) _cycleFrames = 0;
+    if (_cycleModes.length > 1 && _cycleFrames === 0) {
+      _cycleIdx = (_cycleIdx + 1) % _cycleModes.length;
+      _dtMode = _cycleModes[_cycleIdx];
+      _breathFrame = 0;
+      _updateModeStat();
+    }
+    // 2F-A: churn dither noise so marks have a ~2s lifetime.
+    _churnDither();
+  }
+
+  // ── Initial seed ───────────────────────────────────────────────────────────
+  _recomputeThresholds(PAL.length);
+  for (let i = 0; i < grid.length; i++) grid[i] = _pickWeighted();
+
+  // ── render via ImageData (app line 5935) ──────────────────────────────────
+  function paintTo(target, tctx) {
+    const W = target.width, H = target.height;
+    const vCols = Math.floor(W / PIXEL);
+    const vRows = Math.floor(H / PIXEL);
+    const offC  = Math.floor((GRID_COLS - vCols) / 2);
+    const offR  = Math.floor((GRID_ROWS - vRows) / 2);
+    const img   = tctx.createImageData(W, H);
+    const buf   = img.data;
+    for (let r = 0; r < vRows; r++) {
+      for (let c = 0; c < vCols; c++) {
+        const px = PAL[grid[(offR + r) * GRID_COLS + (offC + c)]] || PAL[0];
+        const R = px[0], G = px[1], B = px[2];
+        for (let py = 0; py < PIXEL; py++) {
+          for (let pxx = 0; pxx < PIXEL; pxx++) {
+            const i = ((r * PIXEL + py) * W + (c * PIXEL + pxx)) * 4;
+            buf[i] = R; buf[i+1] = G; buf[i+2] = B; buf[i+3] = 255;
+          }
+        }
+      }
+    }
+    // 2F-A: dither overlay — mutates buf in place before putImageData.
+    _applyDither(buf, W, vCols, vRows, offC, offR);
+    tctx.putImageData(img, 0, 0);
+  }
+  // Mirror canvases — declared here (early) so render() can paint to them.
+  // Initialized lower down. Both stay animated while their modal is open by
+  // being repainted on every render() tick.
+  let _snapCanvasEl    = null;
+  let _snapCtx         = null;
+  let _snapOverlayEl   = null;
+  let _expandCanvasEl  = null;
+  let _expandCtx       = null;
+  let _expandOverlayEl = null;
+  function render() {
+    paintTo(canvas, ctx);
+    if (_snapCanvasEl && _snapCtx && _snapOverlayEl && _snapOverlayEl.classList.contains('open')) {
+      paintTo(_snapCanvasEl, _snapCtx);
+    }
+    if (_expandCanvasEl && _expandCtx && _expandOverlayEl && _expandOverlayEl.classList.contains('open')) {
+      paintTo(_expandCanvasEl, _expandCtx);
+    }
+  }
+
+  // ── rAF loop — 60fps desktop, 30fps touch (app line 4290) ─────────────────
+  const _isTouchDevice = matchMedia('(pointer: coarse)').matches;
+  const FRAME_INTERVAL = _isTouchDevice ? 1000 / 30 : 1000 / 60;
+  const _prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+  let _lastFrame = 0;
+  let _dtOps = 14; // matches app's default initDtOps fallback
+
+  function loop(ts) {
+    const interval = _prefersReduced.matches ? 200 : FRAME_INTERVAL;
+    if (!document.hidden && ts - _lastFrame >= interval) {
+      try {
+        step(_dtOps);
+        _biosTick();        // 2F-C: stamp BIOS text into grid + cycle
+        applyRectShifts();  // 2F-B: displaces rect regions in grid + dither
+        tickRects();        // 2F-B: advances rect timers + per-tile state
+        render();
+      } catch (err) {
+        console.error('[demo] frame error:', err);
+      }
+      _lastFrame = ts;
+    }
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+
+  // ── Initialize stats display (real values — engine running, no tokens yet) ─
+  const _setStat = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  _setStat('demo-stat-colors', PAL.length);
+  _setStat('demo-stat-speed',  _dtOps);
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 2D — Trait setters: external API to modulate the engine.
+  //
+  // Per-token trait → modulo state:
+  //   sz  → _sizeScale + _shiftBaseScale + _shiftZoneScale (via SIZE_SCALES)
+  //   mode→ added to _cycleModes (distinct modes from all tokens)
+  //   speed → contributes to _dtOps total
+  //   color → palette index → PAL[k] = COLS_DATA[0][colorSel]
+  //
+  // Rect-shift traits (rs/rv/rd) and BIOS/dither (bios/dx) land in 2F.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // Size scales — direct port of app's SIZE_SCALES / SHIFT_BASE_SCALES /
+  // SHIFT_ZONE_SCALES (app lines 2376-2378). Affect makeRect() dimensions
+  // and shift-mode displacement zones.
+  const SIZE_SCALES        = { sm: 0.4,  md: 1.0, lg: 2.0 };
+  const SHIFT_BASE_SCALES  = { sm: 0.15, md: 0.4, lg: 0.8 };
+  const SHIFT_ZONE_SCALES  = { sm: 1.0,  md: 2.0, lg: 2.5 };
+
+  // Hex → RGB triple ([R,G,B] 0-255) helper for setPalette.
+  function _hexToRgb(hex) {
+    if (Array.isArray(hex)) return hex; // already RGB triple
+    const s = hex.replace('#', '');
+    return [
+      parseInt(s.slice(0, 2), 16),
+      parseInt(s.slice(2, 4), 16),
+      parseInt(s.slice(4, 6), 16),
+    ];
+  }
+
+  // setPalette — replace PAL with a new color set (array of "#hex" or [R,G,B]).
+  // Recomputes pyramid thresholds. Reseeds grid only if palette SIZE changed
+  // (so a pure color swap preserves the existing CA pattern). Mirror of app's
+  // updatePalette logic at lines 4422-4456.
+  let _prevPalN = PAL.length;
+  function setPalette(colors) {
+    if (!Array.isArray(colors) || colors.length === 0) {
+      // Empty modulo → fallback gray (app line 4439-4441 behavior).
+      const isNight = document.body.classList.contains('night');
+      PAL = [isNight ? [38, 37, 36] : [209, 207, 199]];
+    } else {
+      PAL = colors.map(_hexToRgb);
+    }
+    const N = PAL.length;
+    if (N !== _prevPalN) {
+      _recomputeThresholds(N);
+      for (let i = 0; i < grid.length; i++) grid[i] = _pickWeighted();
+      _prevPalN = N;
+    }
+    // Re-pick BIOS text colors so they follow the new palette. Also sync
+    // any active text instance's palIdx so colors update immediately
+    // (not waiting for the next BIOS_CYCLE tick = up to 5s).
+    if (typeof _pickTxtColors === 'function') _pickTxtColors();
+    if (typeof _txtInst !== 'undefined' && _txtInst[0]) {
+      _txtInst[0].palIdx  = _txtPalIdx;
+      _txtInst[0].palIdx2 = _txtPalIdx2;
+    }
+    _setStat('demo-stat-colors', N);
+  }
+
+  // setOps — total dtOps per frame. Sum of per-token speed values in the app.
+  function setOps(n) {
+    _dtOps = Math.max(1, Math.floor(n));
+    _setStat('demo-stat-speed', _dtOps);
+  }
+
+  // setSize — applies a size key ('sm' | 'md' | 'lg') to the engine. Affects
+  // makeRect() size + shift zone scales. App's moduloSizeSetters does the
+  // same: re-resolves _sizeScale + _shiftBaseScale + _shiftZoneScale.
+  function setSize(key) {
+    if (!SIZE_SCALES[key]) return;
+    _sizeScale       = SIZE_SCALES[key]       || 1.0;
+    _shiftBaseScale  = SHIFT_BASE_SCALES[key] || 0.4;
+    _shiftZoneScale  = SHIFT_ZONE_SCALES[key] || 1.0;
+    _setStat('demo-stat-size', key);
+  }
+
+  // setCycleModes — replace the list of modes the engine cycles through.
+  // Resets cycle state and crossfade. If single-mode, no cycling happens.
+  function setCycleModes(modes) {
+    if (!Array.isArray(modes) || modes.length === 0) modes = ['feedback'];
+    // Filter to known modes only.
+    const filtered = modes.filter(m => MODE_NAMES.includes(m));
+    _cycleModes = filtered.length > 0 ? filtered : ['feedback'];
+    _cycleIdx    = 0;
+    _cycleFrames = 0;
+    _xfadeT      = XFADE_FRAMES;
+    _xfadeFrom   = _cycleModes[0];
+    _xfadeTo     = _cycleModes[0];
+    _dtMode      = _cycleModes[0];
+    _breathFrame = 0;
+    _updateModeStat();
+  }
+
+  // resetGrid — re-seed the cellular grid from current palette. Useful when
+  // tokens get cleared (settle / try-again in 2G).
+  function resetGrid() {
+    _recomputeThresholds(PAL.length);
+    for (let i = 0; i < grid.length; i++) grid[i] = _pickWeighted();
+    _prevPalN = PAL.length;
+  }
+
+  // ── Expose public API on window._demo (used by 2E inventory click flow) ───
+  window._demo = {
+    // Read-only state
+    get grid()         { return grid; },
+    get PAL()          { return PAL; },
+    get mode()         { return _dtMode; },
+    get cycleModes()   { return _cycleModes; },
+    get dtOps()        { return _dtOps; },
+    get dxPattern()    { return _activeDxPattern; },
+    get rectVariant()  { return _activeRectVariant; },
+    get rsSize()       { return _rsSize; },
+    get rdDensity()    { return _rdDensity; },
+    // Setters
+    setPalette,
+    setOps,
+    setSize,
+    setCycleModes,
+    setDxPattern,
+    setRsSize,
+    setRectVariant,
+    setRdDensity,
+    resetGrid,
+    // Engine control (debug only)
+    step, render,
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 2E — 20 deterministic demo tokens + inventory panel + click-to-place flow
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // Full app palette (single row, 18 colors — 10 vivid + 8 dark). App's COLS_DATA[0].
+  const COLS_DATA = [
+    '#6363ff','#a040ff','#ff003a','#ff8c00','#ffbd2e','#28c840','#ff4080','#ff63ff','#1100ff','#63ff63',
+    '#57686e','#2a0b18','#23242a','#ab0a5f','#0f1021','#000000','#bfbcce','#8b8b8b'
+  ];
+  // Trait abbreviations for tags on tiles + token rows.
+  const MODE_ABBR = { feedback:'fb', shift:'sh', noise:'no', modulo:'mo', wave:'wv', jungle:'jg', sector:'se', blocks:'bl' };
+  const SZ_LABEL  = { sm:'sm', md:'md', lg:'lg' };
+  const RV_ABBR   = { core:'co', mecha:'me', hysteria:'hy', metro:'mt', 'side-b':'sb', earthquake:'eq', retro:'rt', ladder:'ld' };
+  // Dither pattern keys + abbreviations (app lines 2220-2221). 8 exposed patterns.
+  const DX_KEYS = ['x','plus','h','sq','num','numi','m','o'];
+  const DX_ABBR = { x:'×', plus:'+', h:'—', sq:'sq', num:'#', numi:'#⁻', m:'m', o:'○' };
+  // Rect-shift variants (app line 2278) — 8 algorithms.
+  const RECT_VARIANTS = ['core','mecha','hysteria','metro','side-b','earthquake','retro','ladder'];
+  // Rect-shift size + density buckets.
+  const RS_SIZES = ['sm','md','lg','xl'];
+  const RD_KEYS  = ['lo','md','hi','mx'];
+
+  // Mulberry32 deterministic RNG — matches the seed approach used in the
+  // on-chain renderer for reproducible token traits.
+  function mulberry32(a) {
+    return function() {
+      let t = a += 0x6d2b79f5;
+      t = Math.imul(t ^ t >>> 15, t | 1);
+      t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+
+  // 20 tokens — sequential ids 1-20, ranks 1-20 (low rank = high prominence).
+  // Each token's traits are deterministic from its id so reload/refresh
+  // always shows the same set. All trait fields seeded — DX/BIOS/Rect Shift
+  // store state but only affect rendering once chunk 2F (engine layers) lands.
+  const DEMO_TOKENS = [];
+  for (let id = 1; id <= 20; id++) {
+    const rng = mulberry32(id * 31 + 7);
+    DEMO_TOKENS.push({
+      id,
+      rank:  id,                                                          // 1..20
+      sel:   Math.floor(rng() * COLS_DATA.length),                        // 0..17
+      mode:  MODE_NAMES[Math.floor(rng() * MODE_NAMES.length)],
+      sz:    ['sm','md','lg'][Math.floor(rng() * 3)],
+      speed: 1 + Math.floor(rng() * 28),                                  // 1..28
+      dx:    DX_KEYS[Math.floor(rng() * DX_KEYS.length)],                 // pattern key
+      bios:  rng() < 0.5,                                                  // boolean
+      rs:    RS_SIZES[Math.floor(rng() * RS_SIZES.length)],
+      rv:    RECT_VARIANTS[Math.floor(rng() * RECT_VARIANTS.length)],
+      rd:    RD_KEYS[Math.floor(rng() * RD_KEYS.length)],
+    });
+  }
+
+  // Per-token random re-roll (used by .demo-tr-rand button + randomize-all).
+  // Re-rolls every editable trait. Mode picks DIFFERENT from current when
+  // possible (matches app's `_diffPick`) for visible change.
+  function _randomizeToken(t) {
+    t.sel = Math.floor(Math.random() * COLS_DATA.length);
+    const otherModes = MODE_NAMES.filter(m => m !== t.mode);
+    t.mode = otherModes.length > 0
+      ? otherModes[Math.floor(Math.random() * otherModes.length)]
+      : MODE_NAMES[Math.floor(Math.random() * MODE_NAMES.length)];
+    t.sz    = ['sm','md','lg'][Math.floor(Math.random() * 3)];
+    t.speed = 1 + Math.floor(Math.random() * 28);
+    t.dx    = DX_KEYS[Math.floor(Math.random() * DX_KEYS.length)];
+    t.bios  = Math.random() < 0.5;
+    t.rs    = RS_SIZES[Math.floor(Math.random() * RS_SIZES.length)];
+    t.rv    = RECT_VARIANTS[Math.floor(Math.random() * RECT_VARIANTS.length)];
+    t.rd    = RD_KEYS[Math.floor(Math.random() * RD_KEYS.length)];
+  }
+
+  // ── Modulo state ──────────────────────────────────────────────────────────
+  // Placed tokens (max 8), rank-sorted ascending. Inventory holds whatever is
+  // not placed.
+  const placedTokens = [];
+  const placedSet    = new Set();   // mirror of placedTokens by id, for quick lookup
+
+  function _placedCount()  { return placedTokens.length; }
+  function _isAvailable(id){ return !placedSet.has(id); }
+
+  // ── Recompute modulo state from placed tokens ──────────────────────────────
+  // Called after every place/remove. Rebuilds PAL + cycleModes + sizeScale +
+  // dtOps and pushes them into the engine via the 2D setters. Updates the UI
+  // (token list, inventory, stats, settle button).
+  function _refreshModuloState() {
+    // PAL — colors from each placed token (rank-sorted, low rank first)
+    const colors = placedTokens.map(t => COLS_DATA[t.sel]);
+    setPalette(colors);
+
+    // Cycle modes — distinct non-null modes from placed tokens. Tokens with
+    // null mode (cleared in editor) are ignored. If everyone is null, fall
+    // back to all 8 modes so the engine keeps cycling visibly.
+    const distinctModes = [...new Set(placedTokens.map(t => t.mode).filter(Boolean))];
+    if (distinctModes.length > 0) {
+      setCycleModes(distinctModes);
+    } else {
+      setCycleModes([...MODE_NAMES]);
+    }
+
+    // Dominant size — most-frequent non-null sz. Null sizes don't count.
+    if (placedTokens.length > 0) {
+      const sizeCounts = { sm:0, md:0, lg:0 };
+      for (const t of placedTokens) {
+        if (t.sz) sizeCounts[t.sz] = (sizeCounts[t.sz] || 0) + 1;
+      }
+      let bestSz = null, bestCount = 0;
+      for (const k of ['sm','md','lg']) {
+        if (sizeCounts[k] > bestCount) { bestCount = sizeCounts[k]; bestSz = k; }
+      }
+      setSize(bestSz || 'md');
+      _setStat('demo-stat-size', bestSz || '—');
+    } else {
+      setSize('md');
+      _setStat('demo-stat-size', '—');
+    }
+
+    // dtOps — sum of speeds (matches app's reseedPositionOps default)
+    if (placedTokens.length > 0) {
+      const totalSpeed = placedTokens.reduce((acc, t) => acc + t.speed, 0);
+      setOps(totalSpeed);
+    } else {
+      setOps(14); // idle baseline
+    }
+
+    // DX pattern — first non-null dx from placed tokens (matches app's
+    // getModuloDxPattern). Engine renders this overlay over PAL[0] cells.
+    let firstDx = null;
+    for (const t of placedTokens) {
+      if (t.dx) { firstDx = t.dx; break; }
+    }
+    setDxPattern(firstDx);
+
+    // Rect-shift: pick first non-null rs/rv/rd from placed tokens. RV gates
+    // the whole effect — without an RV-set token, rect-shift stays off.
+    let firstRs = null, firstRv = null, firstRd = null;
+    for (const t of placedTokens) { if (t.rs && !firstRs) firstRs = t.rs; }
+    for (const t of placedTokens) { if (t.rv && !firstRv) firstRv = t.rv; }
+    for (const t of placedTokens) { if (t.rd && !firstRd) firstRd = t.rd; }
+    setRsSize(firstRs || 'md');
+    setRdDensity(firstRd || 'md');
+    setRectVariant(firstRv); // null gates the effect off
+    _setStat('demo-stat-rsize', firstRs || '—');
+    _setStat('demo-stat-rvar',  firstRv || '—');
+
+    // BIOS — if any placed token has bios=true, trigger text stamping.
+    // If user just enabled bios on a token, show text immediately (don't
+    // wait for next BIOS_CYCLE tick). If no bios-on tokens, clear instance.
+    const biosOnIdxs = [];
+    for (let i = 0; i < placedTokens.length; i++) {
+      if (placedTokens[i].bios === true) biosOnIdxs.push(i);
+    }
+    if (biosOnIdxs.length === 0) {
+      clearBios();
+    } else if (!_txtInst[0]) {
+      // Bios just turned on (no instance yet) — pick text for first bios-on slot.
+      triggerBios(biosOnIdxs[0]);
+    }
+    // Otherwise leave _txtInst[0] in place; cycle continues at BIOS_CYCLE.
+
+    // UI updates
+    _refreshTokenList();
+    _refreshInventoryGrid();
+    _setStat('demo-stat-tokens', placedTokens.length + '/8');
+    _refreshSettleBtn();
+    _refreshAddBtn();
+  }
+
+  // ── Place / Remove ─────────────────────────────────────────────────────────
+  // Placement clones the seed token and CLEARS all editable traits (mode,
+  // sz, rs, rv, rd, bios, dx). Rationale: matches app — when you drop a
+  // token into a modulo, no traits are active by default. The user picks
+  // which traits to enable via the trait editor. Color and speed survive
+  // (color identifies the token; speed is the position-default).
+  // Inventory tile keeps showing the original seed traits because it reads
+  // DEMO_TOKENS, not the placed clone.
+  function placeToken(tokenId) {
+    if (placedTokens.length >= 8) return;
+    if (placedSet.has(tokenId)) return;
+    const seed = DEMO_TOKENS.find(x => x.id === tokenId);
+    if (!seed) return;
+    const t = {
+      ...seed,
+      mode: null,
+      sz:   null,
+      rs:   null,
+      rv:   null,
+      rd:   null,
+      bios: null,
+      dx:   null,
+    };
+    // Insert sorted by rank ascending
+    let insertIdx = placedTokens.findIndex(x => x.rank > t.rank);
+    if (insertIdx < 0) placedTokens.push(t);
+    else placedTokens.splice(insertIdx, 0, t);
+    placedSet.add(tokenId);
+    _refreshModuloState();
+  }
+  function removeToken(tokenId) {
+    const idxAt = placedTokens.findIndex(x => x.id === tokenId);
+    if (idxAt < 0) return;
+    placedTokens.splice(idxAt, 1);
+    placedSet.delete(tokenId);
+    // Clean up expanded state — the row is gone, no point keeping it.
+    if (typeof _expandedTokens !== 'undefined') _expandedTokens.delete(tokenId);
+    if (typeof _expandedGroups !== 'undefined') {
+      // Drop all `${tokenId}:*` keys
+      for (const k of [..._expandedGroups]) {
+        if (k.startsWith(tokenId + ':')) _expandedGroups.delete(k);
+      }
+    }
+    _refreshModuloState();
+  }
+
+  // ── Trait tag builder — shared by inventory tiles + placed token rows ─────
+  // Outputs an array of <span class="demo-inv-tile-tag"> chips for each
+  // non-null trait on the token. Order matches the app's stat row:
+  //   mode → sz → rs → rv → rd → bios → dx
+  // Abbreviations are short (2-3 chars) so 7 chips fit comfortably in the
+  // ~329px-wide row at native scale.
+  function _buildTraitTags(token) {
+    const out = [];
+    const _mk = (txt) => {
+      const s = document.createElement('span');
+      s.className = 'demo-inv-tile-tag';
+      s.textContent = txt;
+      return s;
+    };
+    if (token.mode) out.push(_mk(MODE_ABBR[token.mode] || token.mode));
+    if (token.sz)   out.push(_mk(SZ_LABEL[token.sz]   || token.sz));
+    if (token.rs)   out.push(_mk(token.rs));
+    if (token.rv)   out.push(_mk(RV_ABBR[token.rv]    || token.rv));
+    if (token.rd)   out.push(_mk(token.rd));
+    if (token.bios) out.push(_mk('b'));
+    if (token.dx)   out.push(_mk(DX_ABBR[token.dx]    || token.dx));
+    return out;
+  }
+
+  // ── Inventory grid render ──────────────────────────────────────────────────
+  const _invGridEl   = document.getElementById('demo-inv-grid');
+  const _invCountEl  = document.getElementById('demo-inv-count');
+  const _invPanelEl  = document.getElementById('demo-inventory');
+  const _invCloseEl  = document.getElementById('demo-inv-close');
+  function _buildInventoryTile(token) {
+    const tile = document.createElement('div');
+    tile.className = 'demo-inv-tile';
+    tile.dataset.tokenId = token.id;
+    if (placedSet.has(token.id)) tile.classList.add('placed');
+
+    const idEl = document.createElement('span');
+    idEl.className = 'demo-inv-tile-id';
+    idEl.textContent = 'R#' + String(token.rank).padStart(3, '0');
+    tile.appendChild(idEl);
+
+    const sw = document.createElement('span');
+    sw.className = 'demo-inv-tile-swatch';
+    sw.style.background = COLS_DATA[token.sel];
+    tile.appendChild(sw);
+
+    const tags = document.createElement('span');
+    tags.className = 'demo-inv-tile-tags';
+    for (const tag of _buildTraitTags(token)) tags.appendChild(tag);
+    tile.appendChild(tags);
+
+    tile.addEventListener('click', e => {
+      e.stopPropagation();
+      placeToken(token.id);
+    });
+    return tile;
+  }
+  function _refreshInventoryGrid() {
+    if (!_invGridEl) return;
+    const available = DEMO_TOKENS.filter(t => !placedSet.has(t.id));
+    _invGridEl.replaceChildren();
+    if (available.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'demo-inv-empty';
+      empty.textContent = 'all tokens placed';
+      _invGridEl.appendChild(empty);
+    } else {
+      for (const t of DEMO_TOKENS) {
+        if (placedSet.has(t.id)) continue; // hide placed ones
+        _invGridEl.appendChild(_buildInventoryTile(t));
+      }
+    }
+    if (_invCountEl) _invCountEl.textContent = available.length + ' / 20';
+  }
+
+  // ── Inventory panel toggle ─────────────────────────────────────────────────
+  function _openInventory() {
+    if (!_invPanelEl) return;
+    _invPanelEl.classList.add('open');
+    _invPanelEl.setAttribute('aria-hidden', 'false');
+  }
+  function _closeInventory() {
+    if (!_invPanelEl) return;
+    _invPanelEl.classList.remove('open');
+    _invPanelEl.setAttribute('aria-hidden', 'true');
+  }
+  function _toggleInventory() {
+    if (!_invPanelEl) return;
+    if (_invPanelEl.classList.contains('open')) _closeInventory();
+    else _openInventory();
+  }
+
+  if (_invCloseEl) {
+    _invCloseEl.addEventListener('click', e => { e.stopPropagation(); _closeInventory(); });
+  }
+  // Click outside inventory closes it. Excludes the "+" toggle (which has
+  // its own toggle behavior) and clicks inside the panel itself.
+  document.addEventListener('click', e => {
+    if (!_invPanelEl || !_invPanelEl.classList.contains('open')) return;
+    if (_invPanelEl.contains(e.target)) return;
+    if (_addBtnEl && _addBtnEl.contains(e.target)) return;
+    _closeInventory();
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && _invPanelEl && _invPanelEl.classList.contains('open')) {
+      _closeInventory();
+    }
+  });
+
+  // ── Add row "+" button → toggle inventory ──────────────────────────────────
+  const _addBtnEl = document.getElementById('demo-add-btn');
+  function _refreshAddBtn() {
+    if (!_addBtnEl) return;
+    if (placedTokens.length >= 8) {
+      _addBtnEl.classList.add('disabled');
+    } else {
+      _addBtnEl.classList.remove('disabled');
+    }
+  }
+  if (_addBtnEl) {
+    _addBtnEl.addEventListener('click', e => {
+      e.stopPropagation();
+      if (_addBtnEl.classList.contains('disabled')) return;
+      _toggleInventory();
+    });
+  }
+
+  // ── Token list (placed tokens, inside the modulo card-left) ────────────────
+  const _tlistEl = document.getElementById('demo-tlist');
+  // Track which placed tokens are expanded (for trait editing). Persists
+  // across refreshes so editing doesn't auto-collapse the row mid-action.
+  const _expandedTokens = new Set();
+  // Track which trait subgroups (Color/DT/Rect Shift/BIOS/DX) are expanded
+  // per token. Without this, every trait edit triggers _refreshTokenList →
+  // rebuild → all subgroups collapse to startOpen default. Key format:
+  // `${tokenId}:${groupName}`. Stored as a Set of opened keys.
+  const _expandedGroups = new Set();
+
+  // ── Trait editor builders — match app's makeGroup / makeRow / makeBtnGroup ─
+
+  // Collapsible group: header (name + arrow) + body. Returns the body for
+  // appending content. tokenId+groupName allows persisting open state across
+  // refreshes via _expandedGroups Set; startOpen is the default if no state.
+  function _makeTraitGroup(name, startOpen, tokenId) {
+    const stateKey = (tokenId != null) ? (tokenId + ':' + name) : null;
+    const isOpen = stateKey
+      ? (_expandedGroups.has(stateKey) || (startOpen && _expandedGroups.size === 0 && false))
+      : startOpen;
+    // Resolve isOpen: explicit Set entry, OR if no entry yet use startOpen.
+    const open = stateKey
+      ? (_expandedGroups.has(stateKey) ? true : startOpen)
+      : startOpen;
+    // Track newly-opened defaults so subsequent refreshes preserve them.
+    if (stateKey && open && !_expandedGroups.has(stateKey)) _expandedGroups.add(stateKey);
+
+    const arrow = document.createElement('span');
+    arrow.className = 'demo-tg-arrow' + (open ? ' open' : '');
+    arrow.textContent = '▸';
+    const nameEl = document.createElement('span');
+    nameEl.className = 'demo-tg-name';
+    nameEl.textContent = name;
+    const hdr = document.createElement('div');
+    hdr.className = 'demo-tg-hdr';
+    hdr.appendChild(nameEl); hdr.appendChild(arrow);
+    const body = document.createElement('div');
+    body.className = 'demo-tg-body' + (open ? ' open' : '');
+    hdr.addEventListener('click', e => {
+      e.stopPropagation();
+      const nowOpen = body.classList.toggle('open');
+      arrow.classList.toggle('open', nowOpen);
+      if (stateKey) {
+        if (nowOpen) _expandedGroups.add(stateKey);
+        else         _expandedGroups.delete(stateKey);
+      }
+    });
+    const g = document.createElement('div');
+    g.className = 'demo-tg';
+    g.appendChild(hdr); g.appendChild(body);
+    return { group: g, body };
+  }
+
+  // Trait line (label + container for content like buttons or slider)
+  function _makeTraitRow(label) {
+    const row = document.createElement('div');
+    row.className = 'demo-tr-trait-line';
+    const lbl = document.createElement('span');
+    lbl.className = 'demo-tr-trait-label';
+    lbl.textContent = label;
+    const btns = document.createElement('div');
+    btns.className = 'demo-dlang-btns';
+    row.appendChild(lbl); row.appendChild(btns);
+    return { row, btns };
+  }
+
+  // Button group with single-active toggle behavior — clicking the active
+  // button deactivates all (same as app: `wasActive` check returns null).
+  function _makeBtnGroup(btns, options, active, onClick) {
+    options.forEach(opt => {
+      const value = typeof opt === 'string' ? opt : opt.value;
+      const label = typeof opt === 'string' ? opt : opt.label;
+      const btn = document.createElement('button');
+      btn.className = 'demo-dlang-btn' + (active === value ? ' active' : '');
+      btn.textContent = label;
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const wasActive = btn.classList.contains('active');
+        btns.querySelectorAll('.demo-dlang-btn').forEach(b => b.classList.remove('active'));
+        if (!wasActive) {
+          btn.classList.add('active');
+          onClick(value);
+        } else {
+          onClick(null);
+        }
+      });
+      btns.appendChild(btn);
+    });
+  }
+
+  // Color picker — 18 colors split into 2 rows (vivid 10 + dark 8) like app
+  // (COLS_SPLIT = 10). Each dot is .demo-cdot with inner .demo-cdot-bg circle.
+  function _buildColorPicker(token) {
+    const COLS_SPLIT = 10;
+    const wrap = document.createElement('div');
+    wrap.className = 'demo-tr-colors-inline';
+    const makeRow = (start, end) => {
+      const r = document.createElement('div');
+      r.className = 'demo-tr-colors-row';
+      for (let i = start; i < end; i++) {
+        const hex = COLS_DATA[i];
+        const dot = document.createElement('div');
+        dot.className = 'demo-cdot' + (i === token.sel ? ' sel' : '');
+        if (hex === '#000000') dot.classList.add('black');
+        const bg = document.createElement('div');
+        bg.className = 'demo-cdot-bg';
+        bg.style.background = hex;
+        dot.appendChild(bg);
+        dot.title = hex;
+        dot.addEventListener('click', e => {
+          e.stopPropagation();
+          token.sel = i;
+          _refreshModuloState();
+        });
+        r.appendChild(dot);
+      }
+      return r;
+    };
+    wrap.appendChild(makeRow(0, COLS_SPLIT));
+    if (COLS_DATA.length > COLS_SPLIT) wrap.appendChild(makeRow(COLS_SPLIT, COLS_DATA.length));
+    return wrap;
+  }
+
+  // Speed slider — thin 2px track, 8px thumb. Wrapped in a tr-trait-line.
+  function _buildSpeedRow(token) {
+    const row = document.createElement('div');
+    row.className = 'demo-tr-trait-line';
+    const lbl = document.createElement('span');
+    lbl.className = 'demo-tr-trait-label';
+    lbl.textContent = 'SPEED';
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = 1; slider.max = 28;
+    slider.value = token.speed;
+    slider.className = 'demo-speed-slider';
+    const val = document.createElement('span');
+    val.className = 'demo-speed-val';
+    val.textContent = token.speed;
+    slider.addEventListener('input', e => {
+      e.stopPropagation();
+      token.speed = parseInt(slider.value, 10) || 1;
+      val.textContent = token.speed;
+      // Speed is cheap to apply — update ops directly without rebuilding rows.
+      const totalSpeed = placedTokens.reduce((acc, t) => acc + t.speed, 0);
+      setOps(totalSpeed);
+    });
+    slider.addEventListener('click', e => e.stopPropagation());
+    row.appendChild(lbl); row.appendChild(slider); row.appendChild(val);
+    return row;
+  }
+
+  function _buildTokenRow(token) {
+    const row = document.createElement('div');
+    row.className = 'demo-token-row';
+    if (_expandedTokens.has(token.id)) row.classList.add('expanded');
+    row.dataset.tokenId = token.id;
+
+    // ── Head (clickable to toggle expanded) ─────────────────────────────────
+    const head = document.createElement('div');
+    head.className = 'demo-token-row-head';
+
+    const rank = document.createElement('span');
+    rank.className = 'demo-token-row-rank';
+    rank.textContent = 'R#' + String(token.rank).padStart(3, '0');
+    head.appendChild(rank);
+
+    const sw = document.createElement('span');
+    sw.className = 'demo-token-row-swatch';
+    sw.style.background = COLS_DATA[token.sel];
+    head.appendChild(sw);
+
+    const tags = document.createElement('span');
+    tags.className = 'demo-token-row-tags';
+    for (const tag of _buildTraitTags(token)) tags.appendChild(tag);
+    head.appendChild(tags);
+
+    // Per-token randomize button — between tags and arrow (app's .tr-rand).
+    const randBtn = document.createElement('button');
+    randBtn.className = 'demo-tr-rand';
+    randBtn.title = 'randomize';
+    randBtn.textContent = '↺';
+    randBtn.addEventListener('click', e => {
+      e.stopPropagation(); // don't trigger row toggle
+      _randomizeToken(token);
+      _refreshModuloState();
+    });
+    head.appendChild(randBtn);
+
+    const arrow = document.createElement('span');
+    arrow.className = 'demo-token-row-arrow';
+    arrow.textContent = '▸';
+    head.appendChild(arrow);
+
+    head.addEventListener('click', e => {
+      // Don't toggle when clicking the randomize button
+      if (e.target.closest('.demo-tr-rand')) return;
+      if (_expandedTokens.has(token.id)) {
+        _expandedTokens.delete(token.id);
+        row.classList.remove('expanded');
+      } else {
+        _expandedTokens.add(token.id);
+        row.classList.add('expanded');
+      }
+    });
+    row.appendChild(head);
+
+    // ── Body (trait editor — only rendered DOM-wise when expanded) ─────────
+    // Structure mirrors app: identity row + collapsible groups.
+    //   tr-ident: ID + RANK + trash button
+    //   Color group (just colors)
+    //   DT group (SPEED slider + SIZE buttons + MODE buttons)
+    const body = document.createElement('div');
+    body.className = 'demo-token-row-body';
+
+    // Identity row — read-only ID + RANK info, with trash button flush right
+    const ident = document.createElement('div');
+    ident.className = 'demo-tr-ident';
+    const _identSpan = (cls, txt) => {
+      const s = document.createElement('span');
+      s.className = cls; s.textContent = txt; return s;
+    };
+    ident.appendChild(_identSpan('demo-tr-ident-label', 'ID'));
+    ident.appendChild(_identSpan('demo-tr-ident-val',   '#' + String(token.id).padStart(3, '0')));
+    ident.appendChild(_identSpan('demo-tr-ident-sep',   '·'));
+    ident.appendChild(_identSpan('demo-tr-ident-label', 'RANK'));
+    ident.appendChild(_identSpan('demo-tr-ident-val',   'R#' + String(token.rank).padStart(3, '0')));
+
+    // Trash button — same SVG as app (lines 4160-4163)
+    const trash = document.createElement('button');
+    trash.className = 'demo-tr-trash';
+    trash.type = 'button';
+    trash.title = 'remove token';
+    // SVG via createElementNS (refactored 2026-05-10 from innerHTML).
+    // createElementNS is mandatory for SVG — plain createElement creates an
+    // HTMLUnknownElement which doesn't render as vector.
+    const SVG_NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 12 14');
+    svg.setAttribute('width', '10');
+    svg.setAttribute('height', '12');
+    const path = document.createElementNS(SVG_NS, 'path');
+    path.setAttribute('d', 'M1 3h10M4 3V1.5h4V3M2.5 3l0.5 9.5h6l0.5-9.5M5 5v5M7 5v5');
+    path.setAttribute('stroke', 'currentColor');
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke-width', '0.9');
+    path.setAttribute('stroke-linecap', 'round');
+    path.setAttribute('stroke-linejoin', 'round');
+    svg.appendChild(path);
+    trash.appendChild(svg);
+    trash.addEventListener('click', e => {
+      e.stopPropagation();
+      removeToken(token.id);
+    });
+    ident.appendChild(trash);
+    body.appendChild(ident);
+
+    // Color group (start expanded — the most-edited trait)
+    const colorG = _makeTraitGroup('Color', true, token.id);
+    const colorLine = document.createElement('div');
+    colorLine.className = 'demo-tr-trait-line';
+    colorLine.appendChild(_buildColorPicker(token));
+    colorG.body.appendChild(colorLine);
+    body.appendChild(colorG.group);
+
+    // DT group (SPEED + SIZE + MODE)
+    const dtG = _makeTraitGroup('DT', true, token.id);
+    dtG.body.appendChild(_buildSpeedRow(token));
+
+    // Size buttons — same toggle behavior as app: re-click active → deactivate (null)
+    const szLine = _makeTraitRow('SIZE');
+    _makeBtnGroup(szLine.btns,
+      [{ label:'small', value:'sm' }, { label:'medium', value:'md' }, { label:'large', value:'lg' }],
+      token.sz,
+      v => {
+        token.sz = v; // can be null (cleared) — _refreshModuloState handles gracefully
+        _refreshModuloState();
+      });
+    dtG.body.appendChild(szLine.row);
+
+    // Mode buttons — same toggle behavior
+    const modeLine = _makeTraitRow('MODE');
+    _makeBtnGroup(modeLine.btns,
+      MODE_NAMES,
+      token.mode,
+      v => {
+        token.mode = v;
+        _refreshModuloState();
+      });
+    dtG.body.appendChild(modeLine.row);
+
+    body.appendChild(dtG.group);
+
+    // ── Rect Shift group (SIZE + VARIANT + DENSITY) ───────────────────────
+    const rsG = _makeTraitGroup('Rect Shift', false, token.id);
+    const rsLine = _makeTraitRow('SIZE');
+    _makeBtnGroup(rsLine.btns,
+      [
+        { label:'small',   value:'sm' },
+        { label:'medium',  value:'md' },
+        { label:'large',   value:'lg' },
+        { label:'x-large', value:'xl' },
+      ],
+      token.rs,
+      v => { token.rs = v; _refreshModuloState(); });
+    rsG.body.appendChild(rsLine.row);
+
+    const rvLine = _makeTraitRow('VARIANT');
+    _makeBtnGroup(rvLine.btns,
+      RECT_VARIANTS, // full names: core, mecha, hysteria, metro, side-b, earthquake, retro, ladder
+      token.rv,
+      v => { token.rv = v; _refreshModuloState(); });
+    rsG.body.appendChild(rvLine.row);
+
+    const rdLine = _makeTraitRow('DENSITY');
+    _makeBtnGroup(rdLine.btns,
+      [
+        { label:'low',    value:'lo' },
+        { label:'medium', value:'md' },
+        { label:'high',   value:'hi' },
+        { label:'max',    value:'mx' },
+      ],
+      token.rd,
+      v => { token.rd = v; _refreshModuloState(); });
+    rsG.body.appendChild(rdLine.row);
+
+    body.appendChild(rsG.group);
+
+    // ── BIOS group (ON/OFF) ───────────────────────────────────────────────
+    // Triple-state: true / false / null (cleared).
+    const biosG = _makeTraitGroup('BIOS', false, token.id);
+    const biosLine = _makeTraitRow('');
+    _makeBtnGroup(biosLine.btns,
+      [{ label:'ON', value:true }, { label:'OFF', value:false }],
+      token.bios,
+      v => { token.bios = v; _refreshModuloState(); });
+    biosG.body.appendChild(biosLine.row);
+
+    body.appendChild(biosG.group);
+
+    // ── DX group (8 dither pattern keys) ──────────────────────────────────
+    const dxG = _makeTraitGroup('DX', false, token.id);
+    const dxLine = _makeTraitRow('PATTERN');
+    _makeBtnGroup(dxLine.btns,
+      DX_KEYS.map(k => ({ label: DX_ABBR[k] || k, value: k })),
+      token.dx,
+      v => { token.dx = v; _refreshModuloState(); });
+    dxG.body.appendChild(dxLine.row);
+
+    body.appendChild(dxG.group);
+
+    row.appendChild(body);
+
+    return row;
+  }
+
+  function _refreshTokenList() {
+    if (!_tlistEl) return;
+    _tlistEl.replaceChildren();
+    if (placedTokens.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'demo-token-list-empty';
+      empty.textContent = 'empty · click + to add';
+      _tlistEl.appendChild(empty);
+    } else {
+      for (const t of placedTokens) _tlistEl.appendChild(_buildTokenRow(t));
+    }
+  }
+
+  // ── Settle button enable when ≥2 tokens ─────────────────────────────────────
+  const _settleBtnEl = document.getElementById('demo-settle-btn');
+  function _refreshSettleBtn() {
+    if (!_settleBtnEl) return;
+    _settleBtnEl.disabled = placedTokens.length < 2;
+  }
+
+  // ── 2G — Settle snapshot popup + try again ───────────────────────────────
+  // Assign to the closure-level vars (declared early so render() can access).
+  _snapOverlayEl   = document.getElementById('demo-snapshot-overlay');
+  _snapCanvasEl    = document.getElementById('demo-snapshot-canvas');
+  const _snapMetaEl     = document.getElementById('demo-snapshot-meta');
+  const _snapCloseEl    = document.getElementById('demo-snapshot-close');
+  const _snapTryAgainEl = document.getElementById('demo-snapshot-tryagain');
+  // Snapshot canvas resolution: 1500×900 (250×150 cells @ PIXEL=6) → 5:3 aspect.
+  // Bumped 2.5× from 600×360 to keep cells nítidas at the new ~1500px display
+  // size. Renders a much wider slice of the 450×250 world grid.
+  if (_snapCanvasEl) {
+    _snapCanvasEl.width  = 1500;
+    _snapCanvasEl.height = 900;
+    _snapCtx = _snapCanvasEl.getContext('2d');
+    if (_snapCtx) _snapCtx.imageSmoothingEnabled = false;
+  }
+
+  function _openSnapshot() {
+    if (!_snapOverlayEl || !_snapCanvasEl || !_snapCtx) return;
+    // Paint one frame immediately so the snapshot canvas isn't blank during
+    // the fade-in transition. The render loop takes over from the next tick
+    // and keeps the snapshot animated in lockstep with the live canvas.
+    paintTo(_snapCanvasEl, _snapCtx);
+    // Build metadata string. Filter null modes so "1 mode" doesn't show
+    // when no token has a mode set (post-place, all modes are null).
+    const distinctModes = [...new Set(placedTokens.map(t => t.mode).filter(Boolean))];
+    if (_snapMetaEl) {
+      _snapMetaEl.textContent =
+        placedTokens.length + ' tokens · ' +
+        PAL.length + ' colors · ' +
+        distinctModes.length + ' mode' + (distinctModes.length === 1 ? '' : 's');
+    }
+    _snapOverlayEl.classList.add('open');
+    _snapOverlayEl.setAttribute('aria-hidden', 'false');
+  }
+  function _closeSnapshot() {
+    if (!_snapOverlayEl) return;
+    _snapOverlayEl.classList.remove('open');
+    _snapOverlayEl.setAttribute('aria-hidden', 'true');
+  }
+  function _tryAgain() {
+    // Reset to the boot state — empty modulo, no tokens placed.
+    placedTokens.length = 0;
+    placedSet.clear();
+    _expandedTokens.clear();
+    if (typeof _expandedGroups !== 'undefined') _expandedGroups.clear();
+    // Reset BIOS counters so next composition's cycle starts fresh.
+    if (typeof clearBios === 'function') clearBios();
+    if (typeof _txtFrame !== 'undefined') _txtFrame = 0;
+    _refreshModuloState();
+    _closeSnapshot();
+  }
+
+  if (_settleBtnEl) {
+    _settleBtnEl.addEventListener('click', e => {
+      e.stopPropagation();
+      if (_settleBtnEl.disabled) return;
+      _openSnapshot();
+    });
+  }
+  if (_snapCloseEl)    _snapCloseEl.addEventListener('click', e => { e.stopPropagation(); _closeSnapshot(); });
+  if (_snapTryAgainEl) _snapTryAgainEl.addEventListener('click', e => { e.stopPropagation(); _tryAgain(); });
+  // Click on the overlay backdrop (outside the modal) closes
+  if (_snapOverlayEl) {
+    _snapOverlayEl.addEventListener('click', e => {
+      if (e.target === _snapOverlayEl) _closeSnapshot();
+    });
+  }
+  // Esc closes settle snapshot
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && _snapOverlayEl && _snapOverlayEl.classList.contains('open')) {
+      _closeSnapshot();
+    }
+  });
+
+  // ── Expand modal — green dot opens fullscreen view of live canvas ─────────
+  _expandOverlayEl  = document.getElementById('demo-expand-overlay');
+  _expandCanvasEl   = document.getElementById('demo-expand-canvas');
+  const _expandCloseEl    = document.getElementById('demo-expand-close');
+  const _expandTriggerEl  = document.getElementById('demo-expand-trigger');
+  // Resolution: 1200×720 cells = 200×120 cells @ PIXEL=6 → 5:3 aspect.
+  // Wider slice of the grid than the live canvas (61×65) — fills fullscreen.
+  if (_expandCanvasEl) {
+    _expandCanvasEl.width  = 1200;
+    _expandCanvasEl.height = 720;
+    _expandCtx = _expandCanvasEl.getContext('2d');
+    if (_expandCtx) _expandCtx.imageSmoothingEnabled = false;
+  }
+  function _openExpand() {
+    if (!_expandOverlayEl || !_expandCanvasEl || !_expandCtx) return;
+    paintTo(_expandCanvasEl, _expandCtx); // paint one frame immediately
+    _expandOverlayEl.classList.add('open');
+    _expandOverlayEl.setAttribute('aria-hidden', 'false');
+  }
+  function _closeExpand() {
+    if (!_expandOverlayEl) return;
+    _expandOverlayEl.classList.remove('open');
+    _expandOverlayEl.setAttribute('aria-hidden', 'true');
+  }
+  if (_expandTriggerEl) _expandTriggerEl.addEventListener('click', e => { e.stopPropagation(); _openExpand(); });
+  if (_expandCloseEl)   _expandCloseEl.addEventListener('click',   e => { e.stopPropagation(); _closeExpand(); });
+  if (_expandOverlayEl) {
+    _expandOverlayEl.addEventListener('click', e => {
+      if (e.target === _expandOverlayEl) _closeExpand();
+    });
+  }
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && _expandOverlayEl && _expandOverlayEl.classList.contains('open')) {
+      _closeExpand();
+    }
+  });
+
+  // ── Randomize button — re-rolls TRAITS of all placed tokens ──────────────
+  // Same behavior as app's randomize-all (`#rand-${mod.id}`): for each placed
+  // token, pick new random color/mode/size/speed. Token IDs and placement
+  // stay the same — only the traits change. Triggers .spin keyframe (600ms).
+  const _randBtnEl = document.getElementById('demo-randomize-btn');
+  if (_randBtnEl) {
+    _randBtnEl.addEventListener('click', e => {
+      e.stopPropagation();
+      _randBtnEl.classList.add('spin');
+      setTimeout(() => _randBtnEl.classList.remove('spin'), 700);
+      // Re-roll traits for each placed token via the shared helper.
+      // All trait fields are re-rolled (color/mode/size/speed/dx/bios/rs/rv/rd).
+      for (const t of placedTokens) _randomizeToken(t);
+      _refreshModuloState();
+    });
+  }
+
+  // ── Initial state: empty modulo. User clicks "+" to open inventory and
+  //    place tokens. Each placed token starts with no traits active — user
+  //    picks mode/size/etc via the trait editor.
+  _refreshModuloState();
+})();
+</script>
+
 </body>
 </html>
