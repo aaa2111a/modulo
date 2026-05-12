@@ -11697,7 +11697,7 @@ const SETTLE_ARTIFACT_ABI = [
   'function getArtifact(uint256) view returns (' +
     'tuple(uint256 moduloId, uint256[] tokenIds, uint256[] seeds, uint16[] ranks, address settler, uint64 settledAt)' +
   ')',
-  'event Settled(uint256 indexed artifactId, uint256 indexed moduloId, address indexed settler)',
+  'event Settled(uint256 indexed artifactId, uint256 indexed moduloId, address indexed settler, uint256[] composition, uint256[] burned)',
   'event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)',
 ];
 
