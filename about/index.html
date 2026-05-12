@@ -23,7 +23,7 @@
        script L1727 (812B)        sha256-KjVWMhTuGbrm7UCORRBroU+iHvJEmhZBJglyBQ50lNQ=
        script L2028 main mint     sha256-TzJnts+L4h00sfxSd8D3TrKgUzV0zBxwo8WkPW+PnPU=
        script L3490 demoEngine    sha256-6F7b0Juy7qWeLSqKnqA2/2roBPfaTTp1HDMG+Hh6xNs=
-       style  L99   main CSS      sha256-dAAoDo2sWriyYphUxpC5//HacHuDrEzBzBPM21a+EJg=
+       style  L99   main CSS      sha256-wsLPkXQXqDfC+41p+wM1NXlzGO7kix59H5pA3JAThgM=  (recomputed 2026-05-12 — mobile bg-word hide + inventory left:0)
 
      KNOWN LIMITATION: frame-buster fallback (~L48) builds replacement body
      via DOM element.style.cssText. Without 'unsafe-inline' in style-src those
@@ -32,7 +32,7 @@
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
   script-src 'self' 'sha256-I9Yfcq7guXpscFi+G0+tohjedD6HTkxEQAMsmvRwWNM=' 'sha256-A3ETGxrcp9DTjGzMeHPhzmYsPpIQYAylCdYHxrzxAos=' 'sha256-KjVWMhTuGbrm7UCORRBroU+iHvJEmhZBJglyBQ50lNQ=' 'sha256-TzJnts+L4h00sfxSd8D3TrKgUzV0zBxwo8WkPW+PnPU=' 'sha256-6F7b0Juy7qWeLSqKnqA2/2roBPfaTTp1HDMG+Hh6xNs=' https://cdn.jsdelivr.net;
-  style-src 'self' 'sha256-dAAoDo2sWriyYphUxpC5//HacHuDrEzBzBPM21a+EJg=';
+  style-src 'self' 'sha256-wsLPkXQXqDfC+41p+wM1NXlzGO7kix59H5pA3JAThgM=';
   font-src 'self' data:;
   img-src 'self' data: blob:;
   connect-src 'self' https://rpc.sepolia.org https://ethereum-sepolia-rpc.publicnode.com;
@@ -1691,7 +1691,8 @@ body.night .sys-entry-label  { color:rgba(255,255,255,0.30); }
 
 /* Intermediate breakpoint — demo at 1007px needs ~1647px viewport for the
    3-col layout to fit (1007 + 280×2 min text cols + 80 padding). Below that
-   the demo + texts can't coexist horizontally, so fall back to single col. */
+   the demo + texts can't coexist horizontally, so fall back to single col.
+   Stack order = source order = text col 1 → demo → text col 2. */
 @media (max-width:1647px) {
   .long-inner { grid-template-columns:1fr; gap:22px; }
   .long-col:last-child { margin-top:0; }
@@ -1702,6 +1703,17 @@ body.night .sys-entry-label  { color:rgba(255,255,255,0.30); }
     height:auto; aspect-ratio:5/3;
     margin:0 auto;
   }
+  /* Reset the desktop staircase margins (L1463-1475) when the layout
+     collapses to single column. The staircase only makes visual sense in
+     the 3-col desktop layout where the diagonal pulls text into the
+     center demo's flow. When stacked vertically, those margins make the
+     text drift left/right unpredictably.
+     Specificity matched via `:nth-child(n)` (matches every nth-child
+     position so it overrides all 6 staircase rules) — without this
+     pseudo-class the staircase rules have 0,3,0 vs reset's 0,2,0 and the
+     reset becomes dead code. */
+  .long-col:first-child .long-text:nth-child(n),
+  .long-col:last-child  .long-text:nth-child(n) { margin-left:0; margin-right:0; }
 }
 
 @media (max-width:768px) {
@@ -1714,13 +1726,33 @@ body.night .sys-entry-label  { color:rgba(255,255,255,0.30); }
   /* Demo cap shrinks further on small mobile so it doesn't dominate. */
   .long-demo { max-width:480px; }
   .long-section {
-    clip-path:none; -webkit-clip-path:none; padding-top:80px;
+    clip-path:none; -webkit-clip-path:none;
+    /* Mobile: tighter padding so text + demo use viewport width efficiently.
+       Match the 24px horizontal of other sections. */
+    padding:60px 24px 60px;
     border-top:0.5px solid var(--border-mid);
     border-bottom:0.5px solid var(--border-mid);
   }
   .long-outline { display:none; }
+  /* Hide decorative floating "modulo" bg-word on mobile (2026-05-12).
+     On desktop the word travels across the section at vertical center as a
+     visual flourish. On mobile, with the long-col gap:22px exposed (long-col
+     has transparent bg), the word is visible THROUGH those gaps overlapping
+     the text. JS `_mChkVis` just toggles `animationPlayState` on all words —
+     display:none doesn't break it (querySelectorAll still returns hidden
+     elements, style assignment is silent). Reviewer P3-A confirmed safe. */
+  .modulo-bg-word { display:none; }
+  /* Demo inventory: on desktop sits 240px to the LEFT of the modulo card
+     (`right:100%`). On mobile the card is centered with `max-width:480px`
+     so the inventory at `right:100%` lands off-screen at viewport x=-345.
+     Override to overlay the LEFT portion of the demo area instead. Settle
+     button is in `.demo-card-right` so it's NOT covered by the 240px-wide
+     inventory overlaying the left 34% of the card. Reviewer P2 verified
+     clean (containing block = .long-demo, not the card — visual result
+     still correct). */
   .specs-grid { grid-template-columns:1fr; }
   .specs-inner { padding:32px 24px; }
+  .demo-inventory { right:auto; left:0; }
 }
 </style>
 </head>
