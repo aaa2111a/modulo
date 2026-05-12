@@ -1,0 +1,19 @@
+# GitHub Pages Jekyll config — minimal override (2026-05-12)
+#
+# Purpose: when the deploy branch lacks `.nojekyll`, GitHub Pages auto-applies
+# the Primer theme to the repo's README, rendering a page with "This site is
+# open source. Improve this page." footer link. This config disables that
+# specific link without changing the theme itself.
+#
+# How it works: the Primer theme's `_layouts/default.html` wraps the footer
+# link in `{% if site.github.is_project_page %} ... {% endif %}`. Setting the
+# value to false makes the conditional skip → the footer link disappears.
+# The rest of the Primer styling stays applied.
+#
+# Note: this file is only used when Jekyll runs (i.e. when `.nojekyll` is
+# NOT present on the deployed branch). If `.nojekyll` is on the deploy branch,
+# Jekyll is bypassed entirely and this file is ignored (which is also fine —
+# Primer theme doesn't render either way).
+
+github:
+  is_project_page: false
