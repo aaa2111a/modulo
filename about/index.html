@@ -23,7 +23,7 @@
        script L1727 (812B)        sha256-KjVWMhTuGbrm7UCORRBroU+iHvJEmhZBJglyBQ50lNQ=
        script L2028 main mint     sha256-TzJnts+L4h00sfxSd8D3TrKgUzV0zBxwo8WkPW+PnPU=
        script L3490 demoEngine    sha256-6F7b0Juy7qWeLSqKnqA2/2roBPfaTTp1HDMG+Hh6xNs=
-       style  L99   main CSS      sha256-wsLPkXQXqDfC+41p+wM1NXlzGO7kix59H5pA3JAThgM=  (recomputed 2026-05-12 — mobile bg-word hide + inventory left:0)
+       style  L99   main CSS      sha256-U//KZl4cPYvCA97uOlSKKwaw8iGrGv9XCVvnTQwrOKM=  (recomputed 2026-05-12 — mobile iteration #2: specs-inner padding-top 0 + sys-diagram 10px + fade gradient scroll indicator)
 
      KNOWN LIMITATION: frame-buster fallback (~L48) builds replacement body
      via DOM element.style.cssText. Without 'unsafe-inline' in style-src those
@@ -32,7 +32,7 @@
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
   script-src 'self' 'sha256-I9Yfcq7guXpscFi+G0+tohjedD6HTkxEQAMsmvRwWNM=' 'sha256-A3ETGxrcp9DTjGzMeHPhzmYsPpIQYAylCdYHxrzxAos=' 'sha256-KjVWMhTuGbrm7UCORRBroU+iHvJEmhZBJglyBQ50lNQ=' 'sha256-TzJnts+L4h00sfxSd8D3TrKgUzV0zBxwo8WkPW+PnPU=' 'sha256-6F7b0Juy7qWeLSqKnqA2/2roBPfaTTp1HDMG+Hh6xNs=' https://cdn.jsdelivr.net;
-  style-src 'self' 'sha256-wsLPkXQXqDfC+41p+wM1NXlzGO7kix59H5pA3JAThgM=';
+  style-src 'self' 'sha256-U//KZl4cPYvCA97uOlSKKwaw8iGrGv9XCVvnTQwrOKM=';
   font-src 'self' data:;
   img-src 'self' data: blob:;
   connect-src 'self' https://rpc.sepolia.org https://ethereum-sepolia-rpc.publicnode.com;
@@ -1723,8 +1723,24 @@ body.night .sys-entry-label  { color:rgba(255,255,255,0.30); }
   .left-col { padding-right:0; }
   .right-col { padding-left:0; }
   .body-text { columns:1; }
-  /* Demo cap shrinks further on small mobile so it doesn't dominate. */
-  .long-demo { max-width:480px; }
+  /* Header (P0-1): desktop uses `1fr auto` grid which keeps `.meta-box`
+     at its `min-width:420px` — too wide for 375px viewport, values cut off
+     mid-word ("0xdE4A…", "Generative Ar…"). Stack title above meta-box. */
+  .header-inner { grid-template-columns:1fr; gap:24px; }
+  .meta-box { width:100%; min-width:0; }
+  .meta-label { font-size:10px; }
+  .meta-value { font-size:12px; }
+  /* Demo cap (mobile): set explicit dimensions matching the counter-scaled
+     wrap's visible footprint. See `.demo-scale-wrap` mobile override below
+     for the scale factor rationale. */
+  .long-demo {
+    display:block;
+    max-width:327px;
+    width:100%;
+    height:195px;       /* 418 × 0.467 ≈ 195 (scaled wrap visible footprint) */
+    overflow:hidden;    /* clip the wrap's native 700×418 layout overflow */
+    margin:0 auto;
+  }
   .long-section {
     clip-path:none; -webkit-clip-path:none;
     /* Mobile: tighter padding so text + demo use viewport width efficiently.
@@ -1733,6 +1749,12 @@ body.night .sys-entry-label  { color:rgba(255,255,255,0.30); }
     border-top:0.5px solid var(--border-mid);
     border-bottom:0.5px solid var(--border-mid);
   }
+  /* Long-inner (P0-2 defensive): desktop padding `0 40px` consumed 80px of
+     width. With section already at 24px sides on mobile, drop the inner
+     padding so `1fr` column gets the full ~327px of content area. Reviewer
+     flagged this as probably FP from preview-eval scaling artifact but
+     including defensively (no downside on true 375px). */
+  .long-inner { padding:0; }
   .long-outline { display:none; }
   /* Hide decorative floating "modulo" bg-word on mobile (2026-05-12).
      On desktop the word travels across the section at vertical center as a
@@ -1742,17 +1764,71 @@ body.night .sys-entry-label  { color:rgba(255,255,255,0.30); }
      display:none doesn't break it (querySelectorAll still returns hidden
      elements, style assignment is silent). Reviewer P3-A confirmed safe. */
   .modulo-bg-word { display:none; }
-  /* Demo inventory: on desktop sits 240px to the LEFT of the modulo card
-     (`right:100%`). On mobile the card is centered with `max-width:480px`
-     so the inventory at `right:100%` lands off-screen at viewport x=-345.
-     Override to overlay the LEFT portion of the demo area instead. Settle
-     button is in `.demo-card-right` so it's NOT covered by the 240px-wide
-     inventory overlaying the left 34% of the card. Reviewer P2 verified
-     clean (containing block = .long-demo, not the card — visual result
-     still correct). */
-  .specs-grid { grid-template-columns:1fr; }
-  .specs-inner { padding:32px 24px; }
+  /* Demo restore — Option B (Le 2026-05-12 iteration). Earlier this session
+     hid the demo entirely. Le's call: keep visible so the user sees "it's
+     there", even if interior is too small to read or tap. Counter-scale the
+     `.demo-scale-wrap` from desktop's scale(1.439) down to scale(0.467) so
+     the native 700px card renders at 327px — fits mobile viewport. Caveats
+     accepted: text labels inside the card render at ~7px (illegible), tap
+     targets ~20px (marginally workable). Post-mainnet TODO: touch-friendly
+     variant or animated GIF replacement. */
+  .demo-scale-wrap { transform:scale(0.467); }
+  /* Demo inventory: stays at native 240px width inside .long-demo's 327×195
+     clipped area. Will visually overflow the .long-demo when opened — the
+     `overflow:hidden` on .long-demo clips it. Acceptable v1 for "show it's
+     there"; can refine post-mainnet. */
   .demo-inventory { right:auto; left:0; }
+  /* Specs section: */
+  .specs-grid { grid-template-columns:1fr; }
+  /* Mirror desktop pattern (`0 52px 52px`) at mobile scale: top:0 so the
+     tbar stays flush to the top of the inner window (Le 2026-05-12 — the
+     32px top was pushing the tbar visually down from its desktop position). */
+  .specs-inner { padding:0 24px 32px; }
+  /* P1-1 (Le 2026-05-12 iteration): replicate desktop full-bleed pattern
+     with mobile-adjusted negative margin. Desktop uses `margin:0 -52px 20px`
+     to extend beyond the 52px specs-inner padding. Mobile inner padding is
+     24px → mirror with `-24px` so tbar spans edge-to-edge of `.specs-section`,
+     same position relationship as desktop. Earlier fix `margin:0; width:auto`
+     dropped the bleed and left tbar centered with 25px side gaps (looked
+     unanchored). */
+  .specs-tbar { margin:0 -24px 20px; width:auto; }
+  /* P1-2: `.sys-entry` desktop uses `140px 163px` columns — label eats
+     51% of width forcing single-word lines in the text column. Shrink
+     label col to 80px so text has room to breathe. */
+  .sys-entry { grid-template-columns:80px 1fr; gap:12px; }
+  /* P2-2: sys-entry-label 9px → 12px (reviewer recommended 12, not 11). */
+  .sys-entry-label { font-size:12px; }
+  /* P2-3: `.sys-diagram-wrap` already has overflow-x:auto on desktop;
+     `min-width:max-content` on `.sys-diagram` lets the ASCII diagram
+     stay readable + horizontally scrollable on mobile. padding-left:0
+     eliminates the -6px centering shift visible at narrow widths. */
+  /* Sys-diagram (Le 2026-05-12 iteration #2): font reverted from 8px back
+     to inherited 10px for legibility. Diagram is 387px wide at 10px, wrap
+     is 277px → overflow handled via `overflow-x:auto` (already set on
+     desktop CSS) PLUS a visual fade-gradient on the right edge to indicate
+     "scroll for more". `pointer-events:none` on the gradient so swipe
+     gestures still reach the wrap. Bg matches `var(--bg)` so the fade
+     blends into the page background.
+     padding-left:0 — eliminates the -6px centering shift visible at narrow
+     widths (desktop centers the diagram in the wrap; on narrow mobile that
+     center push pushes the start of each line off-screen-left). */
+  .sys-diagram-wrap {
+    padding-left:0;
+    position:relative;
+  }
+  .sys-diagram-wrap::after {
+    content:'';
+    position:absolute;
+    top:0; right:0; bottom:0;
+    width:32px;
+    background:linear-gradient(to right, transparent, var(--bg));
+    pointer-events:none;
+  }
+  .sys-diagram { min-width:max-content; }
+  /* P3-1: tap targets. Reviewer trimmed padding to 10px (not 16px) so
+     the night toggle doesn't overflow the 32px-tall tbar. */
+  .tbar-night { padding:10px; box-sizing:content-box; }
+  .footer-link { padding:8px 0; }
 }
 </style>
 </head>
