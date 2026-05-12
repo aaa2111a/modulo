@@ -1763,7 +1763,11 @@ body.night .sys-entry-label  { color:rgba(255,255,255,0.30); }
 <!-- Topbar -->
 <nav class="topbar">
   <div class="tbar-left">
-    <a class="tbar-back" href="../" title="back to home"></a>
+    <!-- Red dot back-to-home removed 2026-05-12 — only about/ is deployed
+         pre-launch, root URL would render GitHub Pages Primer fallback.
+         Restore <a class="tbar-back" href="../" title="back to home"></a>
+         when modulo-repo root index.html is deployed. CSS + JS handler
+         (with null guard) preserved at L148 + L1747 for easy reactivation. -->
   </div>
   <span class="tbar-center">Mint</span>
   <div class="tbar-right">
