@@ -1,0 +1,4 @@
+Contact: mailto:security@ubk.art
+Canonical: https://modulo.ubk.art/.well-known/security.txt
+Expires: 2027-05-09T23:59:59Z
+Preferred-Languages: en, es
