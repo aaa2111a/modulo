@@ -22,8 +22,8 @@
        script L75   DEBUG wrapper sha256-A3ETGxrcp9DTjGzMeHPhzmYsPpIQYAylCdYHxrzxAos=
        script L1727 (812B)        sha256-KjVWMhTuGbrm7UCORRBroU+iHvJEmhZBJglyBQ50lNQ=
        script L2028 main mint     sha256-TzJnts+L4h00sfxSd8D3TrKgUzV0zBxwo8WkPW+PnPU=
-       script L3490 demoEngine    sha256-6F7b0Juy7qWeLSqKnqA2/2roBPfaTTp1HDMG+Hh6xNs=
-       style  L99   main CSS      sha256-U//KZl4cPYvCA97uOlSKKwaw8iGrGv9XCVvnTQwrOKM=  (recomputed 2026-05-12 — mobile iteration #2: specs-inner padding-top 0 + sys-diagram 10px + fade gradient scroll indicator)
+       script L3684 demoEngine    sha256-16TNgwcGOKItX3fxva3U6WrX9yKbvsZ18IjGW8FpH74=  (recomputed 2026-05-13 — F4 a11y + canvas resize + fullscreen + DPR-match raster)
+       style  L99   main CSS      sha256-1oN1L5npozyevURhkjlWaLge+O4hhEr1aOuCmpSODRQ=  (recomputed 2026-05-13 — F4 a11y + canvas resize + fullscreen API)
 
      KNOWN LIMITATION: frame-buster fallback (~L48) builds replacement body
      via DOM element.style.cssText. Without 'unsafe-inline' in style-src those
@@ -31,8 +31,8 @@
      (rare; fallback text+link still readable). -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
-  script-src 'self' 'sha256-I9Yfcq7guXpscFi+G0+tohjedD6HTkxEQAMsmvRwWNM=' 'sha256-A3ETGxrcp9DTjGzMeHPhzmYsPpIQYAylCdYHxrzxAos=' 'sha256-KjVWMhTuGbrm7UCORRBroU+iHvJEmhZBJglyBQ50lNQ=' 'sha256-TzJnts+L4h00sfxSd8D3TrKgUzV0zBxwo8WkPW+PnPU=' 'sha256-6F7b0Juy7qWeLSqKnqA2/2roBPfaTTp1HDMG+Hh6xNs=' https://cdn.jsdelivr.net;
-  style-src 'self' 'sha256-U//KZl4cPYvCA97uOlSKKwaw8iGrGv9XCVvnTQwrOKM=';
+  script-src 'self' 'sha256-I9Yfcq7guXpscFi+G0+tohjedD6HTkxEQAMsmvRwWNM=' 'sha256-A3ETGxrcp9DTjGzMeHPhzmYsPpIQYAylCdYHxrzxAos=' 'sha256-KjVWMhTuGbrm7UCORRBroU+iHvJEmhZBJglyBQ50lNQ=' 'sha256-TzJnts+L4h00sfxSd8D3TrKgUzV0zBxwo8WkPW+PnPU=' 'sha256-16TNgwcGOKItX3fxva3U6WrX9yKbvsZ18IjGW8FpH74=' https://cdn.jsdelivr.net;
+  style-src 'self' 'sha256-1oN1L5npozyevURhkjlWaLge+O4hhEr1aOuCmpSODRQ=';
   font-src 'self' data:;
   img-src 'self' data: blob:;
   connect-src 'self' https://rpc.sepolia.org https://ethereum-sepolia-rpc.publicnode.com;
@@ -1389,6 +1389,32 @@ body.night .demo-snapshot-canvas-wrap {
   border-color:#5a8a3a;
   color:#3a5a20;
 }
+/* Snapshot fullscreen state — canvas-only (hide topbar, info text, tryagain
+   button) for clean immersive view. Reviewer P3-2 recommendation. */
+.demo-snapshot-modal.snapshot-fs {
+  width:100vw !important;
+  height:100vh !important;
+  max-width:none; max-height:none;
+  border-radius:0; box-shadow:none; border:0;
+  background:#0e0e0e;
+}
+.demo-snapshot-modal.snapshot-fs .demo-snapshot-tbar { display:none; }
+.demo-snapshot-modal.snapshot-fs .demo-snapshot-body {
+  padding:0;
+  gap:0;
+  overflow:hidden;
+  height:100%;
+  align-items:stretch;
+}
+.demo-snapshot-modal.snapshot-fs .demo-snapshot-info { display:none; }
+.demo-snapshot-modal.snapshot-fs .demo-snapshot-tryagain { display:none; }
+.demo-snapshot-modal.snapshot-fs .demo-snapshot-canvas-wrap {
+  width:100%;
+  height:100%;
+  max-width:none;
+  aspect-ratio:auto;
+  border-radius:0;
+}
 
 /* ── Expand modal (green dot click) — fullscreen view of live canvas ─────── */
 .demo-expand-overlay {
@@ -1407,7 +1433,11 @@ body.night .demo-snapshot-canvas-wrap {
   opacity:1;
 }
 .demo-expand-modal {
-  width:min(92vw, 1280px);
+  /* Height-driven sizing aligned with app/ artifact-expand pattern. 5:3 aspect
+     matches canvas resolution (1500×900 = 5/3 ≈ 1.67). Topbar 28px subtracted
+     from height so canvas-wrap gets full 5:3 ratio. */
+  width:min(96vw, calc((92vh - 28px) * 1.67));
+  height:92vh;
   max-height:92vh;
   background:rgb(219,216,209);
   border:0.5px solid var(--demo-node-border);
@@ -1416,6 +1446,16 @@ body.night .demo-snapshot-canvas-wrap {
   box-shadow:0 24px 64px rgba(0,0,0,0.5);
   display:flex; flex-direction:column;
 }
+/* Fullscreen state (toggled via fullscreenchange listener). Hides topbar +
+   removes border/radius/shadow for edge-to-edge canvas. */
+.demo-expand-modal.expand-fs {
+  width:100vw !important;
+  height:100vh !important;
+  max-width:none; max-height:none;
+  border-radius:0; box-shadow:none; border:0;
+  background:#0e0e0e;
+}
+.demo-expand-modal.expand-fs .demo-expand-tbar { display:none; }
 body.night .demo-expand-modal { background:rgb(30,30,30); }
 .demo-expand-tbar {
   flex:0 0 28px;
@@ -1426,6 +1466,27 @@ body.night .demo-expand-modal { background:rgb(30,30,30); }
 .demo-expand-tbar .demo-dot.demo-dot-r {
   background:#ff5f57;
   cursor:pointer;
+}
+/* Fullscreen toggle button (green dot in topbar, mirrors app/'s pattern).
+   Located on both expand and snapshot modal topbars. Focusable via keyboard
+   for F4 a11y compliance. */
+.demo-expand-tbar .demo-dot.demo-dot-fs,
+.demo-snapshot-tbar .demo-dot.demo-dot-fs {
+  background:#28c93f;
+  cursor:pointer;
+}
+.demo-expand-tbar .demo-dot.demo-dot-fs:hover,
+.demo-snapshot-tbar .demo-dot.demo-dot-fs:hover,
+.demo-expand-tbar .demo-dot.demo-dot-r:hover,
+.demo-snapshot-tbar .demo-dot.demo-dot-r:hover {
+  transform:scale(1.15);
+  transition:transform 0.12s;
+}
+/* Focus outline for keyboard-only users (a11y). Mouse hover doesn't show it. */
+.demo-expand-tbar .demo-dot:focus-visible,
+.demo-snapshot-tbar .demo-dot:focus-visible {
+  outline:2px solid #4a90e2;
+  outline-offset:2px;
 }
 .demo-expand-title {
   font-family:monospace; font-size:10px;
@@ -1828,7 +1889,14 @@ body.night .sys-entry-label  { color:rgba(255,255,255,0.30); }
   /* P3-1: tap targets. Reviewer trimmed padding to 10px (not 16px) so
      the night toggle doesn't overflow the 32px-tall tbar. */
   .tbar-night { padding:10px; box-sizing:content-box; }
-  .footer-link { padding:8px 0; }
+  /* F2 (2026-05-13): tap target 44x44 — was padding:8px 0 (~25px height).
+     min-height + inline-flex centers text in the 44px hit area. Reviewer GO. */
+  .footer-link {
+    padding:14px 8px;
+    min-height:44px;
+    display:inline-flex;
+    align-items:center;
+  }
 }
 </style>
 </head>
@@ -3555,11 +3623,12 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
      Shows the live canvas at fullscreen size. The render loop paints the
      same engine state to this canvas while the modal is open.
 -->
-<div class="demo-expand-overlay" id="demo-expand-overlay" aria-hidden="true">
+<div class="demo-expand-overlay" id="demo-expand-overlay" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="demo-expand-title" tabindex="-1">
   <div class="demo-expand-modal">
     <div class="demo-expand-tbar">
-      <span class="demo-dot demo-dot-r" id="demo-expand-close" title="Close"></span>
-      <span class="demo-expand-title">expand</span>
+      <span class="demo-dot demo-dot-r" id="demo-expand-close" title="Close" role="button" tabindex="0" aria-label="Close expanded view"></span>
+      <span class="demo-dot demo-dot-fs" id="demo-expand-fullscreen" title="Fullscreen" role="button" tabindex="0" aria-label="Toggle fullscreen"></span>
+      <span class="demo-expand-title" id="demo-expand-title">expand</span>
     </div>
     <div class="demo-expand-canvas-wrap">
       <canvas id="demo-expand-canvas"></canvas>
@@ -3571,11 +3640,12 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
      Lives at the document root so it overlays the entire viewport. Hidden
      until the SETTLE button is clicked.
 -->
-<div class="demo-snapshot-overlay" id="demo-snapshot-overlay" aria-hidden="true">
+<div class="demo-snapshot-overlay" id="demo-snapshot-overlay" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="demo-snapshot-title" tabindex="-1">
   <div class="demo-snapshot-modal">
     <div class="demo-snapshot-tbar">
-      <span class="demo-dot demo-dot-r" id="demo-snapshot-close" title="Close"></span>
-      <span class="demo-snapshot-title">artifact preview</span>
+      <span class="demo-dot demo-dot-r" id="demo-snapshot-close" title="Close" role="button" tabindex="0" aria-label="Close artifact preview"></span>
+      <span class="demo-dot demo-dot-fs" id="demo-snapshot-fullscreen" title="Fullscreen" role="button" tabindex="0" aria-label="Toggle fullscreen"></span>
+      <span class="demo-snapshot-title" id="demo-snapshot-title">artifact preview</span>
     </div>
     <div class="demo-snapshot-body">
       <div class="demo-snapshot-canvas-wrap">
@@ -5030,6 +5100,31 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
     _applyDither(buf, W, vCols, vRows, offC, offR);
     tctx.putImageData(img, 0, 0);
   }
+  // ── Modal canvas resize helper (2026-05-13 — canvas zoom bug fix) ───────────
+  // The fixed raster (was 1500×900) gets stretched by CSS width:100% to fill
+  // the canvas-wrap display size, which is much larger on big monitors / FS.
+  // With `image-rendering:pixelated`, each PIXEL=6 cell renders at >6 display
+  // pixels, producing the "zoom" effect Le reported.
+  //
+  // Fix: resize canvas raster to match the wrap's display dimensions × dpr,
+  // snapped to PIXEL multiples + capped at GRID_COLS/GRID_ROWS × PIXEL (so
+  // paintTo's centered offset can never go negative or out-of-bounds).
+  //
+  // dpr is capped at 2 — dpr=3 (some Android flagships) would otherwise
+  // allocate a useless ~5400×3240 raster before the GRID cap atrapa.
+  // Called on modal open (rAF) + fullscreenchange (rAF) + window resize.
+  function _resizeModalCanvas(canvasEl, wrapEl) {
+    if (!canvasEl || !wrapEl) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const rect = wrapEl.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return; // not laid out yet
+    const targetW = Math.floor((rect.width * dpr) / PIXEL) * PIXEL;
+    const targetH = Math.floor((rect.height * dpr) / PIXEL) * PIXEL;
+    const maxW = GRID_COLS * PIXEL; // 450 * 6 = 2700
+    const maxH = GRID_ROWS * PIXEL; // 250 * 6 = 1500
+    canvasEl.width  = Math.min(targetW, maxW);
+    canvasEl.height = Math.min(targetH, maxH);
+  }
   // Mirror canvases — declared here (early) so render() can paint to them.
   // Initialized lower down. Both stay animated while their modal is open by
   // being repainted on every render() tick.
@@ -5931,6 +6026,12 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
   const _snapMetaEl     = document.getElementById('demo-snapshot-meta');
   const _snapCloseEl    = document.getElementById('demo-snapshot-close');
   const _snapTryAgainEl = document.getElementById('demo-snapshot-tryagain');
+  // F4 a11y + fullscreen API: references to modal container + fs button + last
+  // focused element (restored on close). Modal container is the inner div, NOT
+  // the overlay (overlay is the backdrop; fullscreen target is the modal).
+  const _snapModalEl    = _snapOverlayEl?.querySelector('.demo-snapshot-modal');
+  const _snapFsEl       = document.getElementById('demo-snapshot-fullscreen');
+  let _snapLastFocus = null;
   // Snapshot canvas resolution: 1500×900 (250×150 cells @ PIXEL=6) → 5:3 aspect.
   // Bumped 2.5× from 600×360 to keep cells nítidas at the new ~1500px display
   // size. Renders a much wider slice of the 450×250 world grid.
@@ -5943,10 +6044,13 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
 
   function _openSnapshot() {
     if (!_snapOverlayEl || !_snapCanvasEl || !_snapCtx) return;
-    // Paint one frame immediately so the snapshot canvas isn't blank during
-    // the fade-in transition. The render loop takes over from the next tick
-    // and keeps the snapshot animated in lockstep with the live canvas.
-    paintTo(_snapCanvasEl, _snapCtx);
+    // P2-2 mutual close: if expand is open, close it first. Prevents both
+    // modals being open simultaneously (Esc would double-close, and ARIA
+    // modal practice expects single active dialog).
+    if (_expandOverlayEl?.classList.contains('open')) _closeExpand();
+    // F4 a11y: save the element that opened this modal so focus can be
+    // restored on close (typically the SETTLE button).
+    _snapLastFocus = document.activeElement;
     // Build metadata string. Filter null modes so "1 mode" doesn't show
     // when no token has a mode set (post-place, all modes are null).
     const distinctModes = [...new Set(placedTokens.map(t => t.mode).filter(Boolean))];
@@ -5958,11 +6062,27 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
     }
     _snapOverlayEl.classList.add('open');
     _snapOverlayEl.setAttribute('aria-hidden', 'false');
+    // Canvas raster must match display size 1:1 to avoid zoom (image-rendering:
+    // pixelated upscales otherwise). Defer via rAF so the browser has laid out
+    // the now-display:flex modal — getBoundingClientRect would be 0×0 sync.
+    requestAnimationFrame(() => {
+      _resizeModalCanvas(_snapCanvasEl, _snapCanvasEl?.parentElement);
+      paintTo(_snapCanvasEl, _snapCtx);
+    });
+    // Defer focus to next tick so the element is visible (display:flex applied).
+    setTimeout(() => _snapCloseEl?.focus?.(), 0);
   }
   function _closeSnapshot() {
     if (!_snapOverlayEl) return;
+    // Exit fullscreen first if this modal is the fullscreen target.
+    if (document.fullscreenElement === _snapModalEl) {
+      document.exitFullscreen?.().catch(() => {});
+    }
     _snapOverlayEl.classList.remove('open');
     _snapOverlayEl.setAttribute('aria-hidden', 'true');
+    // F4 a11y: restore focus to the element that opened the modal.
+    _snapLastFocus?.focus?.();
+    _snapLastFocus = null;
   }
   function _tryAgain() {
     // Reset to the boot state — empty modulo, no tokens placed.
@@ -5976,6 +6096,17 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
     _refreshModuloState();
     _closeSnapshot();
   }
+  // Fullscreen toggle for snapshot modal. Pattern mirrors app/'s artifact-
+  // expand fullscreen (L9140-9150). The fullscreenchange listener (single
+  // listener registered later) toggles the .snapshot-fs class.
+  function _toggleSnapshotFs() {
+    if (!_snapOverlayEl?.classList.contains('open')) return;
+    if (document.fullscreenElement) {
+      document.exitFullscreen?.().catch(() => {});
+    } else {
+      _snapModalEl?.requestFullscreen?.()?.catch?.(() => {});
+    }
+  }
 
   if (_settleBtnEl) {
     _settleBtnEl.addEventListener('click', e => {
@@ -5986,15 +6117,42 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
   }
   if (_snapCloseEl)    _snapCloseEl.addEventListener('click', e => { e.stopPropagation(); _closeSnapshot(); });
   if (_snapTryAgainEl) _snapTryAgainEl.addEventListener('click', e => { e.stopPropagation(); _tryAgain(); });
+  if (_snapFsEl)       _snapFsEl.addEventListener('click', e => { e.stopPropagation(); _toggleSnapshotFs(); });
+  // F4 a11y: Enter/Space activate role=button spans (close + fs). Native
+  // <button> elements get this for free, but our dots are spans.
+  _snapCloseEl?.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); _closeSnapshot(); }
+  });
+  _snapFsEl?.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); _toggleSnapshotFs(); }
+  });
   // Click on the overlay backdrop (outside the modal) closes
   if (_snapOverlayEl) {
     _snapOverlayEl.addEventListener('click', e => {
       if (e.target === _snapOverlayEl) _closeSnapshot();
     });
   }
-  // Esc closes settle snapshot
+  // F4 a11y: focus trap. Tab/Shift+Tab inside the modal cycles through
+  // focusable elements (close, fullscreen, tryagain). Selector covers the
+  // current DOM; update if modal gains <a> or <input>.
+  _snapModalEl?.addEventListener('keydown', e => {
+    if (e.key !== 'Tab') return;
+    const focusables = _snapModalEl.querySelectorAll('[tabindex="0"], button:not([disabled])');
+    if (focusables.length === 0) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault(); last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault(); first.focus();
+    }
+  });
+  // Esc closes settle snapshot. Fullscreen guard: if user is in FS, browser
+  // handles Esc natively (exits FS via fullscreenchange) — don't also close
+  // the modal in the same keypress.
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && _snapOverlayEl && _snapOverlayEl.classList.contains('open')) {
+      if (document.fullscreenElement) return;
       _closeSnapshot();
     }
   });
@@ -6004,35 +6162,122 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
   _expandCanvasEl   = document.getElementById('demo-expand-canvas');
   const _expandCloseEl    = document.getElementById('demo-expand-close');
   const _expandTriggerEl  = document.getElementById('demo-expand-trigger');
-  // Resolution: 1200×720 cells = 200×120 cells @ PIXEL=6 → 5:3 aspect.
-  // Wider slice of the grid than the live canvas (61×65) — fills fullscreen.
+  // F4 a11y + fullscreen API: references to modal container + fs button + last
+  // focused element. Same pattern as snapshot above.
+  const _expandModalEl    = _expandOverlayEl?.querySelector('.demo-expand-modal');
+  const _expandFsEl       = document.getElementById('demo-expand-fullscreen');
+  let _expandLastFocus = null;
+  // Resolution: 1500×900 cells = 250×150 cells @ PIXEL=6 → 5:3 aspect.
+  // Bumped from 1200×720 (2026-05-13) to match snapshot resolution + size up
+  // with the larger modal sizing (96vw/92vh, was 92vw/1280px cap). Pixel
+  // density preserved at the new modal size. Worst-case 3-canvas frame
+  // scenario (live + snap + expand all painting) documented as acceptable.
   if (_expandCanvasEl) {
-    _expandCanvasEl.width  = 1200;
-    _expandCanvasEl.height = 720;
+    _expandCanvasEl.width  = 1500;
+    _expandCanvasEl.height = 900;
     _expandCtx = _expandCanvasEl.getContext('2d');
     if (_expandCtx) _expandCtx.imageSmoothingEnabled = false;
   }
   function _openExpand() {
     if (!_expandOverlayEl || !_expandCanvasEl || !_expandCtx) return;
-    paintTo(_expandCanvasEl, _expandCtx); // paint one frame immediately
+    // P2-2 mutual close: if snapshot is open, close it first.
+    if (_snapOverlayEl?.classList.contains('open')) _closeSnapshot();
+    _expandLastFocus = document.activeElement;
     _expandOverlayEl.classList.add('open');
     _expandOverlayEl.setAttribute('aria-hidden', 'false');
+    // Canvas raster must match display size 1:1 to avoid zoom. rAF defer so
+    // getBoundingClientRect has valid dimensions (post-layout).
+    requestAnimationFrame(() => {
+      _resizeModalCanvas(_expandCanvasEl, _expandCanvasEl?.parentElement);
+      paintTo(_expandCanvasEl, _expandCtx);
+    });
+    setTimeout(() => _expandCloseEl?.focus?.(), 0);
   }
   function _closeExpand() {
     if (!_expandOverlayEl) return;
+    if (document.fullscreenElement === _expandModalEl) {
+      document.exitFullscreen?.().catch(() => {});
+    }
     _expandOverlayEl.classList.remove('open');
     _expandOverlayEl.setAttribute('aria-hidden', 'true');
+    _expandLastFocus?.focus?.();
+    _expandLastFocus = null;
+  }
+  function _toggleExpandFs() {
+    if (!_expandOverlayEl?.classList.contains('open')) return;
+    if (document.fullscreenElement) {
+      document.exitFullscreen?.().catch(() => {});
+    } else {
+      _expandModalEl?.requestFullscreen?.()?.catch?.(() => {});
+    }
   }
   if (_expandTriggerEl) _expandTriggerEl.addEventListener('click', e => { e.stopPropagation(); _openExpand(); });
   if (_expandCloseEl)   _expandCloseEl.addEventListener('click',   e => { e.stopPropagation(); _closeExpand(); });
+  if (_expandFsEl)      _expandFsEl.addEventListener('click', e => { e.stopPropagation(); _toggleExpandFs(); });
+  _expandCloseEl?.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); _closeExpand(); }
+  });
+  _expandFsEl?.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); _toggleExpandFs(); }
+  });
   if (_expandOverlayEl) {
     _expandOverlayEl.addEventListener('click', e => {
       if (e.target === _expandOverlayEl) _closeExpand();
     });
   }
+  // Focus trap (same pattern as snapshot). 2 focusables: close + fullscreen.
+  _expandModalEl?.addEventListener('keydown', e => {
+    if (e.key !== 'Tab') return;
+    const focusables = _expandModalEl.querySelectorAll('[tabindex="0"], button:not([disabled])');
+    if (focusables.length === 0) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault(); last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault(); first.focus();
+    }
+  });
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && _expandOverlayEl && _expandOverlayEl.classList.contains('open')) {
+      if (document.fullscreenElement) return;
       _closeExpand();
+    }
+  });
+  // Single fullscreenchange listener handles both snapshot + expand modals.
+  // Discriminates by reference (which element is fullscreenElement) and
+  // toggles the appropriate FS class. Safe if neither matches (clears both).
+  // Also resize+repaint canvas raster — the display size changed (100vw/100vh
+  // in FS vs modal size in windowed). Without this, the canvas raster stays
+  // at the pre-FS size and CSS upscales it = zoom effect (the bug Le reported).
+  document.addEventListener('fullscreenchange', () => {
+    const fsTarget = document.fullscreenElement;
+    _expandModalEl?.classList.toggle('expand-fs', fsTarget === _expandModalEl);
+    _snapModalEl?.classList.toggle('snapshot-fs', fsTarget === _snapModalEl);
+    // rAF so the browser applies the FS class + lays out the new size before
+    // we read the canvas-wrap dimensions.
+    requestAnimationFrame(() => {
+      if (_snapOverlayEl?.classList.contains('open')) {
+        _resizeModalCanvas(_snapCanvasEl, _snapCanvasEl?.parentElement);
+        paintTo(_snapCanvasEl, _snapCtx);
+      }
+      if (_expandOverlayEl?.classList.contains('open')) {
+        _resizeModalCanvas(_expandCanvasEl, _expandCanvasEl?.parentElement);
+        paintTo(_expandCanvasEl, _expandCtx);
+      }
+    });
+  });
+  // Window resize while either modal is open: resize+repaint. Uses the
+  // existing rAF-throttled _resizeFns dispatcher (L2335) so multiple resize
+  // events within a frame collapse to one repaint.
+  _resizeFns.push(() => {
+    if (_snapOverlayEl?.classList.contains('open')) {
+      _resizeModalCanvas(_snapCanvasEl, _snapCanvasEl?.parentElement);
+      paintTo(_snapCanvasEl, _snapCtx);
+    }
+    if (_expandOverlayEl?.classList.contains('open')) {
+      _resizeModalCanvas(_expandCanvasEl, _expandCanvasEl?.parentElement);
+      paintTo(_expandCanvasEl, _expandCtx);
     }
   });
 
