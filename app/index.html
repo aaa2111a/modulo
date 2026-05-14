@@ -1670,7 +1670,7 @@ button, a, [role="button"], .pill, .info-btn, .toggle-btn, .modal-close,
   background:rgba(0,0,0,0.05);
   z-index:1;
 }
-body.night .ma-card-loading { background:rgba(255,255,255,0.04); }
+.night .ma-card-loading { background:rgba(255,255,255,0.04); }
 .ma-card-spinner {
   width:22px; height:22px;
   color:var(--sl);
@@ -2009,7 +2009,7 @@ body.night .ma-card-loading { background:rgba(255,255,255,0.04); }
   border-radius:2px;
   color:var(--sv);
 }
-body.night .artifact-onchain-method-text code { background:rgba(255,255,255,0.08); }
+.night .artifact-onchain-method-text code { background:rgba(255,255,255,0.08); }
 .artifact-onchain-method-text em { font-style:normal; color:var(--sv); }
 .artifact-onchain-contract-row {
   display:flex; align-items:center; gap:8px;
@@ -2028,7 +2028,7 @@ body.night .artifact-onchain-method-text code { background:rgba(255,255,255,0.08
   flex:1; min-width:0;
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
 }
-body.night .artifact-onchain-contract-addr { background:rgba(255,255,255,0.08); }
+.night .artifact-onchain-contract-addr { background:rgba(255,255,255,0.08); }
 .artifact-onchain-copy-mini {
   font-size:9.5px; font-family:monospace;
   letter-spacing:.06em; text-transform:uppercase;
@@ -2071,7 +2071,7 @@ body.night .artifact-onchain-contract-addr { background:rgba(255,255,255,0.08); 
   word-break:break-all;
   box-sizing:border-box;
 }
-body.night .artifact-onchain-uri { background:rgba(255,255,255,0.06); }
+.night .artifact-onchain-uri { background:rgba(255,255,255,0.06); }
 .artifact-onchain-copy-btn {
   display:inline-block;
   margin-top:8px;
@@ -3640,12 +3640,12 @@ const fbLocked = {};
 // oldLockedSet and newLockedSet derived from the same post-mutation source.
 const _lastSyncedLocked = {};
 
-// Slot 0 (top) gets the most weight, last slot the least. Total ≈ 28.
-// 1→14, 2→19/9, 3→14/9/5, 4→11/8/6/3, 5→9/7/6/4/2, 6→8/7/5/4/3/1
-function positionDefaultOps(nSlots, si) {
-  if (nSlots <= 1) return 14;
-  const sum = nSlots * (nSlots + 1) / 2;
-  return Math.max(1, Math.round((nSlots - si) / sum * 28));
+// v3 (2026-05-14): constant default 10 ops per slot when user has no pick.
+// Replaces previous positional formula (1→14, 4→[11,8,6,3] etc) so workshop
+// preview = artifact post-settle pixel-for-pixel. Le decision per P1-B Brief #2.
+// Applies to ALL modulos (shared + personal workshop).
+function positionDefaultOps(_nSlots, _si) {
+  return 10;
 }
 function reseedPositionOps(modId) {
   const mod = MODULOS.find(c => c.id === modId);
@@ -8908,10 +8908,29 @@ function _decodeTokenURI(uri) {
   const comma = uri.indexOf(',');
   if (comma < 0) return null;
   try {
+    // P0-A 2026-05-13: tokenURI now returns JSON envelope wrapping the HTML
+    // payload (data:application/json;base64,<JSON>). The HTML lives inside
+    // the JSON's `animation_url` field as a nested data URI. Decode envelope
+    // first, extract animation_url, then decode recursively to recover HTML.
+    // Old data:text/html;base64 path kept as fall-through for backwards compat.
+    const prefix = uri.slice(0, comma);
     const binStr = atob(uri.slice(comma + 1));
     const bytes = new Uint8Array(binStr.length);
     for (let i = 0; i < binStr.length; i++) bytes[i] = binStr.charCodeAt(i);
-    return new TextDecoder('utf-8').decode(bytes);
+    const decoded = new TextDecoder('utf-8').decode(bytes);
+
+    if (prefix.startsWith('data:application/json')) {
+      const meta = JSON.parse(decoded);
+      const animUrl = meta.animation_url;
+      if (typeof animUrl !== 'string') return null;
+      const animComma = animUrl.indexOf(',');
+      if (animComma < 0) return null;
+      const animBin = atob(animUrl.slice(animComma + 1));
+      const animBytes = new Uint8Array(animBin.length);
+      for (let i = 0; i < animBin.length; i++) animBytes[i] = animBin.charCodeAt(i);
+      return new TextDecoder('utf-8').decode(animBytes);
+    }
+    return decoded;
   } catch (_) { return null; }
 }
 
@@ -9173,6 +9192,13 @@ document.addEventListener('keydown', e => {
         _artifactOnchainModal.classList.contains('active')) return; // ONCHAIN handles
     if (typeof _artifactDetailsPopup !== 'undefined' && _artifactDetailsPopup &&
         _artifactDetailsPopup.classList.contains('visible')) return; // DETAILS handles
+    // 2026-05-13 stress test P2 derivative: export-modal (z:850) handles its
+    // own Esc. Without this yield, Esc with export-modal open would close the
+    // expand window AND leave export-modal visible as orphan (export modal
+    // sits inside expand; closing expand without closing export = inconsistent
+    // state — `_artifactExpandOpenId=null` but export-modal still `.active`).
+    const _exportModal = document.getElementById('artifact-export-modal');
+    if (_exportModal && _exportModal.classList.contains('active')) return; // export handles
     e.stopPropagation();
     e.stopImmediatePropagation();
     _artifactExpandClose();
@@ -9353,7 +9379,8 @@ function _artifactRenderDetails(data, artifactId) {
   const settler  = String(art.settler);
   const owner    = String(data.owner || '');
   const dateStr  = _formatSettledAt(art.settledAt);
-  const tokenIds = Array.from(art.tokenIds).map(Number);
+  // v3: tokenIds extracted from art.traits[i].tokenNum (was art.tokenIds in v2).
+  const tokenIds = Array.from(art.traits || []).map(s => Number(s.tokenNum));
   const ranks    = Array.from(art.ranks).map(Number);
   const etherscanBase = _etherscanBase();
 
@@ -9715,6 +9742,19 @@ document.getElementById('artifact-export-modal-cancel').addEventListener('click'
 document.getElementById('artifact-export-modal').addEventListener('click', e => {
   if (e.target.id === 'artifact-export-modal') _closeArtifactExportModal();
 });
+// 2026-05-13 stress test P2 derivative: Esc handler for export-modal. Without
+// this the artifact-expand handler (L9170) closed the parent expand window
+// while export-modal stayed `.active` — orphan modal state. Capture phase +
+// stopImmediatePropagation ensures export consumes Esc before expand's handler.
+// Mirror pattern of ONCHAIN modal (L9292) and DETAILS popup (L9457) handlers.
+document.addEventListener('keydown', e => {
+  const em = document.getElementById('artifact-export-modal');
+  if (e.key === 'Escape' && em && em.classList.contains('active')) {
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    _closeArtifactExportModal();
+  }
+}, true);
 document.getElementById('artifact-export-modal-crop-input').addEventListener('change', e => {
   _artifactExportCropMode = e.target.checked;
 });
@@ -9975,6 +10015,12 @@ document.addEventListener('keydown', e => {
     // settle while MA may still be open underneath.
     const _postSettleOv = document.getElementById('post-settle-overlay');
     if (_postSettleOv && _postSettleOv.classList.contains('open')) return;
+    // Yield to lock-overlay (2026-05-13 stress test P3-1) — user can open MA,
+    // then open a token's lock dialog from within. MA + lock both have capture-
+    // phase Esc handlers; without this yield MA closes alongside lock on Esc.
+    // Mirror pattern of settle / post-settle guards above.
+    const _lockOv = document.getElementById('lock-overlay');
+    if (_lockOv && _lockOv.classList.contains('open')) return;
     e.stopPropagation();
     _maClose();
   }
@@ -10206,6 +10252,16 @@ document.querySelector('.topbar-home-dot').addEventListener('click', e => {
   });
 
   document.addEventListener('click', () => picker.classList.remove('open'));
+  // 2026-05-13 stress test P3-3 fix: picker (z:7999) had only click-outside
+  // close. Esc keypress left it open. Bubble-phase (no stop) is correct here:
+  // info (z:8001) capture handler fires first when open. If info is closed
+  // and a modal is open underneath, picker closes + lower modal also closes
+  // on the same Esc — acceptable (picker is a cosmetic palette, not critical).
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && picker.classList.contains('open')) {
+      picker.classList.remove('open');
+    }
+  });
 })();
 
 // _onchainTotalMinted is populated by _sepoliaSync() after wallet connect.
@@ -10582,7 +10638,22 @@ document.getElementById('export-btn').addEventListener('click', () => {
   });
   document.getElementById('info-close').addEventListener('click', closeInfo);
   backdrop.addEventListener('click', closeInfo);
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeInfo(); });
+  // 2026-05-13 stress test P3-2 fix: info-window is z:8001 (top of stack —
+  // above ONCHAIN z:850, all modals z:700, picker z:7999). Original handler
+  // was bubble-phase with no guard, so when info open over any modal, the
+  // modals' capture-phase handlers (settle L13744, lock L13484, MA L9959,
+  // post-settle L13918) fired first + called stopImmediatePropagation,
+  // blocking info's bubble handler. Net: Esc closed the lower-z modal
+  // (hidden behind info — invisible to user) and left info open. Two-Esc
+  // UX. Fix: capture-phase + stopImmediatePropagation + guard so info
+  // intercepts Esc when actually open. When info closed, all lower
+  // handlers operate normally (guard ensures no interference).
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && win.classList.contains('open')) {
+      e.stopImmediatePropagation();
+      closeInfo();
+    }
+  }, true);
 
   // ── Tab switching ──
   win.querySelectorAll('.info-tab').forEach(tab => {
@@ -11661,8 +11732,10 @@ const WALLET_LS_KEY = 'tc-wallet-address';
 // Deployed 2026-05-04 from `Code/contracts/script/Deploy.s.sol`
 // EthFS placeholders uploaded via `Code/contracts/script/UploadFiles.s.sol`
 // ─────────────────────────────────────────────────────────────────────────────
-const TOKEN_AGENT_ADDRESS_SEPOLIA     = '0xdE4AC7c11c0B3dbDcE4d60F2B14F659a553f8b8a';
-const SETTLE_ARTIFACT_ADDRESS_SEPOLIA = '0xa33C38cBCFF9C3BDB9818e80B49e74890A92d699';
+// REVERTED to v1 for diagnose (2026-05-14): Le wants to verify v1 behavior
+// before re-architecting per plan.md §5.3. v2 P0-A redeploy NOT in use right now.
+const TOKEN_AGENT_ADDRESS_SEPOLIA     = '0x07aB5E7635F16cE54B091838aF82A3725eF53283';
+const SETTLE_ARTIFACT_ADDRESS_SEPOLIA = '0xE1bd695631EE98A2e63A5787a1383bA19d85B790';
 
 // Active addresses (toggle by network — Sepolia only for now)
 const TOKEN_AGENT_ADDRESS     = TOKEN_AGENT_ADDRESS_SEPOLIA;
@@ -11673,29 +11746,38 @@ const TOKEN_AGENT_ABI = [
   'function MAX_SUPPLY() view returns (uint256)',
   'function MINT_PRICE() view returns (uint256)',
   'function totalMinted() view returns (uint256)',
+  'function balanceOf(address) view returns (uint256)',
   'function ownerOf(uint256) view returns (address)',
-  'function rankOf(uint256) pure returns (uint256)',
+  // rankOf(uint256) intentionally omitted — JS mirror at L3230 is canonical
+  // (zero-RPC, deterministic LCP formula). Contract returns uint16, never
+  // invoked from frontend. ABI drift audit 2026-05-13.
   'function tokenURI(uint256) view returns (string)',
   'function getTraits(uint256 tokenId) view returns (tuple(bool hasMode, bool hasSize, bool hasRS, bool hasRD, bool hasBios, bool hasDX, uint8[] modes, uint8[] dxPatterns, uint8[] rectVariants, uint8 size, uint8 rectSize, uint8 rectDim, bool biosOn, uint8 colorIndex, uint8 speed))',
   'function mint(uint256 quantity) payable',
   'event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)',
 ];
 
+// v3 (2026-05-14): SettleParams.composition is now SlotTraits[] not uint256[].
+// SlotTraits tuple shape MUST match SlotTraitsLib.sol field-for-field. ABI drift
+// here breaks every settle call. See brief §2.1 + §2.7.
+const _SLOT_TRAITS_TUPLE =
+  '(uint256 tokenNum, address owner, uint8 colorSel, uint8 mode, uint8 sz, uint8 rs, uint8 rv, uint8 rd, uint8 dx, uint8 speedOps, uint8 bios)';
 const SETTLE_ARTIFACT_ABI = [
   'function nonces(address) view returns (uint256)',
   'function settle(' +
-    '(uint256 moduloId, uint256[] composition, uint256[] toBurn, address settler, uint256 nonce, uint256 deadline) p,' +
+    '(uint256 moduloId, ' + _SLOT_TRAITS_TUPLE + '[] composition, uint256[] toBurn, address settler, uint256 nonce, uint256 deadline) p,' +
     'bytes signerSig,' +
     'bytes settlerSig' +
   ') external',
   'function totalArtifacts() view returns (uint256)',
   'function tokenURI(uint256) view returns (string)',
   'function ownerOf(uint256) view returns (address)',
-  // ArtifactData struct (SettleArtifact.sol L72-79) — used by artifact-expand
-  // DETAILS popup to render composition info. Added 2026-05-11 for the My
-  // Artifacts modal port. Tuple shape MUST match the contract exactly.
+  // ArtifactData struct (SettleArtifact.sol v3) — used by artifact-expand DETAILS
+  // popup + My Artifacts modal. Tuple MUST match contract exactly.
+  // v3 replaces v2's `tokenIds[]` + (later) `lockers[]` with `traits` (SlotTraits[]).
+  // Composition tokenNums live at traits[i].tokenNum; lockers at traits[i].owner.
   'function getArtifact(uint256) view returns (' +
-    'tuple(uint256 moduloId, uint256[] tokenIds, uint256[] seeds, uint16[] ranks, address settler, uint64 settledAt)' +
+    'tuple(uint256 moduloId, ' + _SLOT_TRAITS_TUPLE + '[] traits, uint256[] seeds, uint16[] ranks, address settler, uint64 settledAt)' +
   ')',
   'event Settled(uint256 indexed artifactId, uint256 indexed moduloId, address indexed settler, uint256[] composition, uint256[] burned)',
   'event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)',
@@ -11707,7 +11789,7 @@ const SETTLE_ARTIFACT_ABI = [
 // call). Confirmed via `contracts/broadcast/Deploy.s.sol/11155111/run-latest.json`
 // tx hash `0x7f8e51cc...` blockNumber `0xa4951b` = 10786075 (Sepolia).
 // SWAP: at T-0 mainnet deploy, update this to the mainnet deploy block.
-const SETTLE_ARTIFACT_DEPLOY_BLOCK = 10786075;
+const SETTLE_ARTIFACT_DEPLOY_BLOCK = 10852389;
 
 // EIP-712 domain MUST match SettleArtifact.DOMAIN_SEPARATOR exactly. Any drift
 // here produces an unverifiable signature on-chain.
@@ -11718,16 +11800,116 @@ const EIP712_DOMAIN_SETTLE = {
   verifyingContract: SETTLE_ARTIFACT_ADDRESS,
 };
 
+// v3 (2026-05-14): nested SlotTraits[] in composition. Field order in BOTH
+// types arrays MUST match Solidity SLOTTRAITS_TYPEHASH + SETTLE_TYPEHASH strings
+// (SettleArtifact.sol) byte-for-byte — drift = digest mismatch on-chain. The
+// forge test `testEip712DigestMatchesContract` is the canonical parity gate.
 const EIP712_TYPES_SETTLE = {
   SettleParams: [
-    { name: 'moduloId',    type: 'uint256'   },
-    { name: 'composition', type: 'uint256[]' },
-    { name: 'toBurn',      type: 'uint256[]' },
-    { name: 'settler',     type: 'address'   },
-    { name: 'nonce',       type: 'uint256'   },
-    { name: 'deadline',    type: 'uint256'   },
+    { name: 'moduloId',    type: 'uint256'     },
+    { name: 'composition', type: 'SlotTraits[]' },
+    { name: 'toBurn',      type: 'uint256[]'   },
+    { name: 'settler',     type: 'address'     },
+    { name: 'nonce',       type: 'uint256'     },
+    { name: 'deadline',    type: 'uint256'     },
+  ],
+  SlotTraits: [
+    { name: 'tokenNum', type: 'uint256' },
+    { name: 'owner',    type: 'address' },
+    { name: 'colorSel', type: 'uint8'   },
+    { name: 'mode',     type: 'uint8'   },
+    { name: 'sz',       type: 'uint8'   },
+    { name: 'rs',       type: 'uint8'   },
+    { name: 'rv',       type: 'uint8'   },
+    { name: 'rd',       type: 'uint8'   },
+    { name: 'dx',       type: 'uint8'   },
+    { name: 'speedOps', type: 'uint8'   },
+    { name: 'bios',     type: 'uint8'   },
   ],
 };
+
+// Canonical string→uint8 maps. MUST match SlotTraitsLib + TraitsLib indices
+// (TraitsLib.sol L52/L54/L57/L58 + app L9769). Drift = on-chain validation revert.
+const _SLOT_UNSET = 0xff;
+const _MODE_IDX = { feedback:0, shift:1, noise:2, modulo:3, wave:4, jungle:5, sector:6, blocks:7 };
+const _SZ_IDX   = { sm:0, md:1, lg:2 };
+const _RS_IDX   = { sm:0, md:1, lg:2, xl:3 };
+const _RV_IDX   = { core:0, mecha:1, hysteria:2, metro:3, 'side-b':4, earthquake:5, retro:6, ladder:7 };
+const _RD_IDX   = { lo:0, md:1, hi:2, mx:3 };
+const _DX_IDX   = { x:0, plus:1, h:2, sq:3, num:4, numi:5, m:6, o:7 };
+
+function _enumOrUnset(map, value) {
+  if (value == null) return _SLOT_UNSET;
+  const i = map[value];
+  return (i == null) ? _SLOT_UNSET : i;
+}
+function _biosTristate(value) {
+  // tristate: 0=unset, 1=off, 2=on. workshop/shared store `true`/`false`/`undefined`.
+  if (value === undefined || value === null) return 0;
+  return value ? 2 : 1;
+}
+
+// Build a single SlotTraits entry for the WORKSHOP settle flow. Workshop traits
+// live in slot-keyed maps (tokenModes[modId][slotIdx], etc.) — NOT in
+// userDraftTraits which is shared-modulo only. colorSel/speedOps fall back to
+// seed-derived (TOKEN_DATA[tokenNum].sel) and constant 10 respectively when
+// the user has no pick (P1-B Brief #2 + Le's default=10 decision).
+// Rehydrate a SlotTraits[] array received from CF over JSON: tokenNum + owner
+// arrive as strings, uint8 fields as numbers. Output matches the typed-data
+// + tx-call format. Throws if a field is missing — fail loud on CF contract drift.
+function _normalizeSlotTraitsArray(arr) {
+  if (!Array.isArray(arr)) throw new Error('composition must be array');
+  return arr.map((s, i) => {
+    const reqNum = ['colorSel','mode','sz','rs','rv','rd','dx','speedOps','bios'];
+    for (const k of reqNum) {
+      if (typeof s[k] !== 'number') throw new Error('missing ' + k + ' at slot ' + i);
+    }
+    if (s.tokenNum == null || s.owner == null) throw new Error('missing tokenNum/owner at slot ' + i);
+    return {
+      tokenNum: BigInt(s.tokenNum),
+      owner:    s.owner,
+      colorSel: s.colorSel,
+      mode:     s.mode,
+      sz:       s.sz,
+      rs:       s.rs,
+      rv:       s.rv,
+      rd:       s.rd,
+      dx:       s.dx,
+      speedOps: s.speedOps,
+      bios:     s.bios,
+    };
+  });
+}
+
+function _buildWorkshopSlotTraits(modId, tokenNum, slotIdx, ownerAddr) {
+  const td = TOKEN_DATA[tokenNum] || {};
+  const colorPick = (nodeColors[modId] && nodeColors[modId][slotIdx] != null)
+    ? nodeColors[modId][slotIdx] : -1;
+  const colorSel = (colorPick >= 0) ? colorPick : (td.sel >= 0 ? td.sel : 0);
+  const speedPick = (moduloTokenOps[modId] && moduloTokenOps[modId][slotIdx] != null)
+    ? moduloTokenOps[modId][slotIdx] : null;
+  const speedOps = (speedPick != null && speedPick >= 1 && speedPick <= 28) ? speedPick : 10;
+  const mode = (tokenModes[modId]          || {})[slotIdx];
+  const sz   = (tokenSizes[modId]          || {})[slotIdx];
+  const rs   = (tokenRectSizes[modId]      || {})[slotIdx];
+  const rv   = (tokenRectVariants[modId]   || {})[slotIdx];
+  const rd   = (tokenRectDensities[modId]  || {})[slotIdx];
+  const dx   = (tokenDitherPatterns[modId] || {})[slotIdx];
+  const bios = (biosStates[modId]          || {})[slotIdx];
+  return {
+    tokenNum: BigInt(tokenNum),
+    owner:    ownerAddr,
+    colorSel: colorSel & 0xff,
+    mode:     _enumOrUnset(_MODE_IDX, mode),
+    sz:       _enumOrUnset(_SZ_IDX, sz),
+    rs:       _enumOrUnset(_RS_IDX, rs),
+    rv:       _enumOrUnset(_RV_IDX, rv),
+    rd:       _enumOrUnset(_RD_IDX, rd),
+    dx:       _enumOrUnset(_DX_IDX, dx),
+    speedOps: speedOps & 0xff,
+    bios:     _biosTristate(bios),
+  };
+}
 
 // EIP-712 domain for lockToken signatures (migrated 2026-05-05 from
 // personal_sign). Verified off-chain in Firebase Functions, NOT on-chain — but
@@ -12221,6 +12403,13 @@ async function _setupTransferListener() {
 
   _transferListenerContract = agent;
   _transferListenerActive = true;
+  // Cold-start heartbeat anchor (2026-05-13): without this, _lastBlockReceivedTs stays
+  // at sentinel 0 until the first block event fires. If WS is silent-dead from inception
+  // (readyState=1 OPEN but block subscription never pushes — observed on publicnode WSS),
+  // the heartbeat-dead check at the visibilitychange handler is gated by `> 0` and
+  // never fires re-arm. Anchoring here ensures the 120s heartbeat window measures
+  // time-since-listener-attached as a fallback for time-since-last-block.
+  _lastBlockReceivedTs = Date.now();
 
   // On each new block, query Transfer events in the gap [_lastProcessedBlock+1, current].
   // Gap-aware so a missed block (network blip) recovers on the next event.
@@ -12252,6 +12441,53 @@ async function _setupTransferListener() {
   dbg.log('[transfer-listener] active (block-poll mode)');
 }
 window._setupTransferListener = _setupTransferListener;
+
+// Safety-net polling (NEW 2026-05-13): publicnode WSS observed pushing block
+// events every 30-60s instead of expected ~12s (Sepolia block time). When WS is
+// slow/degraded, the listener catches up via queryFilter at the next block event
+// — but UI lag can be 60-90s. This polling layer ensures max ~60s lag regardless
+// of WS health by combining a totalMinted() check (catches new mints) AND a
+// balanceOf(wallet) check (catches burns and transfers in/out, which don't
+// change totalMinted). Bounded cost: 2 RPCs/60s when wallet connected, 1 in
+// guest mode. Full _sepoliaSync only runs if either signal advanced.
+//
+// Why both checks: totalMinted is monotonic (never decreases). Settle burns
+// tokens but totalMinted stays the same — without balanceOf as a second signal,
+// burns would be missed (bug 2026-05-13, Brief #6). balanceOf changes on burn
+// and on transfer too, so the combined check catches every state change the
+// user-facing UI cares about.
+//
+// Pre-mainnet TODO: switch to paid RPC tier (Alchemy/Infura) for stable WSS
+// performance. This safety-net remains useful as belt+suspenders even with
+// paid RPC (catches listener bugs independent of WS health).
+let _safetyNetTimer = null;
+function _startSafetyNetPolling() {
+  if (_safetyNetTimer) return;  // idempotent
+  _safetyNetTimer = setInterval(async () => {
+    if (document.hidden) return;  // skip background tabs (visibilitychange handles return)
+    const provider = _getReadonlyProvider();
+    const agent = provider ? _getTokenAgent(provider) : null;
+    if (!agent) return;
+    try {
+      const currentTotal = Number(await agent.totalMinted());
+      let currentBalance = -1;
+      if (_walletAddress) {
+        currentBalance = Number(await agent.balanceOf(_walletAddress));
+      }
+      // cachedBalance may be 0 before first _sepoliaSync completes — that's
+      // intentional: the mismatch triggers a sync, which is the correct behavior.
+      const cachedBalance = _walletAddress
+        ? TOKEN_DATA.filter(t => t && t.owner && t.owner.toLowerCase() === _walletAddress.toLowerCase()).length
+        : -1;
+      // Skip only if BOTH totalMinted and user's balance are unchanged from cache.
+      if (currentTotal === _onchainTotalMinted && currentBalance === cachedBalance) return;
+    } catch (_) { /* fall through to full sync on error */ }
+    if (typeof _sepoliaSync === 'function') {
+      _sepoliaSync().catch(err => dbg.warn('[safety-net] sepoliaSync failed:', err && err.message));
+    }
+  }, 60000);
+}
+_startSafetyNetPolling();
 
 // Safety net for missed events (NEW 2026-05-08): if the WS dropped silently
 // or if the browser killed the connection while the tab was background, force
@@ -12852,12 +13088,15 @@ async function settleModulo(modId) {
     if (!attestation || !attestation.ok) return { ok: false, reason: 'attest-error' };
 
     const moduloId    = attestation.moduloId;
-    const composition = attestation.composition.map(s => BigInt(s));
+    // v3: CF returns SlotTraits[] composition (each slot's traits + Firebase-derived
+    // colorSel/speed + on-chain ownerOf for owner field). Rehydrate to ethers
+    // typed-data shape.
+    const composition = _normalizeSlotTraitsArray(attestation.composition);
     const toBurn      = attestation.toBurn.map(s => BigInt(s));
     const signerSig   = attestation.signerSig;
-    dbg.log('[settle] attestation received, composition:', composition.length, 'toBurn:', toBurn.length);
+    dbg.log('[settle] attestation received, composition slots:', composition.length, 'toBurn:', toBurn.length);
 
-    // Step 3: settler signs the same typed data
+    // Step 3: settler signs the same typed data (must match exactly what CF signed)
     const value = {
       moduloId:    BigInt(moduloId),
       composition,
@@ -12990,9 +13229,13 @@ async function _workshopSettleOnChain(mod, modId) {
     return { ok: false, reason: 'no-signer', err };
   }
 
-  // composition + toBurn = all tokens currently in the workshop
-  const composition = mod.tokens.slice();
-  const toBurn = composition.slice();
+  // v3 (2026-05-14): composition is SlotTraits[] carrying user picks + colorSel
+  // + speedOps per slot. Workshop owner = settler for ALL slots (workshop is
+  // single-user by design). toBurn = all tokenNums in composition.
+  const compositionSlotTraits = mod.tokens.map((tokenNum, slotIdx) =>
+    _buildWorkshopSlotTraits(modId, tokenNum, slotIdx, settlerAddr)
+  );
+  const toBurn = mod.tokens.slice();
 
   // Step 1: read on-chain nonce
   const artifact = _getSettleArtifact(_walletProvider);
@@ -13037,11 +13280,30 @@ async function _workshopSettleOnChain(mod, modId) {
     return { ok: false, reason: 'auth-sign-error', err };
   }
 
-  // Step 2b: get signer attestation from CF (workshop endpoint)
+  // Step 2b: get signer attestation from CF (workshop endpoint).
+  // v3: CF receives full SlotTraits[] payload, range-checks each field, returns
+  // signerSig over the same payload. CF must serialize SlotTraits with stringified
+  // BigInts for JSON transport — we re-rehydrate via _normalizeSlotTraits below.
+  const compositionForCF = compositionSlotTraits.map(s => ({
+    tokenNum: s.tokenNum.toString(),
+    owner:    s.owner,
+    colorSel: s.colorSel,
+    mode:     s.mode,
+    sz:       s.sz,
+    rs:       s.rs,
+    rv:       s.rv,
+    rd:       s.rd,
+    dx:       s.dx,
+    speedOps: s.speedOps,
+    bios:     s.bios,
+  }));
   let attestation;
   try {
     const attestFn = httpsCallable(functions, 'attestWorkshopSettle');
-    const res = await attestFn({ modId, settler: settlerAddr, nonce, deadline, composition, toBurn, settlerAuthSig });
+    const res = await attestFn({
+      modId, settler: settlerAddr, nonce, deadline,
+      composition: compositionForCF, toBurn, settlerAuthSig
+    });
     attestation = res && res.data;
   } catch (err) {
     console.error('[workshop-settle] attestWorkshopSettle CF failed:', err);
@@ -13052,15 +13314,16 @@ async function _workshopSettleOnChain(mod, modId) {
   if (!attestation || !attestation.ok) return { ok: false, reason: 'attest-error' };
 
   const moduloId         = attestation.moduloId; // 0 for workshop
-  const compositionBig   = attestation.composition.map(s => BigInt(s));
+  const compositionSig   = _normalizeSlotTraitsArray(attestation.composition);
   const toBurnBig        = attestation.toBurn.map(s => BigInt(s));
   const signerSig        = attestation.signerSig;
-  dbg.log('[workshop-settle] attestation received, composition:', compositionBig.length, 'toBurn:', toBurnBig.length);
+  dbg.log('[workshop-settle] attestation received, composition slots:', compositionSig.length, 'toBurn:', toBurnBig.length);
 
-  // Step 3: settler signs the same typed data (popup #2)
+  // Step 3: settler signs the same typed data (popup #2). SlotTraits[] composition
+  // must match exactly what the signer signed — the digest depends on every field.
   const value = {
     moduloId:    BigInt(moduloId),
-    composition: compositionBig,
+    composition: compositionSig,
     toBurn:      toBurnBig,
     settler:     settlerAddr,
     nonce:       BigInt(nonce),
@@ -13081,7 +13344,7 @@ async function _workshopSettleOnChain(mod, modId) {
     const settleArtifactSigner = artifact.connect(signer);
     tx = await settleArtifactSigner.settle({
       moduloId,
-      composition: compositionBig,
+      composition: compositionSig,
       toBurn:      toBurnBig,
       settler:     settlerAddr,
       nonce,
