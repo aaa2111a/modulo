@@ -8060,11 +8060,17 @@ function addTokenToModulo(modId, tokenNum) {
     _shiftSlotMapUp(biosStates,           modId, slotIdx);
     _shiftSlotMapUp(tokenDitherPatterns,  modId, slotIdx);
     if (moduloTokenOps[modId]) moduloTokenOps[modId].splice(slotIdx, 0, 0);
+    // 2026-05-14: mod.tokens.splice MUST run before reseedPositionOps.
+    // reseedPositionOps reads mod.tokens.length — without the swap, it loops
+    // N-1 times leaving the slot at slotIdx (inserted as 0 above) untouched.
+    // Stale N was invisible in v1/v2 (positional values mixed in) but surfaces
+    // in v3 since positionDefaultOps is now constant 10 (Le P1-B). Reviewer-
+    // verified safe: featuredIdx check uses only slotIdx; buildLeft below sees
+    // mod.tokens fully updated (slightly more correct than the pre-swap state).
+    mod.tokens.splice(slotIdx, 0, tokenNum);
     reseedPositionOps(modId);
 
     if (featuredIdx[modId] != null && featuredIdx[modId] >= slotIdx) featuredIdx[modId]++;
-
-    mod.tokens.splice(slotIdx, 0, tokenNum);
 
     if (!nodeColors[modId]) nodeColors[modId] = {};
     const _td = TOKEN_DATA[tokenNum];
