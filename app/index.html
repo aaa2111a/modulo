@@ -12296,6 +12296,13 @@ async function _setupTransferListener() {
 
   _transferListenerContract = agent;
   _transferListenerActive = true;
+  // Cold-start heartbeat anchor (2026-05-13): without this, _lastBlockReceivedTs stays
+  // at sentinel 0 until the first block event fires. If WS is silent-dead from inception
+  // (readyState=1 OPEN but block subscription never pushes — observed on publicnode WSS),
+  // the heartbeat-dead check at the visibilitychange handler is gated by `> 0` and
+  // never fires re-arm. Anchoring here ensures the 120s heartbeat window measures
+  // time-since-listener-attached as a fallback for time-since-last-block.
+  _lastBlockReceivedTs = Date.now();
 
   // On each new block, query Transfer events in the gap [_lastProcessedBlock+1, current].
   // Gap-aware so a missed block (network blip) recovers on the next event.
