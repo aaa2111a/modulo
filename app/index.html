@@ -12047,7 +12047,16 @@ function _traitsToTokenData(id, t, owner) {
 //
 // Burned / un-minted tokenIds revert on `getTraits` / `ownerOf` — caught
 // silently and left as null in TOKEN_DATA. Every consumer null-guards.
+// 2026-05-14: mutex against concurrent _sepoliaSync runs. Without this, safety-net
+// polling (fire-and-forget) + visibilitychange (awaited) can overlap and both
+// iterate the workshop cleanup loop, racing on stale mod.tokens indices and
+// removing the wrong slot. Reviewer-flagged P3 risk addressed defensively.
+let _sepoliaSyncRunning = false;
+
 async function _sepoliaSync() {
+  if (_sepoliaSyncRunning) return { ok: false, reason: 'already-running' };
+  _sepoliaSyncRunning = true;
+  try {
   // Use a dedicated readonly RPC provider for view calls instead of MetaMask's
   // BrowserProvider. Reason: view calls on burned tokens revert with
   // ERC721NonexistentToken — perfectly normal, our try/catch handles it — but
@@ -12128,7 +12137,36 @@ async function _sepoliaSync() {
     });
   }
 
+  // 2026-05-14: workshop (personal) ownership reconciliation.
+  // _syncModuloState early-returns for personal modulos because workshop tokens
+  // use direct mod.tokens mutation (no filter rebuild). So when a sender
+  // transfers a workshop token AND the WS Transfer event was missed by
+  // publicnode WSS throttling, _handleTransferEvent never fires the cleanup at
+  // L12309-12315 → workshop shows ghost tokens until reload.
+  // Safety-net polling already corrected TOKEN_DATA[id].owner above via the
+  // hydration loop; iterate workshop tokens and remove any whose owner no
+  // longer matches us (also catches burned tokens: TOKEN_DATA[id] = null →
+  // ownedByUs = false → cleanup fires).
+  // Reverse iteration — removeTokenFromModulo shifts indices down.
+  if (_walletAddress && typeof removeTokenFromModulo === 'function') {
+    const walletLc = _walletAddress.toLowerCase();
+    for (const mod of MODULOS) {
+      if (!mod.personal) continue;
+      for (let i = mod.tokens.length - 1; i >= 0; i--) {
+        const tokenNum = mod.tokens[i];
+        const td = TOKEN_DATA[tokenNum];
+        const ownedByUs = td && td.owner && td.owner.toLowerCase() === walletLc;
+        if (!ownedByUs) {
+          removeTokenFromModulo(mod.id, i, { force: true, returnToInventory: false });
+        }
+      }
+    }
+  }
+
   return { ok: true, count: owned.length, tokens: owned };
+  } finally {
+    _sepoliaSyncRunning = false;
+  }
 }
 window._sepoliaSync = _sepoliaSync;
 
