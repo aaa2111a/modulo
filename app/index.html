@@ -12335,6 +12335,40 @@ async function _setupTransferListener() {
 }
 window._setupTransferListener = _setupTransferListener;
 
+// Safety-net polling (NEW 2026-05-13): publicnode WSS observed pushing block
+// events every 30-60s instead of expected ~12s (Sepolia block time). When WS is
+// slow/degraded, the listener catches up via queryFilter at the next block event
+// — but UI lag can be 60-90s. This polling layer ensures max ~60s lag regardless
+// of WS health by calling totalMinted() as a cheap delta check, then running the
+// full _sepoliaSync() only if totalMinted advanced. Bounded cost: 1 RPC/60s in
+// idle state (no mint activity), full sync only on real changes.
+//
+// Pre-mainnet TODO: switch to paid RPC tier (Alchemy/Infura) for stable WSS
+// performance. This safety-net remains useful as belt+suspenders even with
+// paid RPC (catches listener bugs independent of WS health).
+let _safetyNetTimer = null;
+function _startSafetyNetPolling() {
+  if (_safetyNetTimer) return;  // idempotent
+  _safetyNetTimer = setInterval(async () => {
+    if (document.hidden) return;  // skip background tabs (visibilitychange handles return)
+    // Lightweight pre-check: only totalMinted (1 RPC call). If unchanged, skip the
+    // heavy _sepoliaSync (which does ownerOf + getTraits for ALL minted tokens).
+    // This keeps cost O(1) in idle state — critical for mainnet scale (6666 tokens
+    // × 2 calls × N tabs would otherwise saturate any RPC tier).
+    const provider = _getReadonlyProvider();
+    const agent = provider ? _getTokenAgent(provider) : null;
+    if (!agent) return;
+    try {
+      const current = Number(await agent.totalMinted());
+      if (current === _onchainTotalMinted) return;  // no new mints, skip full sync
+    } catch (_) { /* fall through to full sync on error */ }
+    if (typeof _sepoliaSync === 'function') {
+      _sepoliaSync().catch(err => dbg.warn('[safety-net] sepoliaSync failed:', err && err.message));
+    }
+  }, 60000);
+}
+_startSafetyNetPolling();
+
 // Safety net for missed events (NEW 2026-05-08): if the WS dropped silently
 // or if the browser killed the connection while the tab was background, force
 // a re-sync when the tab returns to foreground. Throttled to once per 10s so
