@@ -894,7 +894,7 @@ button, a, [role="button"], .pill, .info-btn, .toggle-btn, .modal-close,
    NOTE (2026-05-08): "edit-blocked" now covers two cases:
      1. Tokens you do NOT own (ownership-gated read-only — other user's token).
      2. Your own tokens that are LOCKED publicly (commitment to a modulo for
-        settle — traits cannot be modified until expire/orphan/burn release).
+        settle — traits cannot be modified until expire/burn release).
    In both cases trait controls are non-interactive and the row is dimmed. */
 .token-row.edit-blocked .tr-addr,
 .token-row.edit-blocked .tr-idx { opacity:0.55; }
@@ -4733,7 +4733,7 @@ function buildTokenList(mod) {
     // "edit-blocked" = read-only view of the token. Two cases trigger it:
     //   1. Not our token — ownership-gated read-only (other user's token).
     //   2. Our token but locked publicly — lock is a binding commitment, traits
-    //      cannot be modified until expire/orphan/burn release path.
+    //      cannot be modified until expire/burn release path.
     // 2026-05-08 fix: extended to case 2 — previously locked own tokens left
     // the trait controls visually active even though all _canEditSlot-gated
     // setters were no-ops. Owners would click and see no change → confusion.
@@ -11365,7 +11365,7 @@ async function lockToken(modId, tokenNum, durationMs) {
   // Activity feed entry was already pushed by the cloud function — no client emit.
 
   // Schedule a precise expiry for OUR own lock so the UI feels instant — the
-  // global sweeper still handles others' locks + orphans on its 30s cadence.
+  // global sweeper still handles others' expired locks on its 30s cadence.
   // If the page reloads or another client races us, the sweeper is the safety
   // net (Firebase removal is idempotent).
   _scheduleOwnExpiry(modId, tokenNum, entry.lockedUntil);
@@ -11424,7 +11424,7 @@ async function unlockToken(modId, tokenNum, options) {
   if (!entry) return { ok: false, reason: 'not-locked' };
 
   // Phase 2 path: call the Cloud Function which verifies the lock is actually
-  // expired or orphan server-side before removing. No signature needed because
+  // expired or burned server-side before removing. No signature needed because
   // the function is non-actionable for valid locks.
   const { functions, httpsCallable } = window.FB;
   if (!functions || !httpsCallable) return { ok: false, reason: 'no-functions' };
@@ -11469,16 +11469,12 @@ async function _sweepExpiredLocks() {
   // Guests are read-only — they don't run cleanup writes. (audits.md P0)
   if (typeof _isGuest === 'function' && _isGuest()) return;
   const now = Date.now();
-  // Fetch current presence snapshots — cheap reads. An "orphan" lock is one
-  // whose owner is no longer in /guests/ or /wallets/ (their session ended
-  // without onDisconnect clearing the lock — e.g. crash, hard close).
-  let guestsSnapshot = {}, walletsSnapshot = {};
-  try {
-    const { db, ref, get } = window.FB;
-    const [g, w] = await Promise.all([get(ref(db, 'guests')), get(ref(db, 'wallets'))]);
-    if (g.exists()) guestsSnapshot  = g.val() || {};
-    if (w.exists()) walletsSnapshot = w.val() || {};
-  } catch (_) { /* network glitch — skip orphan check this pass */ }
+  // 2026-05-17 (P2-1 reviewer): orphan check REMOVED. The CF orphan path was
+  // bypassing the lock duration (frogheads incident). Locks now release only
+  // by expiry (lockedUntil reached) or burn (settle path). Sweeper only needs
+  // to detect expiry — burned locks are handled inside the CF when called for
+  // any reason. Eliminating the orphan check also drops 2 RTDB reads per sweep
+  // (guests + wallets snapshots).
 
   for (const modId of Object.keys(fbLocked)) {
     // Skip modulos with a settle in-flight — settleModulo owns the cleanup of
@@ -11491,20 +11487,10 @@ async function _sweepExpiredLocks() {
       if (!entry) continue;
       const tokenNum = +tokenNumStr;
       const isExpired = entry.lockedUntil && entry.lockedUntil <= now;
-      // Orphan: owner is a known session-id shape but the corresponding
-      // record is gone from /guests/ or /wallets/.
-      const owner = entry.owner;
-      const ownerKind = typeof _sessionBasePath === 'function' ? _sessionBasePath(owner) : null;
-      const isOrphan = (ownerKind === 'guests' && !guestsSnapshot[owner]) ||
-                       (ownerKind === 'wallets' && !walletsSnapshot[owner]);
-      if (!isExpired && !isOrphan) continue;
-      unlockToken(modId, tokenNum, {
-        emitExpire: isExpired   // emit for any real expiry (not orphan-only sweeps)
-      }).then(res => {
-        // Diagnostic logging — see why expires sometimes don't appear in feed.
-        // Remove once stabilized.
+      if (!isExpired) continue;
+      unlockToken(modId, tokenNum).then(res => {
         if (res && res.ok) {
-          dbg.log('[lock] sweep cleared', modId, tokenNum, isExpired ? '(expired)' : '(orphan)');
+          dbg.log('[lock] sweep cleared', modId, tokenNum, '(' + res.reason + ')');
         } else if (res && res.reason && res.reason !== 'not-locked') {
           dbg.warn('[lock] sweep skipped', modId, tokenNum, '→', res.reason);
         }
@@ -12405,8 +12391,10 @@ async function _handleTransferEvent(from, to, tokenId, agent) {
     // new owner is recognized) but cannot escape the lock duration via
     // self-transfer between wallets. The lock only releases via:
     //   • expiry (lockedUntil reached)
-    //   • orphan (original locker disconnected wallet)
     //   • burn (settle path)
+    // 2026-05-17: orphan release path removed (was enabling same bypass via
+    // presence dropping when owner switched MetaMask account — frogheads
+    // incident on Sepolia).
     // Without this rule a user could bypass lock duration by transferring
     // the token to a 2nd wallet they control and unlocking from there.
     //
