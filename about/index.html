@@ -2085,7 +2085,11 @@ body.night .sys-entry-label  { color:rgba(255,255,255,0.30); }
           </div>
           <div class="qty-cost"><b id="qty-cost-val">0.0069</b> ETH<span id="qty-quota-hint"></span></div>
           <button class="mint-btn" id="mint-btn">MINT</button>
+          <!-- Mint counter disabled 2026-05-17 per Le directive. To re-enable:
+               restore this div + flip MINT_COUNTER_LIVE = true in the JS section
+               (see also MINT_DAY.md §3 T-1 item — flip + COUNTER_RPC mainnet swap).
           <div class="mint-counter" id="mint-counter">— / 6666 minted</div>
+          -->
           <div class="mint-wallet" id="mint-wallet" title="click to disconnect">
             <b id="mint-wallet-addr">—</b>
           </div>
