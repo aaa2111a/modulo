@@ -52,12 +52,12 @@
      to collection's iframe srcdoc renderer architecture. -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
-  script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net;
+  script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://www.gstatic.com https://www.google.com;
   style-src 'self' 'unsafe-inline';
   font-src 'self' data:;
   img-src 'self' data: blob:;
-  connect-src 'self' https://ethereum-sepolia-rpc.publicnode.com https://modulo-de521-default-rtdb.firebaseio.com;
-  frame-src 'self';
+  connect-src 'self' https://ethereum-sepolia-rpc.publicnode.com https://modulo-de521-default-rtdb.firebaseio.com wss://modulo-de521-default-rtdb.firebaseio.com https://*.googleapis.com https://www.gstatic.com https://www.google.com https://*.cloudfunctions.net;
+  frame-src 'self' https://www.google.com;
   base-uri 'self';
   form-action 'self';
 ">
@@ -1687,16 +1687,20 @@ function _shortAddr(a) {
 }
 
 // ── ENS resolve (NEW 2026-05-17) ──────────────────────────────────────────
-// Collection page is browse-only (no wallet connect, no Firebase SDK init).
-// We pull verified ENS bindings via REST API (1 fetch on page load) instead
-// of full Firebase init. Trade-off: no real-time updates — if someone verifies
-// while you browse, you see it next reload. Acceptable for browse mode.
+// Collection subscribes to /ens via Firebase SDK + onValue listener (REAL-TIME).
+// Pattern mirrors app/index.html for consistency. Initial design used REST
+// fetch but RTDB blocks REST GET without App Check token (HTTP 401). SDK
+// integration provides App Check token transparently + bonus real-time updates.
 // Schema in RTDB (admin-SDK-written by verifyEns CF): /ens/<addr>: { name, verifiedAt }
+//
+// window.FB scope reduced to { db, ref, onValue } only (P2-A reviewer 2026-05-17)
+// — collection is browse-only, never needs write primitives. Minimizes XSS pivot
+// surface vs copying app/'s full export.
 const KNOWN_WALLETS = {
   // hardcoded peer aliases (lowercase keys), see app/index.html for canonical list
 };
 let _ensCache = {};
-let _ensReady = false;
+let _ensUnsubscribe = null; // teardown handle for /ens onValue listener (P2-C reviewer)
 
 function _htmlEscape(s) {
   if (typeof s !== 'string') return '';
@@ -1713,27 +1717,25 @@ function _resolveDisplayName(addr) {
   return _shortAddr(addr);
 }
 
-// Hydrate _ensCache once on page load. Cards mounted before this resolves show
-// short hex; once cache populates, re-render all .tok-owner / .mod-owner that
-// stored their full address in dataset.fullAddr.
-(async function _hydrateEnsCache() {
-  try {
-    const res = await fetch('https://modulo-de521-default-rtdb.firebaseio.com/ens.json', {
-      method: 'GET',
-      mode: 'cors',
-      cache: 'no-store',
+// Subscribe to /ens via Firebase SDK. Real-time updates: if someone verifies
+// while a visitor is browsing, the cards re-render with the new ENS name
+// without F5. Cards mounted before listener fires show short hex; re-render
+// triggered by snapshot via dataset.fullAddr lookup.
+function _fbInitEnsSync() {
+  if (!window.FB) return;
+  const { db, ref, onValue } = window.FB;
+  const ensRef = ref(db, 'ens');
+  _ensUnsubscribe = onValue(ensRef, snap => {
+    _ensCache = snap.exists() ? snap.val() : {};
+    // Re-render all mounted owner displays with the fresh cache.
+    document.querySelectorAll('.tok-owner, .mod-owner').forEach(el => {
+      const addr = el.dataset.fullAddr;
+      if (addr) el.textContent = _resolveDisplayName(addr);
     });
-    if (!res.ok) return;
-    const data = await res.json();
-    if (data && typeof data === 'object') _ensCache = data;
-  } catch (_) { /* network glitch — fallback to short hex */ }
-  _ensReady = true;
-  // Re-render all mounted owner displays with the fresh cache.
-  document.querySelectorAll('.tok-owner, .mod-owner').forEach(el => {
-    const addr = el.dataset.fullAddr;
-    if (addr) el.textContent = _resolveDisplayName(addr);
-  });
-})();
+  }, err => console.error('[FB] /ens listener error:', err));
+}
+if (window.FB) _fbInitEnsSync();
+else window.addEventListener('fb-ready', _fbInitEnsSync, { once: true });
 
 // Per-id Promise cache. IntersectionObserver may re-fire mount on rapid
 // scroll/tab toggle — without this, same id triggers duplicate RPC calls.
@@ -2484,8 +2486,9 @@ function _mountTokenIframe(card, id) {
     slot.textContent = '0x' + id.toString(16).padStart(4, '0').toUpperCase();
     const ownerEl = card.querySelector('.tok-owner');
     if (ownerEl) {
-      // Save full addr in dataset so _hydrateEnsCache can re-render this owner
-      // after fetch resolves (cards mounted before fetch initially show short hex).
+      // Save full addr in dataset so /ens onValue listener can re-render this
+      // owner when snapshot updates (cards mounted before listener fires show
+      // short hex; flip to ENS name on snapshot delivery).
       ownerEl.dataset.fullAddr = data.owner;
       ownerEl.textContent = _resolveDisplayName(data.owner);
     }
@@ -4106,6 +4109,50 @@ _expandOverlay.addEventListener('click', e => {
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && _expandOpenId !== null && !document.fullscreenElement) _closeExpand();
 });
+</script>
+
+<!-- Firebase Web SDK — read-only /ens subscription for ENS display.
+     Separate <script type="module"> because Firebase SDK v12 ships as ES modules.
+     Exposes window.FB once initialized; dispatches 'fb-ready' event.
+     window.FB scope MINIMAL — only { db, ref, onValue } (P2-A reviewer 2026-05-17).
+     Collection is browse-only — never needs write primitives or callable functions.
+     If reCAPTCHA / App Check / Firebase init fails (ad-blocker, network), the
+     listener simply never fires; _ensCache stays {}; all addresses degrade to
+     short hex via _resolveDisplayName fallback. Cards still render correctly
+     (they use ethers + publicnode RPC, independent of Firebase). -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js";
+  import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js";
+  import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-app-check.js";
+
+  // Same config as app/index.html — apiKey is public per Firebase design,
+  // access controlled via App Check + RTDB rules.
+  const firebaseConfig = {
+    apiKey:            "AIzaSyByGuKWU39MpPz8-W0wagromUi6bO2l8jA",
+    authDomain:        "modulo-de521.firebaseapp.com",
+    databaseURL:       "https://modulo-de521-default-rtdb.firebaseio.com/",
+    projectId:         "modulo-de521",
+    storageBucket:     "modulo-de521.firebasestorage.app",
+    messagingSenderId: "66336453017",
+    appId:             "1:66336453017:web:89bf52c9c9da5e2baaa308"
+  };
+
+  const app = initializeApp(firebaseConfig);
+
+  // App Check (reCAPTCHA v3) — same site key as app/. Required by RTDB enforce
+  // policy. Site key is public; secret lives in Firebase Console.
+  initializeAppCheck(app, {
+    provider: new ReCaptchaV3Provider('6LfLhNEsAAAAAG6aMsrG_d9UxuhjYWcWjpf4ZEG1'),
+    isTokenAutoRefreshEnabled: true,
+  });
+
+  const db = getDatabase(app);
+
+  // P2-A reviewer 2026-05-17: minimal export surface. Only read-only handle +
+  // primitives needed for /ens subscription. NO set/update/remove/runTransaction/
+  // push/httpsCallable — collection has no write paths.
+  window.FB = { db, ref, onValue };
+  window.dispatchEvent(new CustomEvent('fb-ready'));
 </script>
 </body>
 </html>
