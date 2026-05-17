@@ -53,8 +53,63 @@
     throw new Error('embedded in iframe — execution halted');
   }
 </script>
-<title>Modulo</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23d8d4c9'/%3E%3Crect x='4' y='4' width='8' height='8' fill='%23222'/%3E%3C/svg%3E">
+<title>Modulo · Workshop</title>
+<meta name="description" content="On-chain generative art by ubk. Compose tokens into cellular automaton artifacts via the modulo flow.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Modulo">
+<meta property="og:title" content="Modulo · Workshop">
+<meta property="og:description" content="On-chain generative art by ubk. Compose tokens into cellular automaton artifacts via the modulo flow.">
+<meta property="og:url" content="https://modulo.ubk.art/app/">
+<meta property="og:image" content="https://modulo.ubk.art/preview.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Modulo — generative cellular automaton artifact">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Modulo · Workshop">
+<meta name="twitter:description" content="On-chain generative art by ubk. Compose tokens into cellular automaton artifacts via the modulo flow.">
+<meta name="twitter:image" content="https://modulo.ubk.art/preview.png">
+<meta name="twitter:image:alt" content="Modulo — generative cellular automaton artifact">
+<link rel="icon" id="favicon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23d8d4c9'/%3E%3Crect x='4' y='4' width='8' height='8' fill='%23222'/%3E%3C/svg%3E">
+<script>
+// Animated favicon — see index.html for design notes. Le directive 2026-05-17.
+(() => {
+  const PAIRS = [
+    ['#6363ff', '#ff003a'], ['#ffbd2e', '#28c840'], ['#a040ff', '#ff8c00'],
+    ['#ff4080', '#63ff63'], ['#ff63ff', '#1100ff'], ['#bfbcce', '#ab0a5f'],
+    ['#57686e', '#ffbd2e'], ['#ff003a', '#63ff63'], ['#6363ff', '#ff8c00'],
+  ];
+  const ANGLES = [
+    0,0,0,0,0,
+    10,20,30,40,50,60,70,80,
+    90,90,90,90,90,90,90,90,90,90,
+    100,110,120,130,140,150,160,170,
+    180,180,180,180,180,
+  ];
+  const K = '#222';
+  function genSVG(angle, c1, c2) {
+    const svg = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'>"
+      + "<g transform='rotate(" + angle + " 8 8)'>"
+      + "<rect x='3' y='3' width='5' height='5' fill='" + K  + "'/>"
+      + "<rect x='8' y='3' width='5' height='5' fill='" + c1 + "'/>"
+      + "<rect x='3' y='8' width='5' height='5' fill='" + c2 + "'/>"
+      + "<rect x='8' y='8' width='5' height='5' fill='" + K  + "'/>"
+      + "</g></svg>";
+    return 'data:image/svg+xml,' + encodeURIComponent(svg);
+  }
+  const link = document.getElementById('favicon');
+  if (!link) return;
+  let step = 0;
+  setInterval(() => {
+    const inCycle = step % ANGLES.length;
+    const cycleNum = Math.floor(step / ANGLES.length);
+    const baseAngle = cycleNum * 180;
+    const angle = (baseAngle + ANGLES[inCycle]) % 360;
+    const pair = PAIRS[cycleNum % PAIRS.length];
+    link.href = genSVG(angle, pair[0], pair[1]);
+    step++;
+  }, 50);
+})();
+</script>
 <!-- Google Fonts removed 2026-05-03: the previously-loaded `Ultra` font was
      dead code (linked but never applied via font-family). Site uses only
      system fonts (-apple-system, monospace, Times New Roman). No external
@@ -3010,9 +3065,9 @@ html.dark .settle-modal .settle-modal-warn {
   <!-- Toast stack — small ephemeral notifications (lock-cap alerts, etc.) -->
   <div id="toast-stack"></div>
 
-  <!-- Lock confirmation modal (plan.md §6.3). Duration selector: 1m for Sepolia
-       testing, 1h/6h/12h for production. The 1m option must be removed before
-       mainnet deploy — see LOCK_DURATIONS in the JS for details. -->
+  <!-- Lock confirmation modal (plan.md §6.3). Production duration options:
+       1h/6h/12h. Sepolia-only `1m` button removed 2026-05-17 ahead of mainnet
+       per Le directive. -->
   <div class="overlay" id="lock-overlay">
     <div class="modal lock-modal">
       <div class="lock-modal-tbar">
@@ -3026,7 +3081,6 @@ html.dark .settle-modal .settle-modal-warn {
           become visible to all users and cannot be changed during the lock.
         </div>
         <div class="lock-dur-row">
-          <button class="lock-dur-btn" data-dur="1m">1m</button>
           <button class="lock-dur-btn active" data-dur="1h">1h</button>
           <button class="lock-dur-btn" data-dur="6h">6h</button>
           <button class="lock-dur-btn" data-dur="12h">12h</button>
@@ -11233,16 +11287,10 @@ else window.addEventListener('fb-ready', _fbInitEnsSync, { once: true });
 // ≥2 distinct owners' locks to preserve the social/collaborative aspect.
 
 // Duration constants. See plan.md §1.4 + §4.2.
-//
-// ⚠️ Sepolia config (current): 1m / 1h / 6h / 12h.
-//    The '1m' option exists for testnet ergonomics — testers can lock-and-settle
-//    in 1 minute instead of waiting hours.
-//
-// ⚠️ MAINNET config: REMOVE the '1m' entry below + remove the '1m' button in
-//    the lock modal (search for `data-dur="1m"`). Final mainnet options are
-//    '1h' / '6h' / '12h' only.
+// Production options: 1h / 6h / 12h. Sepolia-only `1m` removed 2026-05-17 per
+// Le directive ahead of mainnet (was testnet ergonomic for quick lock-and-settle
+// rehearsal; would create grief vector on mainnet if any caller forced it).
 const LOCK_DURATIONS = {
-  '1m':  1  * 60 * 1000,         // ⚠️ REMOVE before mainnet deploy
   '1h':  1  * 60 * 60 * 1000,
   '6h':  6  * 60 * 60 * 1000,
   '12h': 12 * 60 * 60 * 1000,
@@ -13855,8 +13903,8 @@ function _dismissToast(el) {
 }
 
 // ═══ Lock UI — confirmation modal + button wiring (plan.md §6.3) ═══
-// Duration selector exposes 4 options on Sepolia (1m/1h/6h/12h). The 1m is a
-// testnet-only ergonomic; remove before mainnet (see LOCK_DURATIONS comment).
+// Duration selector: 3 production options (1h/6h/12h). Sepolia-only `1m`
+// option removed 2026-05-17 per Le (see LOCK_DURATIONS comment).
 
 // Pending lock request — set when user clicks the checkmark, cleared on confirm/cancel.
 let _pendingLock = null;
@@ -13866,7 +13914,6 @@ let _pendingLockDuration = LOCK_DURATION_DEFAULT;
 
 /** Human-readable label per duration key. Shown in the modal body sentence. */
 const _LOCK_DURATION_LABELS = {
-  '1m':  '1 minute',
   '1h':  '1 hour',
   '6h':  '6 hours',
   '12h': '12 hours',
