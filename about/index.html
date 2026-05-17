@@ -21,9 +21,9 @@
        script L48   frame-buster sha256-I9Yfcq7guXpscFi+G0+tohjedD6HTkxEQAMsmvRwWNM=
        script L75   DEBUG wrapper sha256-A3ETGxrcp9DTjGzMeHPhzmYsPpIQYAylCdYHxrzxAos=
        script L1727 (812B)        sha256-KjVWMhTuGbrm7UCORRBroU+iHvJEmhZBJglyBQ50lNQ=
-       script L2028 main mint     sha256-TzJnts+L4h00sfxSd8D3TrKgUzV0zBxwo8WkPW+PnPU=
-       script L3684 demoEngine    sha256-16TNgwcGOKItX3fxva3U6WrX9yKbvsZ18IjGW8FpH74=  (recomputed 2026-05-13 — F4 a11y + canvas resize + fullscreen + DPR-match raster)
-       style  L99   main CSS      sha256-1oN1L5npozyevURhkjlWaLge+O4hhEr1aOuCmpSODRQ=  (recomputed 2026-05-13 — F4 a11y + canvas resize + fullscreen API)
+       script L2028 main mint     sha256-6VL08dbDV2yqU7T+TNHubsPqcmOsXhiC440PDKYVowA=  (recomputed 2026-05-13 — mint counter UI + MINT_COUNTER_LIVE feature flag)
+       script L3684 demoEngine    sha256-UVsq2YCUrPG95Lcy/n0zDLwxU89VgkLHK+0hdTHZO7k=  (recomputed 2026-05-17 — token ID padding 3→4 chars)
+       style  L99   main CSS      sha256-aO4oPSpGAYjfmpJhFxfqcnyOK8k25wiQhPrnkGb3tNc=  (recomputed 2026-05-13 — mint counter CSS + container queries)
 
      KNOWN LIMITATION: frame-buster fallback (~L48) builds replacement body
      via DOM element.style.cssText. Without 'unsafe-inline' in style-src those
@@ -31,8 +31,8 @@
      (rare; fallback text+link still readable). -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
-  script-src 'self' 'sha256-I9Yfcq7guXpscFi+G0+tohjedD6HTkxEQAMsmvRwWNM=' 'sha256-A3ETGxrcp9DTjGzMeHPhzmYsPpIQYAylCdYHxrzxAos=' 'sha256-KjVWMhTuGbrm7UCORRBroU+iHvJEmhZBJglyBQ50lNQ=' 'sha256-TzJnts+L4h00sfxSd8D3TrKgUzV0zBxwo8WkPW+PnPU=' 'sha256-16TNgwcGOKItX3fxva3U6WrX9yKbvsZ18IjGW8FpH74=' https://cdn.jsdelivr.net;
-  style-src 'self' 'sha256-1oN1L5npozyevURhkjlWaLge+O4hhEr1aOuCmpSODRQ=';
+  script-src 'self' 'sha256-I9Yfcq7guXpscFi+G0+tohjedD6HTkxEQAMsmvRwWNM=' 'sha256-A3ETGxrcp9DTjGzMeHPhzmYsPpIQYAylCdYHxrzxAos=' 'sha256-KjVWMhTuGbrm7UCORRBroU+iHvJEmhZBJglyBQ50lNQ=' 'sha256-zm/9KQAdEGr+2ZYbrRDXZ2OPB9IbZpJah4GW3EnAdD8=' 'sha256-UVsq2YCUrPG95Lcy/n0zDLwxU89VgkLHK+0hdTHZO7k=' https://cdn.jsdelivr.net;
+  style-src 'self' 'sha256-aO4oPSpGAYjfmpJhFxfqcnyOK8k25wiQhPrnkGb3tNc=';
   font-src 'self' data:;
   img-src 'self' data: blob:;
   connect-src 'self' https://rpc.sepolia.org https://ethereum-sepolia-rpc.publicnode.com;
@@ -346,6 +346,18 @@ body.night .meta-mint.pre-mint .qty-btn { background:#444; }
 }
 .mint-btn:hover { background:#222; }
 .mint-btn:active { background:#333; }
+/* 2026-05-13 — mint counter (X/6666 minted), feature-flagged via
+   MINT_COUNTER_LIVE in JS. Pre-launch shows literal "— / 6666 minted"
+   placeholder; flip to true in T-1 + swap COUNTER_RPC to mainnet. */
+.mint-counter {
+  font-family: monospace;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: rgba(0,0,0,0.45);
+  text-align: center;
+  margin-top: 6px;
+}
+body.night .mint-counter { color: rgba(255,255,255,0.5); }
 
 /* Mint confirmation modal — same pattern as app/index.html lock modal.
    Hidden by default; .open class fades it in. */
@@ -884,9 +896,11 @@ body.night .long-demo {
 }
 
 /* ── Inventory panel (slides in from the left of the demo modulo) ─────────
-   Sibling of .demo-scale-wrap inside .long-demo, so it sits at NATIVE 1x
-   scale (the scale-wrap is scaled 1.439x; the inventory is not — it lives
-   alongside, anchored to the modulo's left edge).
+   Child of .demo-scale-wrap (see HTML at the demo-inventory div), so it
+   inherits the same scale as the card and stays visually consistent at
+   every breakpoint (desktop 1.439, tablet fluid 100cqw/700, mobile 0.467).
+   The inventory is positioned `right:100%` to slide out to the left of the
+   modulo card; that anchoring is scale-relative, so it scales with the wrap.
 
    Le's call 2026-05-07: "el inventory si puede tapar la columna izquierda" —
    so this overlays the long-col-left text when open. Matches app's floating
@@ -1758,11 +1772,30 @@ body.night .sys-entry-label  { color:rgba(255,255,255,0.30); }
   .long-inner { grid-template-columns:1fr; gap:22px; }
   .long-col:last-child { margin-top:0; }
   .long-demo {
+    container-type: inline-size;  /* 2026-05-13 — tablet overlap fix: enable
+       container-relative scaling for .demo-scale-wrap below. */
     position:static;
     transform:none;
     width:100%; max-width:900px;
     height:auto; aspect-ratio:5/3;
     margin:0 auto;
+    overflow:hidden;  /* 2026-05-13 — clip the wrap's overflow at viewport
+       edges. Without this, float rounding in scale(calc(...)) leaves 2-3px
+       bleeding into the next grid row (reviewer P2 finding). Mobile already
+       has overflow:hidden (L1797-1804) for the same reason. */
+  }
+  /* Counter-scale the demo card to fit the responsive container. Desktop
+     uses scale(1.439) for a 1007px fixed container; mobile uses scale(0.467)
+     for a 327px container. Tablet range (769-1647px) is fluid via container
+     queries: 100cqw matches `.long-demo`'s actual rendered width, scale =
+     100cqw / 700px (native card width) keeps the card painting exactly the
+     container's width. Bug pre-fix: scale stayed at 1.439 → painted 1007×602
+     into a smaller container → 85-166px overflow onto adjacent paragraphs. */
+  .demo-scale-wrap {
+    /* `100cqw / 700px` — both lengths → unitless ratio (valid for scale()).
+       `100cqw / 700` would be length÷number = length, invalid for scale(). */
+    transform: scale(calc(100cqw / 700px));
+    transform-origin: top left;
   }
   /* Reset the desktop staircase margins (L1463-1475) when the layout
      collapses to single column. The staircase only makes visual sense in
@@ -1996,6 +2029,7 @@ body.night .sys-entry-label  { color:rgba(255,255,255,0.30); }
           </div>
           <div class="qty-cost"><b id="qty-cost-val">0.0069</b> ETH<span id="qty-quota-hint"></span></div>
           <button class="mint-btn" id="mint-btn">MINT</button>
+          <div class="mint-counter" id="mint-counter">— / 6666 minted</div>
           <div class="mint-wallet" id="mint-wallet" title="click to disconnect">
             <b id="mint-wallet-addr">—</b>
           </div>
@@ -2170,7 +2204,7 @@ SettleArtifact            initiates settle
     <div class="sys-body">
       <div class="sys-entry">
         <div class="sys-entry-label">Contract</div>
-        <p class="sys-entry-text">Two ERC-721 contracts are deployed on Ethereum: TokenAgent holds the originals, SettleArtifact holds the composition snapshots that appear at settle. Each token is bound to a unique seed generated at mint, from which its traits are derived deterministically and cannot be changed. The rendering engine and animation logic are stored on-chain through EthFS and shared by both contracts. A call to tokenURI() assembles the complete document on the fly — injecting that token's trait data directly into the HTML — and returns a fully self-contained data:text/html;base64. No external request, no server, no dependency. The contracts handle ownership and transfer natively. They are the source of truth for what each token is and who holds it.</p>
+        <p class="sys-entry-text">Two ERC-721 contracts are deployed on Ethereum: TokenAgent holds the originals, SettleArtifact holds the composition snapshots that appear at settle. Each token is bound to a unique seed generated at mint, from which its default traits are derived deterministically. When composed in a modulo, the owner can configure which traits are active; settling captures those choices on-chain as part of the artifact. The rendering engine and animation logic are stored on-chain through EthFS and shared by both contracts. A call to tokenURI() assembles the complete document on the fly — injecting that token's trait data directly into the HTML — and returns a fully self-contained data:text/html;base64. No external request, no server, no dependency. The contracts handle ownership and transfer natively. They are the source of truth for what each token is and who holds it.</p>
       </div>
       <div class="sys-entry">
         <div class="sys-entry-label">Interface</div>
@@ -3141,9 +3175,27 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
   // ════════════════════════════════════════════════════════════════════════
   const MINT_ENABLED = false;
 
+  // ════════════════════════════════════════════════════════════════════════
+  // MINT COUNTER FEATURE FLAG (P2 backlog 2026-05-13)
+  // ════════════════════════════════════════════════════════════════════════
+  // false = pre-mint state: counter shows "— / 6666 minted" placeholder,
+  //   ZERO RPC calls, no provider instantiated, no timers, no listeners.
+  // true = wire counter: lazy JsonRpcProvider polls TokenAgent.totalMinted()
+  //   every COUNTER_POLL_MS, pauses on hidden tab.
+  // T-1 day flip: change to true + swap COUNTER_RPC to mainnet RPC + ensure
+  //   TOKEN_AGENT_ADDRESS is mainnet (atomic 3-change, see MINT_DAY.md §3).
+  // INDEPENDENT of MINT_ENABLED — counter setup runs BEFORE the !MINT_ENABLED
+  // early return so MINT_COUNTER_LIVE=true / MINT_ENABLED=false (showing
+  // pre-launch live count) works correctly. Reviewer P1 fix 2026-05-13.
+  // ════════════════════════════════════════════════════════════════════════
+  const MINT_COUNTER_LIVE = false;
+  const MAX_SUPPLY = 6666;
+  const COUNTER_POLL_MS = 30_000;
+  const COUNTER_RPC = 'https://ethereum-sepolia-rpc.publicnode.com';
+
   // ── Constants matching contracts.md / TokenAgent Sepolia deploy ─────────
   // Public on-chain address (visible on Etherscan + contracts.md). Not a secret.
-  const TOKEN_AGENT_ADDRESS = '0xdE4AC7c11c0B3dbDcE4d60F2B14F659a553f8b8a'; // gitleaks:allow
+  const TOKEN_AGENT_ADDRESS = '0x07aB5E7635F16cE54B091838aF82A3725eF53283'; // gitleaks:allow — v3 Sepolia 2026-05-14 (deploy block 10852389)
   const TOKEN_AGENT_ABI = [
     'function mint(uint256 quantity) external payable',
     'function totalMinted() external view returns (uint256)',
@@ -3559,6 +3611,55 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
     if (e.key === 'Enter') { e.preventDefault(); _v.blur(); }
   });
   _v.addEventListener('focus', () => _v.select());
+
+  // ── Mint counter setup (P1 reviewer fix: position BEFORE !MINT_ENABLED
+  //    guard so MINT_COUNTER_LIVE=true / MINT_ENABLED=false works for T-1) ─
+  let _counterProvider = null;
+  let _counterTimer = null;
+  let _counterStarted = false;  // P2-B guard: protect against double-invoke
+  const _counterEl = $('mint-counter');
+
+  // Lazy readonly provider for counter reads. Separate from `_provider` (which
+  // becomes BrowserProvider on connect). This stays as JsonRpcProvider always
+  // so reads work even without a connected wallet.
+  function _getCounterProvider() {
+    if (_counterProvider) return _counterProvider;
+    _counterProvider = new window.ethers.JsonRpcProvider(COUNTER_RPC);
+    return _counterProvider;
+  }
+
+  async function _refreshMintCounter() {
+    if (!_counterEl || !MINT_COUNTER_LIVE) return;
+    try {
+      const provider = _getCounterProvider();
+      const agent = new window.ethers.Contract(TOKEN_AGENT_ADDRESS, TOKEN_AGENT_ABI, provider);
+      const total = await agent.totalMinted();
+      const n = Number(total);
+      if (Number.isFinite(n) && n >= 0 && n <= MAX_SUPPLY) {
+        _counterEl.textContent = n + ' / ' + MAX_SUPPLY + ' minted';
+      }
+    } catch (e) {
+      // Silent — keep last known value (or "— / 6666 minted" if first fetch
+      // failed). Don't toast; informational, not critical. Next poll retries.
+    }
+  }
+
+  function _startMintCounter() {
+    if (_counterStarted) return;  // P2-B: double-invoke guard
+    if (!MINT_COUNTER_LIVE) return;  // unwire path: zero RPC, no timers, no listeners
+    _counterStarted = true;
+    _refreshMintCounter();
+    _counterTimer = setInterval(_refreshMintCounter, COUNTER_POLL_MS);
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        if (_counterTimer) { clearInterval(_counterTimer); _counterTimer = null; }
+      } else if (!_counterTimer) {
+        _refreshMintCounter();
+        _counterTimer = setInterval(_refreshMintCounter, COUNTER_POLL_MS);
+      }
+    });
+  }
+  _startMintCounter();
 
   // ── Pre-mint mode: button disabled, no wallet wiring, no listeners ──────
   if (!MINT_ENABLED) {
@@ -5554,7 +5655,7 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
 
     const idEl = document.createElement('span');
     idEl.className = 'demo-inv-tile-id';
-    idEl.textContent = 'R#' + String(token.rank).padStart(3, '0');
+    idEl.textContent = 'R#' + String(token.rank).padStart(4, '0');
     tile.appendChild(idEl);
 
     const sw = document.createElement('span');
@@ -5807,7 +5908,7 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
 
     const rank = document.createElement('span');
     rank.className = 'demo-token-row-rank';
-    rank.textContent = 'R#' + String(token.rank).padStart(3, '0');
+    rank.textContent = 'R#' + String(token.rank).padStart(4, '0');
     head.appendChild(rank);
 
     const sw = document.createElement('span');
@@ -5866,10 +5967,10 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
       s.className = cls; s.textContent = txt; return s;
     };
     ident.appendChild(_identSpan('demo-tr-ident-label', 'ID'));
-    ident.appendChild(_identSpan('demo-tr-ident-val',   '#' + String(token.id).padStart(3, '0')));
+    ident.appendChild(_identSpan('demo-tr-ident-val',   '#' + String(token.id).padStart(4, '0')));
     ident.appendChild(_identSpan('demo-tr-ident-sep',   '·'));
     ident.appendChild(_identSpan('demo-tr-ident-label', 'RANK'));
-    ident.appendChild(_identSpan('demo-tr-ident-val',   'R#' + String(token.rank).padStart(3, '0')));
+    ident.appendChild(_identSpan('demo-tr-ident-val',   'R#' + String(token.rank).padStart(4, '0')));
 
     // Trash button — same SVG as app (lines 4160-4163)
     const trash = document.createElement('button');
