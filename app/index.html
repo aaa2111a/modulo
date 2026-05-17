@@ -380,6 +380,19 @@ button, a, [role="button"], .pill, .info-btn, .toggle-btn, .modal-close,
 }
 #wallet-address.connected { display:inline-flex; align-items:center; }
 #wallet-address.wrong-chain { border-color:#c97a3a; color:#c97a3a; }
+#ens-verify-btn {
+  display:none;
+  font-size:10px; letter-spacing:.04em;
+  padding:2px 9px; border-radius:20px;
+  border:0.5px solid var(--pill-border); color:var(--pill-color); background:var(--pill-bg);
+  font-family:inherit; cursor:pointer; flex-shrink:0;
+  align-items:center; line-height:1;
+  transition:opacity 0.15s;
+}
+#ens-verify-btn.visible { display:inline-flex; }
+#ens-verify-btn:hover:not(:disabled) { opacity:0.7; }
+#ens-verify-btn:disabled { opacity:0.5; cursor:wait; }
+#ens-verify-btn.verified { border-color:#5b8a4a; color:#5b8a4a; }
 #wallet-chain-warn {
   display:none;
   font-size:10px; letter-spacing:.04em;
@@ -2752,6 +2765,7 @@ html.dark .settle-modal .settle-modal-warn {
     <a href="../" class="topbar-home-dot" title="Homepage"></a>
     <div id="topbar-center">
       <span id="wallet-address"></span>
+      <button id="ens-verify-btn" title="Verify your ENS name (mainnet reverse record)">verify ENS</button>
       <button id="wallet-toggle-btn" title="Connect wallet">connect</button>
       <button id="wallet-chain-warn" title="Switch to Sepolia">wrong chain — switch</button>
       <span id="topbar-inv-sep">·</span>
@@ -4760,7 +4774,7 @@ function buildTokenList(mod) {
       _el('div', { class: 'sdot ' + sdotCls, title: sdotTitle }),
       _el('span', { class: 'tr-idx', text: 'R#' + String(rank).padStart(3, '0') }),
       _el('div', { class: 'tr-swatch' }),
-      _el('span', { class: 'tr-addr', text: shortAddr(full) }),
+      _el('span', { class: 'tr-addr', text: _resolveDisplayName(full) }),
       _el('span', { class: 'tr-tags', id: `tr-tags-${mod.id}-${i}` }, _trTagSpans),
       _lockIconEl,
       // Hide randomize button in edit-blocked rows (not-own OR own+locked).
@@ -9401,10 +9415,10 @@ function _artifactRenderDetails(data, artifactId) {
       '<span class="details-value">' + dateStr + '</span></div>' +
     '<div class="details-row"><span class="details-label">Settler</span>' +
       '<a class="details-link" href="' + etherscanBase + '/address/' + settler +
-        '" target="_blank" rel="noopener noreferrer">' + _shortAddr(settler) + ' ↗</a></div>' +
+        '" target="_blank" rel="noopener noreferrer">' + _htmlEscape(_resolveDisplayName(settler)) + ' ↗</a></div>' +
     '<div class="details-row"><span class="details-label">Owner</span>' +
       '<a class="details-link" href="' + etherscanBase + '/address/' + owner +
-        '" target="_blank" rel="noopener noreferrer">' + _shortAddr(owner) + ' ↗</a></div>';
+        '" target="_blank" rel="noopener noreferrer">' + _htmlEscape(_resolveDisplayName(owner)) + ' ↗</a></div>';
 
   const tokenBlocks = tokenIds.map((id, i) => {
     const headerHtml =
@@ -11177,6 +11191,29 @@ function _fbInitSync() {
 if (window.FB) _fbInitSync();
 else window.addEventListener('fb-ready', _fbInitSync, { once: true });
 
+// ── ENS cache sync (NEW 2026-05-17) ──────────────────────────────────────
+// Subscribes to /ens for public verified ENS bindings. Populates _ensCache
+// so _resolveDisplayName resolves other users' addresses → their .eth names.
+// Teardown handle saved in _ensUnsubscribe (P2-C reviewer 2026-05-17) — if
+// the codebase later adds a session teardown path, call _ensUnsubscribe?.()
+// there. For now: full-page-lifetime listener (matches /session/ pattern).
+function _fbInitEnsSync() {
+  if (!window.FB) return;
+  const { db, ref, onValue } = window.FB;
+  const ensRef = ref(db, 'ens');
+  _ensUnsubscribe = onValue(ensRef, snap => {
+    _ensCache = snap.exists() ? snap.val() : {};
+    // Re-render any UI that depends on display names. Topbar self-pill
+    // unaffected by KNOWN_WALLETS/cache (uses own _walletAddress + verify
+    // button state), but other users' addresses in activity feed +
+    // details popups need refresh. _renderWalletUI is cheap; cards
+    // re-render on next interaction (snapshot reads are pull-based).
+    if (typeof _renderWalletUI === 'function') _renderWalletUI();
+  }, err => console.error('[FB] /ens listener error:', err));
+}
+if (window.FB) _fbInitEnsSync();
+else window.addEventListener('fb-ready', _fbInitEnsSync, { once: true });
+
 // ═══ Lock API (refactor step 10, 2026-04-24) ═══
 // lockToken() + unlockToken() are the only functions that write to the
 // Firebase /locked subtree. The UI (padlock button, confirmation modal, etc.)
@@ -12605,22 +12642,175 @@ function _shortAddr(a) {
   return a.slice(0, 6) + '…' + a.slice(-4);
 }
 
+// ── ENS verification (NEW 2026-05-17) ─────────────────────────────────────
+// Opt-in ENS display: user clicks "Verify ENS" topbar button → MetaMask
+// EIP-712 sign → CF verifies + writes /ens/<addr> → others see .eth name in
+// topbar/activity/details. No automatic lookup at connect (cost-conscious).
+// Design + threat model: see CHANGELOG 2026-05-17 + firebase-functions/index.js verifyEns.
+//
+// KNOWN_WALLETS: hardcoded aliases for peers/artists (no ENS needed). Priority 1.
+// Address keys MUST be lowercase. Empty initially — Le populates as needed.
+const KNOWN_WALLETS = {
+  // '0xabc...': 'alias',
+};
+let _ensCache = {};        // { [addrLowercase]: { name, verifiedAt } }
+let _ensUnsubscribe = null; // teardown handle for /ens onValue listener
+
+// HTML-escape for defensive rendering. CF charset gate (RX_ENS_NAME) already
+// blocks the 5 unsafe chars + Bidi + ZWJ, but defense in depth on the render
+// side too (P2-C reviewer 2026-05-17). Used wherever _resolveDisplayName
+// output reaches innerHTML / template strings.
+function _htmlEscape(s) {
+  if (typeof s !== 'string') return '';
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// Priority: KNOWN_WALLETS hardcoded → _ensCache (verified) → _shortAddr fallback.
+// Returns the display string (raw — caller responsible for HTML-escape if
+// inserting via innerHTML). For textContent usage, escape not required.
+function _resolveDisplayName(addr) {
+  if (!addr || typeof addr !== 'string') return '';
+  const lc = addr.toLowerCase();
+  if (KNOWN_WALLETS[lc]) return KNOWN_WALLETS[lc];
+  const entry = _ensCache[lc];
+  if (entry && entry.name) return entry.name;
+  return _shortAddr(addr);
+}
+
+// EIP-712 domain for ENS verify/remove sigs (matches CF _ensAuthDomain).
+// verifyingContract = TOKEN_AGENT_ADDRESS so domain ties to deployed contract
+// (one EIP-712 namespace per project). CHAIN_ID = current target chain.
+function _ensDomain() {
+  return {
+    name: 'Modulo ENS',
+    version: '1',
+    chainId: WALLET_TARGET_CHAIN_ID,
+    verifyingContract: TOKEN_AGENT_ADDRESS,
+  };
+}
+
+// Sign EIP-712 typed data for verifyEns / removeEns. Distinct primary types
+// prevent cross-action replay even though domain is identical (CF asserts this
+// too on the recovered side). Returns { signature, ts } or throws.
+async function _signEnsAction(action) {
+  if (!_walletAddress || !_walletProvider) throw new Error('no-wallet');
+  if (action !== 'VerifyEns' && action !== 'RemoveEns') throw new Error('bad-action');
+  const ts = Date.now();
+  const types = {
+    [action]: [
+      { name: 'address',   type: 'address' },
+      { name: 'timestamp', type: 'uint256' },
+    ],
+  };
+  const value = { address: _walletAddress, timestamp: ts };
+  const signer = await _walletProvider.getSigner();
+  const signature = await signer.signTypedData(_ensDomain(), types, value);
+  return { signature, ts };
+}
+
+// Handler: topbar "Verify ENS" button click.
+async function _verifyEnsClick() {
+  if (!window.FB || !_walletAddress) return;
+  const btn = document.getElementById('ens-verify-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'signing…'; }
+  try {
+    const { signature, ts } = await _signEnsAction('VerifyEns');
+    if (btn) btn.textContent = 'verifying…';
+    const { functions, httpsCallable } = window.FB;
+    const verifyFn = httpsCallable(functions, 'verifyEns');
+    const result = await verifyFn({ address: _walletAddress, signature, ts });
+    const data = result && result.data;
+    if (data && data.ok) {
+      // RTDB onValue listener will populate _ensCache; UI re-renders on snapshot.
+      // No optimistic update — wait for server-confirmed write.
+      if (btn) btn.textContent = 'verified ✓';
+      setTimeout(() => _renderWalletUI(), 500); // refresh button state
+    } else {
+      const reason = (data && data.reason) || 'unknown';
+      const msg = {
+        'no-reverse-ens':      'No ENS name configured for this wallet on mainnet.',
+        'unsafe-name':         'ENS name contains unsupported characters (ASCII-only single-label .eth required).',
+        'no-forward-binding':  'ENS reverse record does not match forward resolution. Set the forward record at app.ens.domains.',
+      }[reason] || ('ENS verification failed: ' + reason);
+      alert(msg);
+      if (btn) { btn.disabled = false; btn.textContent = 'verify ENS'; }
+    }
+  } catch (err) {
+    console.error('[ens] verify failed:', err);
+    const code = err && err.code;
+    if (code === 'ACTION_REJECTED' || (err.message || '').includes('rejected')) {
+      // User cancelled MetaMask popup — silent reset
+    } else if (code === 'functions/resource-exhausted') {
+      alert('Rate limit reached (5 verifies per hour). Wait and retry.');
+    } else if (code === 'functions/unavailable') {
+      alert('ENS resolution temporarily unavailable. Try again in a moment.');
+    } else {
+      alert('Verify failed: ' + (err.message || code || 'unknown error'));
+    }
+    if (btn) { btn.disabled = false; btn.textContent = 'verify ENS'; }
+  }
+}
+
+// Handler: topbar "Remove ENS" button click.
+async function _removeEnsClick() {
+  if (!window.FB || !_walletAddress) return;
+  if (!confirm('Remove your verified ENS from Modulo? Others will see your address again.')) return;
+  const btn = document.getElementById('ens-verify-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'signing…'; }
+  try {
+    const { signature, ts } = await _signEnsAction('RemoveEns');
+    if (btn) btn.textContent = 'removing…';
+    const { functions, httpsCallable } = window.FB;
+    const removeFn = httpsCallable(functions, 'removeEns');
+    await removeFn({ address: _walletAddress, signature, ts });
+    // RTDB listener will clear _ensCache entry → re-render
+  } catch (err) {
+    console.error('[ens] remove failed:', err);
+    const code = err && err.code;
+    if (code === 'ACTION_REJECTED' || (err.message || '').includes('rejected')) {
+      // Silent
+    } else {
+      alert('Remove failed: ' + (err.message || code || 'unknown'));
+    }
+    if (btn) { btn.disabled = false; }
+    _renderWalletUI();
+  }
+}
+
 function _renderWalletUI() {
   const btn    = document.getElementById('wallet-toggle-btn');
   const addrEl = document.getElementById('wallet-address');
   const warnEl = document.getElementById('wallet-chain-warn');
+  const ensBtn = document.getElementById('ens-verify-btn');
   if (!btn || !addrEl) return;
   if (_walletAddress) {
     btn.textContent = 'disconnect';
     btn.title = 'Disconnect wallet';
     addrEl.classList.add('connected');
-    addrEl.textContent = _shortAddr(_walletAddress);
+    // _resolveDisplayName resolves to ENS / KNOWN_WALLET alias / short hex.
+    // textContent → no HTML-escape needed (browser handles entities).
+    addrEl.textContent = _resolveDisplayName(_walletAddress);
     const wrongChain = _walletChainId !== null && _walletChainId !== WALLET_TARGET_CHAIN_ID;
     addrEl.classList.toggle('wrong-chain', wrongChain);
     addrEl.title = wrongChain
       ? `${_walletAddress} — wrong chain (${_walletChainId}). Click to switch.`
       : `${_walletAddress} (Sepolia)`;
     if (warnEl) warnEl.classList.toggle('visible', wrongChain);
+    // ENS button: visible when wallet connected + correct chain.
+    // Label flips between "verify ENS" / "remove ENS" based on cache state.
+    if (ensBtn) {
+      const lc = _walletAddress.toLowerCase();
+      const isVerified = !!(_ensCache[lc] && _ensCache[lc].name);
+      ensBtn.classList.toggle('visible', !wrongChain);
+      ensBtn.classList.toggle('verified', isVerified);
+      ensBtn.disabled = false;
+      ensBtn.textContent = isVerified ? 'remove ENS' : 'verify ENS';
+      ensBtn.title = isVerified
+        ? `Remove your verified ENS (${_ensCache[lc].name})`
+        : 'Verify your ENS name (mainnet reverse record)';
+      ensBtn.onclick = isVerified ? _removeEnsClick : _verifyEnsClick;
+    }
   } else {
     btn.textContent = 'connect';
     btn.title = 'Connect wallet';
@@ -12628,6 +12818,10 @@ function _renderWalletUI() {
     addrEl.textContent = '';
     addrEl.title = '';
     if (warnEl) warnEl.classList.remove('visible');
+    if (ensBtn) {
+      ensBtn.classList.remove('visible', 'verified');
+      ensBtn.disabled = false;
+    }
   }
 }
 
@@ -13039,9 +13233,10 @@ async function settleModulo(modId) {
     //      (Firebase locks stay until expiry — pre-mainnet TODO: Cloud Run
     //      listener for Settled events to clean Firebase).
     //
-    // The legacy `settleSharedModulo` CF is no longer used here. It still
-    // exists in the CF codebase as a fallback for migration but the active
-    // path is `attestSettle` + on-chain settle.
+    // The legacy `settleSharedModulo` CF was removed from CF source 2026-05-05
+    // (Pass 1 cleanup) and deleted from runtime 2026-05-16 (Firebase Studio
+    // supply-chain audit caught orphan still deployed). Active path:
+    // `attestSettle` + on-chain dual-sig via SettleArtifact.
     let _txConfirmed = false;
     try {
     const { functions, httpsCallable } = window.FB || {};
@@ -13520,7 +13715,7 @@ function _renderActivityEntry(data) {
   const tokenOK   = data.tokenNum == null || (Number.isInteger(data.tokenNum) && data.tokenNum >= 0 && data.tokenNum < 10000);
   if (!TYPE_OK || !modIdOK || !tokenOK || (data.owner != null && !ownerOK)) return;
 
-  const shortOwner = ownerOK ? shortAddr(data.owner) : '—';
+  const shortOwner = ownerOK ? _resolveDisplayName(data.owner) : '—';
   const tokStr     = data.tokenNum != null ? `#${String(data.tokenNum).padStart(3,'0')}` : '';
   const relStr     = _formatRelTime(data.ts);
 
