@@ -4714,7 +4714,15 @@ function buildTokenList(mod) {
   mod.tokens.forEach((t, i) => {
     const td    = TOKEN_DATA[t] || {};
     const own   = isOwnToken(t);
-    const full  = fakeAddr(mod.id, i);
+    // tr-addr shows the CURRENT on-chain owner of the token (per Policy A —
+    // lock-follows-token: locks persist through transfers, and Contributors at
+    // settle time = current owner, NOT the original locker). If frogheads locks
+    // token then transfers to wallet2, the row must flip to wallet2's display.
+    // Was `fakeAddr(mod.id, i)` (Phase 1 cosmetic placeholder, pre on-chain
+    // ownership). Switched 2026-05-17 to TOKEN_DATA[t].owner so ENS names
+    // resolve via _resolveDisplayName. Fallback to fakeAddr until _sepoliaSync
+    // hydration completes (td.owner can be null on cold start).
+    const full  = (td && td.owner) || fakeAddr(mod.id, i);
     const st    = td.status || 'connected';
     const spd   = td.speed || 50;
     // Init speed before header so getTraitTags can read it
