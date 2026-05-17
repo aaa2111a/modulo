@@ -52,7 +52,7 @@
      to collection's iframe srcdoc renderer architecture. -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
-  script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://www.gstatic.com https://www.google.com https://*.firebaseio.com https://static.cloudflareinsights.com;
+  script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://www.gstatic.com https://www.google.com https://static.cloudflareinsights.com;
   style-src 'self' 'unsafe-inline';
   font-src 'self' data:;
   img-src 'self' data: blob:;
@@ -830,7 +830,7 @@ body.night .card-loading { background:rgba(255,255,255,0.04); }
   align-items:center;
 }
 .tok-owner, .mod-owner {
-  font-size:8px; font-family:monospace;
+  font-size:10px; font-family:monospace;
   letter-spacing:.06em;
   color:var(--text-meta);
   text-align:center;
@@ -838,7 +838,7 @@ body.night .card-loading { background:rgba(255,255,255,0.04); }
   text-overflow:ellipsis;
   white-space:nowrap;
 }
-.mod-owner { font-size:9px; }
+.mod-owner { font-size:11px; }
 
 /* ── Export options modal ─────────────────────────────────────────────
    Centered overlay shown when user clicks ↓ MP4 in the expand tbar. List
@@ -1697,7 +1697,10 @@ function _shortAddr(a) {
 // — collection is browse-only, never needs write primitives. Minimizes XSS pivot
 // surface vs copying app/'s full export.
 const KNOWN_WALLETS = {
-  // hardcoded peer aliases (lowercase keys), see app/index.html for canonical list
+  // Hardcoded peer aliases — lowercase address keys. Priority 1 in
+  // _resolveDisplayName (dominates over ENS cache + short hex fallback).
+  // Keep in sync with app/index.html (canonical list).
+  '0x6fb78d9c19d3b0ef9cc4e134c82b77a5beeae401': 'ubk',
 };
 let _ensCache = {};
 let _ensUnsubscribe = null; // teardown handle for /ens onValue listener (P2-C reviewer)
@@ -2637,7 +2640,7 @@ async function _buildCards() {
   } else {
     let _tokCardIdx = 0;
     for (const id of aliveTokenIds) {
-      const label = '#' + String(id).padStart(3, '0');
+      const label = '#' + String(id).padStart(4, '0');
       const card = document.createElement('div');
       card.className = 'tok-card';
       card.dataset.tokId = String(id);
@@ -3504,11 +3507,12 @@ function _openExpand(card, id, type) {
   _expandOpenType = type;
   _expandCardEl   = card || null;
 
-  // Title format: token uses `padStart(3,'0')` to mirror `.tok-label`
-  // (Le's UX call 2026-05-10 — option A in the format choice).
+  // Title format: token uses `padStart(4,'0')` to mirror `.tok-label`
+  // (Le's UX call 2026-05-17 — bumped 3→4 chars for MAX_SUPPLY=6666 width
+  // consistency. Originally 3-char `padStart(3,'0')` per 2026-05-10).
   if (type === 'token') {
     document.getElementById('expand-tbar-title').textContent =
-      'TOKEN #' + String(id).padStart(3, '0');
+      'TOKEN #' + String(id).padStart(4, '0');
     _expandWindow.classList.add('expand-token');
   } else {
     document.getElementById('expand-tbar-title').textContent = 'MODULO #' + id;
