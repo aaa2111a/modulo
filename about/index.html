@@ -16,14 +16,14 @@
      SHA-256 hashes of the 6 inline blocks. See collection/index.html for
      full rationale + recompute command.
 
-     Hashes (recomputed 2026-05-10 post innerHTML→createElement refactor —
-     frame-buster + deco-card builder + SVG trash icon):
-       script L48   frame-buster sha256-I9Yfcq7guXpscFi+G0+tohjedD6HTkxEQAMsmvRwWNM=
-       script L75   DEBUG wrapper sha256-A3ETGxrcp9DTjGzMeHPhzmYsPpIQYAylCdYHxrzxAos=
-       script L1727 (812B)        sha256-KjVWMhTuGbrm7UCORRBroU+iHvJEmhZBJglyBQ50lNQ=
-       script L2028 main mint     sha256-6VL08dbDV2yqU7T+TNHubsPqcmOsXhiC440PDKYVowA=  (recomputed 2026-05-13 — mint counter UI + MINT_COUNTER_LIVE feature flag)
-       script L3684 demoEngine    sha256-UVsq2YCUrPG95Lcy/n0zDLwxU89VgkLHK+0hdTHZO7k=  (recomputed 2026-05-17 — token ID padding 3→4 chars)
-       style  L99   main CSS      sha256-aO4oPSpGAYjfmpJhFxfqcnyOK8k25wiQhPrnkGb3tNc=  (recomputed 2026-05-13 — mint counter CSS + container queries)
+     Hashes (recomputed 2026-05-17 post animated favicon addition):
+       script L49   frame-buster   sha256-I9Yfcq7guXpscFi+G0+tohjedD6HTkxEQAMsmvRwWNM=
+       script L76   DEBUG wrapper  sha256-A3ETGxrcp9DTjGzMeHPhzmYsPpIQYAylCdYHxrzxAos=
+       script L92   favicon anim   sha256-q8SVyNi/oZiGjRM1qXrLths29/VQKSWvik6dIzFgaEE=  (NEW 2026-05-17 — animated favicon, 2x2 rotation + 9 palette pair cycle)
+       script L1983 (812B)         sha256-KjVWMhTuGbrm7UCORRBroU+iHvJEmhZBJglyBQ50lNQ=
+       script L2292 main mint      sha256-zm/9KQAdEGr+2ZYbrRDXZ2OPB9IbZpJah4GW3EnAdD8=
+       script L3818 demoEngine     sha256-UVsq2YCUrPG95Lcy/n0zDLwxU89VgkLHK+0hdTHZO7k=  (recomputed 2026-05-17 — token ID padding 3→4 chars)
+       style  L132  main CSS       sha256-aO4oPSpGAYjfmpJhFxfqcnyOK8k25wiQhPrnkGb3tNc=
 
      KNOWN LIMITATION: frame-buster fallback (~L48) builds replacement body
      via DOM element.style.cssText. Without 'unsafe-inline' in style-src those
@@ -31,7 +31,7 @@
      (rare; fallback text+link still readable). -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
-  script-src 'self' 'sha256-I9Yfcq7guXpscFi+G0+tohjedD6HTkxEQAMsmvRwWNM=' 'sha256-A3ETGxrcp9DTjGzMeHPhzmYsPpIQYAylCdYHxrzxAos=' 'sha256-KjVWMhTuGbrm7UCORRBroU+iHvJEmhZBJglyBQ50lNQ=' 'sha256-zm/9KQAdEGr+2ZYbrRDXZ2OPB9IbZpJah4GW3EnAdD8=' 'sha256-UVsq2YCUrPG95Lcy/n0zDLwxU89VgkLHK+0hdTHZO7k=' https://cdn.jsdelivr.net;
+  script-src 'self' 'sha256-I9Yfcq7guXpscFi+G0+tohjedD6HTkxEQAMsmvRwWNM=' 'sha256-A3ETGxrcp9DTjGzMeHPhzmYsPpIQYAylCdYHxrzxAos=' 'sha256-QBnDYJZwhBXOrgmZ9UEkle1nD40H9Vt2YvnqkMJhoZA=' 'sha256-KjVWMhTuGbrm7UCORRBroU+iHvJEmhZBJglyBQ50lNQ=' 'sha256-zm/9KQAdEGr+2ZYbrRDXZ2OPB9IbZpJah4GW3EnAdD8=' 'sha256-UVsq2YCUrPG95Lcy/n0zDLwxU89VgkLHK+0hdTHZO7k=' https://cdn.jsdelivr.net;
   style-src 'self' 'sha256-aO4oPSpGAYjfmpJhFxfqcnyOK8k25wiQhPrnkGb3tNc=';
   font-src 'self' data:;
   img-src 'self' data: blob:;
@@ -88,7 +88,63 @@
     warn: window.DEBUG ? console.warn.bind(console) : function () {},
   };
 </script>
-<title>Mint</title>
+<link rel="icon" id="favicon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23d8d4c9'/%3E%3Crect x='4' y='4' width='8' height='8' fill='%23222'/%3E%3C/svg%3E">
+<script>
+// Animated favicon — see index.html for design notes. Le directive 2026-05-17.
+(() => {
+  const PAIRS = [
+    ['#6363ff', '#ff003a'], ['#ffbd2e', '#28c840'], ['#a040ff', '#ff8c00'],
+    ['#ff4080', '#63ff63'], ['#ff63ff', '#1100ff'], ['#bfbcce', '#ab0a5f'],
+    ['#57686e', '#ffbd2e'], ['#ff003a', '#63ff63'], ['#6363ff', '#ff8c00'],
+  ];
+  const ANGLES = [
+    0,0,0,0,0,
+    10,20,30,40,50,60,70,80,
+    90,90,90,90,90,90,90,90,90,90,
+    100,110,120,130,140,150,160,170,
+    180,180,180,180,180,
+  ];
+  const K = '#222';
+  function genSVG(angle, c1, c2) {
+    const svg = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'>"
+      + "<g transform='rotate(" + angle + " 8 8)'>"
+      + "<rect x='3' y='3' width='5' height='5' fill='" + K  + "'/>"
+      + "<rect x='8' y='3' width='5' height='5' fill='" + c1 + "'/>"
+      + "<rect x='3' y='8' width='5' height='5' fill='" + c2 + "'/>"
+      + "<rect x='8' y='8' width='5' height='5' fill='" + K  + "'/>"
+      + "</g></svg>";
+    return 'data:image/svg+xml,' + encodeURIComponent(svg);
+  }
+  const link = document.getElementById('favicon');
+  if (!link) return;
+  let step = 0;
+  setInterval(() => {
+    const inCycle = step % ANGLES.length;
+    const cycleNum = Math.floor(step / ANGLES.length);
+    const baseAngle = cycleNum * 180;
+    const angle = (baseAngle + ANGLES[inCycle]) % 360;
+    const pair = PAIRS[cycleNum % PAIRS.length];
+    link.href = genSVG(angle, pair[0], pair[1]);
+    step++;
+  }, 50);
+})();
+</script>
+<title>Modulo · Mint</title>
+<meta name="description" content="On-chain generative art by ubk. Compose tokens into cellular automaton artifacts via the modulo flow.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Modulo">
+<meta property="og:title" content="Modulo · Mint">
+<meta property="og:description" content="On-chain generative art by ubk. Compose tokens into cellular automaton artifacts via the modulo flow.">
+<meta property="og:url" content="https://modulo.ubk.art/about/">
+<meta property="og:image" content="https://modulo.ubk.art/preview.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Modulo — generative cellular automaton artifact">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Modulo · Mint">
+<meta name="twitter:description" content="On-chain generative art by ubk. Compose tokens into cellular automaton artifacts via the modulo flow.">
+<meta name="twitter:image" content="https://modulo.ubk.art/preview.png">
+<meta name="twitter:image:alt" content="Modulo — generative cellular automaton artifact">
 <!-- ethers v6 — same pinned version + SRI as app/index.html.
      Used only for the mint flow on this page; safe to remove if mint moves elsewhere. -->
 <script
