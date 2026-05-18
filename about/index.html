@@ -19,9 +19,9 @@
      Hashes (recomputed 2026-05-17 post animated favicon addition):
        script L49   frame-buster   sha256-I9Yfcq7guXpscFi+G0+tohjedD6HTkxEQAMsmvRwWNM=
        script L76   DEBUG wrapper  sha256-A3ETGxrcp9DTjGzMeHPhzmYsPpIQYAylCdYHxrzxAos=
-       script L92   favicon anim   sha256-q8SVyNi/oZiGjRM1qXrLths29/VQKSWvik6dIzFgaEE=  (NEW 2026-05-17 — animated favicon, 2x2 rotation + 9 palette pair cycle)
+       script L92   favicon anim   sha256-QBnDYJZwhBXOrgmZ9UEkle1nD40H9Vt2YvnqkMJhoZA=  (NEW 2026-05-17 — animated favicon, 2x2 rotation + 9 palette pair cycle; doc-header hash synced with meta CSP 2026-05-18)
        script L1983 (812B)         sha256-KjVWMhTuGbrm7UCORRBroU+iHvJEmhZBJglyBQ50lNQ=
-       script L2292 main mint      sha256-zm/9KQAdEGr+2ZYbrRDXZ2OPB9IbZpJah4GW3EnAdD8=
+       script L2292 main mint      sha256-HaTnKtIwMYUyq6leM7v8L8pjwdLrnR0TBYFsS3tjaEQ=
        script L3818 demoEngine     sha256-UVsq2YCUrPG95Lcy/n0zDLwxU89VgkLHK+0hdTHZO7k=  (recomputed 2026-05-17 — token ID padding 3→4 chars)
        style  L132  main CSS       sha256-aO4oPSpGAYjfmpJhFxfqcnyOK8k25wiQhPrnkGb3tNc=
 
@@ -31,7 +31,7 @@
      (rare; fallback text+link still readable). -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
-  script-src 'self' 'sha256-I9Yfcq7guXpscFi+G0+tohjedD6HTkxEQAMsmvRwWNM=' 'sha256-A3ETGxrcp9DTjGzMeHPhzmYsPpIQYAylCdYHxrzxAos=' 'sha256-QBnDYJZwhBXOrgmZ9UEkle1nD40H9Vt2YvnqkMJhoZA=' 'sha256-KjVWMhTuGbrm7UCORRBroU+iHvJEmhZBJglyBQ50lNQ=' 'sha256-zm/9KQAdEGr+2ZYbrRDXZ2OPB9IbZpJah4GW3EnAdD8=' 'sha256-UVsq2YCUrPG95Lcy/n0zDLwxU89VgkLHK+0hdTHZO7k=' https://cdn.jsdelivr.net;
+  script-src 'self' 'sha256-I9Yfcq7guXpscFi+G0+tohjedD6HTkxEQAMsmvRwWNM=' 'sha256-A3ETGxrcp9DTjGzMeHPhzmYsPpIQYAylCdYHxrzxAos=' 'sha256-QBnDYJZwhBXOrgmZ9UEkle1nD40H9Vt2YvnqkMJhoZA=' 'sha256-KjVWMhTuGbrm7UCORRBroU+iHvJEmhZBJglyBQ50lNQ=' 'sha256-HaTnKtIwMYUyq6leM7v8L8pjwdLrnR0TBYFsS3tjaEQ=' 'sha256-UVsq2YCUrPG95Lcy/n0zDLwxU89VgkLHK+0hdTHZO7k=' https://cdn.jsdelivr.net;
   style-src 'self' 'sha256-aO4oPSpGAYjfmpJhFxfqcnyOK8k25wiQhPrnkGb3tNc=';
   font-src 'self' data:;
   img-src 'self' data: blob:;
@@ -2080,7 +2080,7 @@ body.night .sys-entry-label  { color:rgba(255,255,255,0.30); }
         <div class="meta-mint">
           <div class="qty-row">
             <button class="qty-btn" id="qty-minus" aria-label="decrease">−</button>
-            <input class="qty-val" id="qty-val" type="number" min="1" max="100" step="1" value="1" inputmode="numeric" aria-label="quantity">
+            <input class="qty-val" id="qty-val" type="number" min="1" max="20" step="1" value="1" inputmode="numeric" aria-label="quantity">
             <button class="qty-btn" id="qty-plus" aria-label="increase">+</button>
           </div>
           <div class="qty-cost"><b id="qty-cost-val">0.0069</b> ETH<span id="qty-quota-hint"></span></div>
@@ -2257,14 +2257,14 @@ SettleArtifact            initiates settle
          │                       │                       │
          └───────────────────────┴───────────────────────┘
                                  │
-                  tokenURI()  → data:text/html
+                  tokenURI()  → data:application/json
                   settle()    → burn locked + mint artifact
                   lock/event  → sync layer (off-chain mirror)</pre></div>
 
     <div class="sys-body">
       <div class="sys-entry">
         <div class="sys-entry-label">Contract</div>
-        <p class="sys-entry-text">Two ERC-721 contracts are deployed on Ethereum: TokenAgent holds the originals, SettleArtifact holds the composition snapshots that appear at settle. Each token is bound to a unique seed generated at mint, from which its default traits are derived deterministically. When composed in a modulo, the owner can configure which traits are active; settling captures those choices on-chain as part of the artifact. The rendering engine and animation logic are stored on-chain through EthFS and shared by both contracts. A call to tokenURI() assembles the complete document on the fly — injecting that token's trait data directly into the HTML — and returns a fully self-contained data:text/html;base64. No external request, no server, no dependency. The contracts handle ownership and transfer natively. They are the source of truth for what each token is and who holds it.</p>
+        <p class="sys-entry-text">Two ERC-721 contracts are deployed on Ethereum: TokenAgent holds the originals, SettleArtifact holds the composition snapshots that appear at settle. Each token is bound to a unique seed generated at mint, from which its default traits are derived deterministically. When composed in a modulo, the owner can configure which traits are active; settling captures those choices on-chain as part of the artifact. The rendering engine and animation logic are stored on-chain through EthFS, and both contracts share an on-chain library that assembles the token's metadata — wrapping the rendered HTML, a generated thumbnail, and the trait data into a single self-contained data:application/json response. A call to tokenURI() returns this complete metadata document on the fly. No external request, no server, no dependency. The contracts handle ownership and transfer natively. They are the source of truth for what each token is and who holds it.</p>
       </div>
       <div class="sys-entry">
         <div class="sys-entry-label">Interface</div>
@@ -3255,7 +3255,7 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
 
   // ── Constants matching contracts.md / TokenAgent Sepolia deploy ─────────
   // Public on-chain address (visible on Etherscan + contracts.md). Not a secret.
-  const TOKEN_AGENT_ADDRESS = '0x07aB5E7635F16cE54B091838aF82A3725eF53283'; // gitleaks:allow — v3 Sepolia 2026-05-14 (deploy block 10852389)
+  const TOKEN_AGENT_ADDRESS = '0x628d0b9563529305CAcba0Ed396aE22a98968f0d'; // gitleaks:allow — v4 Sepolia 2026-05-18 (deploy block 10875630)
   const TOKEN_AGENT_ABI = [
     'function mint(uint256 quantity) external payable',
     'function totalMinted() external view returns (uint256)',
@@ -3272,7 +3272,7 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
   };
   const ETHERSCAN_TX = 'https://sepolia.etherscan.io/tx/';
   const WALLET_LS_KEY = 'tc-wallet-address';     // shared across modulo.ubk.art pages
-  const MIN = 1, MAX = 100;                      // matches MAX_PER_WALLET
+  const MIN = 1, MAX = 20;                       // matches MAX_PER_WALLET (lowered 100 → 20 on 2026-05-17, see CHANGELOG Brief #6)
   const PRICE_ETH = 0.0069;                      // matches MINT_PRICE
   const PRICE_WEI_STR = '6900000000000000';      // 0.0069 * 1e18 — exact, no float
 
