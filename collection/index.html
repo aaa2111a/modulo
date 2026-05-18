@@ -1634,6 +1634,14 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
         <button id="onchain-copy-uri" class="onchain-copy-btn">Copy URI</button>
       </div>
 
+      <div class="onchain-method">
+        <div class="onchain-method-title">Method 3 — animationURI() (direct render, simplest)</div>
+        <div class="onchain-method-text">
+          <div>Open the <span id="onchain-contract-name-m3">SettleArtifact</span> contract on Etherscan → <em>Contract</em> → <em>Read Contract</em> → expand <code>animationURI</code> → enter ID <code id="onchain-method3-id-hint">N</code> → click <em>Query</em>. Output is a <code>data:text/html;base64,...</code> URI. <strong>Paste directly into any browser tab to render the animation</strong> — no JSON decode needed.</div>
+          <div style="margin-top:8px">Note: <code>animationURI()</code> is a Modulo extension, not part of ERC-721. Marketplaces use <code>tokenURI()</code>.</div>
+        </div>
+      </div>
+
       <div id="onchain-modal-actions">
         <button id="onchain-modal-close">Close</button>
       </div>
@@ -4020,6 +4028,11 @@ function _openOnchainModal(id, type) {
   _onchainIntro.textContent = "The " + noun + "'s metadata is stored 100% on Ethereum. Calling tokenURI() returns a data:application/json envelope with the rendered HTML, an SVG thumbnail, and trait data — fully self-contained, no server required.";
   _onchainContractNameEl.textContent = contractNm;
   _onchainEtherscanA.textContent = 'Open ' + contractNm + ' on Etherscan ↗';
+  // Method 3 dynamic fields (2026-05-18 dual-URI pattern)
+  const _onchainCnM3 = document.getElementById('onchain-contract-name-m3');
+  const _onchainM3Id = document.getElementById('onchain-method3-id-hint');
+  if (_onchainCnM3) _onchainCnM3.textContent = contractNm;
+  if (_onchainM3Id) _onchainM3Id.textContent = String(id);
   // Etherscan deep-links to #readContract; user scrolls to find tokenURI.
   _onchainEtherscanA.href = ETHERSCAN_BASE + '/address/' + contract + '#readContract';
   // URI textarea — start blank to reduce flash, populate from cache.
