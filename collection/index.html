@@ -1612,12 +1612,12 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
       <span id="onchain-modal-title">Verify on-chain</span>
     </div>
     <div id="onchain-modal-body">
-      <p class="onchain-intro" id="onchain-intro">The artifact's render HTML is stored 100% on Ethereum. Two ways to fetch + view the raw on-chain output, no server required.</p>
+      <p class="onchain-intro" id="onchain-intro">The artifact's metadata is stored 100% on Ethereum. Calling <code>tokenURI()</code> returns a <code>data:application/json</code> envelope with the rendered HTML, an SVG thumbnail, and trait data — fully self-contained, no server required.</p>
 
       <div class="onchain-method">
         <div class="onchain-method-title">Method 1 — Etherscan</div>
         <div class="onchain-method-text">
-          <div>Open the <span id="onchain-contract-name">SettleArtifact</span> contract on Etherscan → <em>Contract</em> → <em>Read Contract</em> → expand <code>tokenURI</code> → enter ID <code id="onchain-id-hint">N</code> → click <em>Query</em>. Output is a <code>data:text/html;base64,...</code> URI; paste it in any browser tab.</div>
+          <div>Open the <span id="onchain-contract-name">SettleArtifact</span> contract on Etherscan → <em>Contract</em> → <em>Read Contract</em> → expand <code>tokenURI</code> → enter ID <code id="onchain-id-hint">N</code> → click <em>Query</em>. Output is a <code>data:application/json;base64,...</code> URI. Paste it into a browser tab to see the raw JSON metadata. To view the animation: decode the JSON, then paste the <code>animation_url</code> value into a new tab.</div>
           <div class="onchain-contract-row">
             <span class="onchain-contract-label">Contract</span>
             <code class="onchain-contract-addr" id="onchain-contract-addr">0xa33C…2d699</code>
@@ -1629,7 +1629,7 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
 
       <div class="onchain-method">
         <div class="onchain-method-title">Method 2 — Copy URI directly</div>
-        <div class="onchain-method-text">Paste this into any browser address bar — same render the iframe shows above, fetched from on-chain bytes:</div>
+        <div class="onchain-method-text">Paste this into any browser address bar to see the raw JSON metadata returned by the contract (<code>name</code>, <code>description</code>, <code>image</code>, <code>animation_url</code>). Copy the <code>animation_url</code> value and paste it into a new tab to render the animation.</div>
         <textarea id="onchain-uri-text" class="onchain-uri" readonly spellcheck="false"></textarea>
         <button id="onchain-copy-uri" class="onchain-copy-btn">Copy URI</button>
       </div>
@@ -1688,10 +1688,9 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
 // SWAP LIST PRE-MAINNET (T-1 runbook): change ALL 6 strings below + the SRI
 // hash above (if ethers version bumps) + the CSP `connect-src` URL above.
 // No other constants in this file are network-dependent.
-// REVERTED to v1 for diagnose (2026-05-14): Le wants to verify v1 behavior
-// before re-architecting per plan.md §5.3. v2 P0-A redeploy NOT in use right now.
-const TOKEN_AGENT_ADDRESS     = '0x07aB5E7635F16cE54B091838aF82A3725eF53283';
-const SETTLE_ARTIFACT_ADDRESS = '0xE1bd695631EE98A2e63A5787a1383bA19d85B790';
+// Sepolia v4 (2026-05-18): post-AdversarialFork 54/54 PASS + animationURI() + VERSION constant
+const TOKEN_AGENT_ADDRESS     = '0x628d0b9563529305CAcba0Ed396aE22a98968f0d';
+const SETTLE_ARTIFACT_ADDRESS = '0x65A0C67024153dC089C2A34fc0A98eAe1431b4c4';
 const CHAIN_ID                = 11155111;
 const RPC_URL                 = 'https://ethereum-sepolia-rpc.publicnode.com';
 const ETHERSCAN_BASE          = 'https://sepolia.etherscan.io';
@@ -2901,7 +2900,7 @@ document.querySelectorAll('.id-action-btn').forEach(btn => {
         setTimeout(() => { btn.title = orig; }, 1500);
       } catch (_) {}
     } else if (action === 'opensea') {
-      window.open(OPENSEA_BASE + '/assets/sepolia/' + TOKEN_AGENT_ADDRESS, '_blank', 'noopener,noreferrer');
+      window.open(OPENSEA_BASE + '/assets/ethereum/' + TOKEN_AGENT_ADDRESS, '_blank', 'noopener,noreferrer');
     } else if (action === 'etherscan' || action === 'share') {
       // Reuse the existing 'share' icon as Etherscan link (icon is generic enough).
       window.open(ETHERSCAN_BASE + '/address/' + TOKEN_AGENT_ADDRESS, '_blank', 'noopener,noreferrer');
@@ -4018,7 +4017,7 @@ function _openOnchainModal(id, type) {
   // Type-aware copy — swap "artifact"↔"token" + contract name across the
   // modal body. Le 2026-05-10: had hardcoded artifact text leaking through
   // when token mode was added.
-  _onchainIntro.textContent = "The " + noun + "'s render HTML is stored 100% on Ethereum. Two ways to fetch + view the raw on-chain output, no server required.";
+  _onchainIntro.textContent = "The " + noun + "'s metadata is stored 100% on Ethereum. Calling tokenURI() returns a data:application/json envelope with the rendered HTML, an SVG thumbnail, and trait data — fully self-contained, no server required.";
   _onchainContractNameEl.textContent = contractNm;
   _onchainEtherscanA.textContent = 'Open ' + contractNm + ' on Etherscan ↗';
   // Etherscan deep-links to #readContract; user scrolls to find tokenURI.
