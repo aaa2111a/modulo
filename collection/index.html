@@ -1635,11 +1635,10 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
       </div>
 
       <div class="onchain-method">
-        <div class="onchain-method-title">Method 3 — animationURI() (direct render, simplest)</div>
-        <div class="onchain-method-text">
-          <div>Open the <span id="onchain-contract-name-m3">SettleArtifact</span> contract on Etherscan → <em>Contract</em> → <em>Read Contract</em> → expand <code>animationURI</code> → enter ID <code id="onchain-method3-id-hint">N</code> → click <em>Query</em>. Output is a <code>data:text/html;base64,...</code> URI. <strong>Paste directly into any browser tab to render the animation</strong> — no JSON decode needed.</div>
-          <div style="margin-top:8px">Note: <code>animationURI()</code> is a Modulo extension, not part of ERC-721. Marketplaces use <code>tokenURI()</code>.</div>
-        </div>
+        <div class="onchain-method-title">Method 3 — animationURI() (direct render)</div>
+        <div class="onchain-method-text">Paste this directly into any browser address bar to render the animation — no JSON decode needed. Same HTML payload as the <code>animation_url</code> field inside <code>tokenURI()</code>, but standalone. (<code>animationURI()</code> is a Modulo extension, not part of ERC-721; marketplaces use <code>tokenURI()</code>.)</div>
+        <textarea id="onchain-anim-uri-text" class="onchain-uri" readonly spellcheck="false"></textarea>
+        <button id="onchain-copy-anim-uri" class="onchain-copy-btn">Copy URI</button>
       </div>
 
       <div id="onchain-modal-actions">
@@ -1712,6 +1711,7 @@ const TOKEN_AGENT_ABI = [
   'function totalMinted() view returns (uint256)',
   'function ownerOf(uint256) view returns (address)',
   'function tokenURI(uint256) view returns (string)',
+  'function animationURI(uint256) view returns (string)',
 ];
 
 // v3 (2026-05-14): getArtifact returns SlotTraits[] traits (replaces v2 tokenIds[]
@@ -1722,6 +1722,7 @@ const SETTLE_ARTIFACT_ABI = [
   'function totalArtifacts() view returns (uint256)',
   'function ownerOf(uint256) view returns (address)',
   'function tokenURI(uint256) view returns (string)',
+  'function animationURI(uint256) view returns (string)',
   'function getArtifact(uint256) view returns (tuple(uint256 moduloId, ' + _SLOT_TRAITS_TUPLE + '[] traits, uint256[] seeds, uint16[] ranks, address settler, uint64 settledAt))',
 ];
 
@@ -3999,6 +4000,8 @@ const _onchainEtherscanA      = document.getElementById('onchain-etherscan-link'
 const _onchainUriText         = document.getElementById('onchain-uri-text');
 const _onchainCopyAddrBtn     = document.getElementById('onchain-copy-addr');
 const _onchainCopyUriBtn      = document.getElementById('onchain-copy-uri');
+const _onchainAnimUriText     = document.getElementById('onchain-anim-uri-text');
+const _onchainCopyAnimUriBtn  = document.getElementById('onchain-copy-anim-uri');
 const _onchainCloseBtn        = document.getElementById('onchain-modal-close');
 
 // Cached export-modal reference — used by Esc handler yield-guards + close path.
@@ -4028,14 +4031,9 @@ function _openOnchainModal(id, type) {
   _onchainIntro.textContent = "The " + noun + "'s metadata is stored 100% on Ethereum. Calling tokenURI() returns a data:application/json envelope with the rendered HTML, an SVG thumbnail, and trait data — fully self-contained, no server required.";
   _onchainContractNameEl.textContent = contractNm;
   _onchainEtherscanA.textContent = 'Open ' + contractNm + ' on Etherscan ↗';
-  // Method 3 dynamic fields (2026-05-18 dual-URI pattern)
-  const _onchainCnM3 = document.getElementById('onchain-contract-name-m3');
-  const _onchainM3Id = document.getElementById('onchain-method3-id-hint');
-  if (_onchainCnM3) _onchainCnM3.textContent = contractNm;
-  if (_onchainM3Id) _onchainM3Id.textContent = String(id);
   // Etherscan deep-links to #readContract; user scrolls to find tokenURI.
   _onchainEtherscanA.href = ETHERSCAN_BASE + '/address/' + contract + '#readContract';
-  // URI textarea — start blank to reduce flash, populate from cache.
+  // Method 2: tokenURI textarea — start blank to reduce flash, populate from cache.
   _onchainUriText.value = 'loading…';
   const cached = cache.get(id);
   if (cached) {
@@ -4053,6 +4051,24 @@ function _openOnchainModal(id, type) {
   } else {
     _onchainUriText.value = 'unavailable';
   }
+  // Method 3: animationURI textarea — separate RPC call (not in tokenURI cache).
+  // Dual-URI pattern: animationURI() returns data:text/html;base64,<HTML> directly
+  // (no JSON envelope). Same HTML as the animation_url field inside tokenURI(),
+  // exposed as standalone for paste-in-browser render. Single RPC per modal open
+  // (no cache reuse — different contract function than tokenURI).
+  _onchainAnimUriText.value = 'loading…';
+  const contractInst = isToken ? _tokenAgent : _settleArtifact;
+  if (contractInst) {
+    contractInst.animationURI(id).then(uri => {
+      if (!_onchainModal.classList.contains('active')) return;
+      if (_expandOpenId !== id || _expandOpenType !== type) return;
+      _onchainAnimUriText.value = uri || 'unavailable';
+    }).catch(() => {
+      if (_onchainModal.classList.contains('active')) _onchainAnimUriText.value = 'error';
+    });
+  } else {
+    _onchainAnimUriText.value = 'unavailable';
+  }
   _onchainModal.classList.add('active');
   _onchainBtn.classList.add('active');
 }
@@ -4065,6 +4081,8 @@ function _closeOnchainModal() {
   _onchainCopyAddrBtn.textContent = 'copy';
   _onchainCopyUriBtn.classList.remove('copied');
   _onchainCopyUriBtn.textContent = 'Copy URI';
+  _onchainCopyAnimUriBtn.classList.remove('copied');
+  _onchainCopyAnimUriBtn.textContent = 'Copy URI';
 }
 
 // Generic copy-to-clipboard with visual feedback. The clipboard write happens
@@ -4158,6 +4176,10 @@ _onchainCopyAddrBtn.addEventListener('click', () => {
 });
 _onchainCopyUriBtn.addEventListener('click', () => {
   _onchainCopy(_onchainCopyUriBtn, _onchainUriText.value, 'Copied ✓', 'Copy URI');
+});
+
+_onchainCopyAnimUriBtn.addEventListener('click', () => {
+  _onchainCopy(_onchainCopyAnimUriBtn, _onchainAnimUriText.value, 'Copied ✓', 'Copy URI');
 });
 
 // MP4 button: opens the export options modal. User picks a codec/bitrate
