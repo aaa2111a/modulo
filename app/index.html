@@ -2950,11 +2950,10 @@ html.dark .settle-modal .settle-modal-warn {
         </div>
 
         <div class="artifact-onchain-method">
-          <div class="artifact-onchain-method-title">Method 3 — animationURI() (direct render, simplest)</div>
-          <div class="artifact-onchain-method-text">
-            <div>Open the SettleArtifact contract on Etherscan → <em>Contract</em> → <em>Read Contract</em> → expand <code>animationURI</code> → enter ID <code id="artifact-onchain-method3-id-hint">N</code> → click <em>Query</em>. Output is a <code>data:text/html;base64,...</code> URI. <strong>Paste directly into any browser tab to render the animation</strong> — no JSON decode needed.</div>
-            <div style="margin-top:8px">Note: <code>animationURI()</code> is a Modulo extension, not part of ERC-721. Marketplaces use <code>tokenURI()</code>.</div>
-          </div>
+          <div class="artifact-onchain-method-title">Method 3 — animationURI() (direct render)</div>
+          <div class="artifact-onchain-method-text">Paste this directly into any browser address bar to render the animation — no JSON decode needed. Same HTML payload as the <code>animation_url</code> field inside <code>tokenURI()</code>, but standalone. (<code>animationURI()</code> is a Modulo extension, not part of ERC-721; marketplaces use <code>tokenURI()</code>.)</div>
+          <textarea id="artifact-onchain-anim-uri-text" class="artifact-onchain-uri" readonly spellcheck="false"></textarea>
+          <button id="artifact-onchain-copy-anim-uri" type="button" class="artifact-onchain-copy-btn">Copy URI</button>
         </div>
 
         <div id="artifact-onchain-modal-actions">
@@ -9312,8 +9311,10 @@ const _artifactOnchainMethod3Id   = document.getElementById('artifact-onchain-me
 const _artifactOnchainContractEl  = document.getElementById('artifact-onchain-contract-addr');
 const _artifactOnchainEtherscanA  = document.getElementById('artifact-onchain-etherscan-link');
 const _artifactOnchainUriText     = document.getElementById('artifact-onchain-uri-text');
+const _artifactOnchainAnimUriText = document.getElementById('artifact-onchain-anim-uri-text');
 const _artifactOnchainCopyAddrBtn = document.getElementById('artifact-onchain-copy-addr');
 const _artifactOnchainCopyUriBtn  = document.getElementById('artifact-onchain-copy-uri');
+const _artifactOnchainCopyAnimUriBtn = document.getElementById('artifact-onchain-copy-anim-uri');
 const _artifactOnchainCloseBtn    = document.getElementById('artifact-onchain-modal-close');
 
 function _openArtifactOnchainModal(artifactId) {
@@ -9347,6 +9348,24 @@ function _openArtifactOnchainModal(artifactId) {
       if (_artifactOnchainModal.classList.contains('active')) _artifactOnchainUriText.value = 'error';
     });
   }
+  // Method 3: animationURI textarea — separate RPC call (not in artifact cache).
+  // Dual-URI pattern (2026-05-18): animationURI() returns data:text/html;base64,<HTML>
+  // directly (no JSON envelope). Same HTML as the animation_url field inside
+  // tokenURI(), exposed standalone for paste-in-browser render.
+  _artifactOnchainAnimUriText.value = 'loading…';
+  try {
+    const provider = _getReadonlyProvider();
+    const contractInst = new window.ethers.Contract(SETTLE_ARTIFACT_ADDRESS, SETTLE_ARTIFACT_ABI, provider);
+    contractInst.animationURI(artifactId).then(uri => {
+      if (!_artifactOnchainModal.classList.contains('active')) return;
+      if (_artifactExpandOpenId !== artifactId) return;
+      _artifactOnchainAnimUriText.value = uri || 'unavailable';
+    }).catch(() => {
+      if (_artifactOnchainModal.classList.contains('active')) _artifactOnchainAnimUriText.value = 'error';
+    });
+  } catch (_) {
+    _artifactOnchainAnimUriText.value = 'unavailable';
+  }
   _artifactOnchainModal.classList.add('active');
   _artifactOnchainBtn.classList.add('active');
 }
@@ -9359,6 +9378,8 @@ function _closeArtifactOnchainModal() {
   _artifactOnchainCopyAddrBtn.textContent = 'copy';
   _artifactOnchainCopyUriBtn.classList.remove('copied');
   _artifactOnchainCopyUriBtn.textContent = 'Copy URI';
+  _artifactOnchainCopyAnimUriBtn.classList.remove('copied');
+  _artifactOnchainCopyAnimUriBtn.textContent = 'Copy URI';
 }
 
 // Copy-to-clipboard helper with visual feedback. Clipboard write inside the
@@ -9404,6 +9425,9 @@ _artifactOnchainCopyAddrBtn.addEventListener('click', () => {
 });
 _artifactOnchainCopyUriBtn.addEventListener('click', () => {
   _artifactOnchainCopy(_artifactOnchainCopyUriBtn, _artifactOnchainUriText.value, 'Copied ✓', 'Copy URI');
+});
+_artifactOnchainCopyAnimUriBtn.addEventListener('click', () => {
+  _artifactOnchainCopy(_artifactOnchainCopyAnimUriBtn, _artifactOnchainAnimUriText.value, 'Copied ✓', 'Copy URI');
 });
 // Esc closes ONCHAIN modal — capture phase, stopImmediatePropagation so the
 // expand-close Esc handler above doesn't ALSO fire. Order matters: ONCHAIN
@@ -11866,6 +11890,7 @@ const SETTLE_ARTIFACT_ABI = [
   ') external',
   'function totalArtifacts() view returns (uint256)',
   'function tokenURI(uint256) view returns (string)',
+  'function animationURI(uint256) view returns (string)',
   'function ownerOf(uint256) view returns (address)',
   // ArtifactData struct (SettleArtifact.sol v3) — used by artifact-expand DETAILS
   // popup + My Artifacts modal. Tuple MUST match contract exactly.
