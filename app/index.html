@@ -2949,6 +2949,14 @@ html.dark .settle-modal .settle-modal-warn {
           <button id="artifact-onchain-copy-uri" type="button" class="artifact-onchain-copy-btn">Copy URI</button>
         </div>
 
+        <div class="artifact-onchain-method">
+          <div class="artifact-onchain-method-title">Method 3 — animationURI() (direct render, simplest)</div>
+          <div class="artifact-onchain-method-text">
+            <div>Open the SettleArtifact contract on Etherscan → <em>Contract</em> → <em>Read Contract</em> → expand <code>animationURI</code> → enter ID <code id="artifact-onchain-method3-id-hint">N</code> → click <em>Query</em>. Output is a <code>data:text/html;base64,...</code> URI. <strong>Paste directly into any browser tab to render the animation</strong> — no JSON decode needed.</div>
+            <div style="margin-top:8px">Note: <code>animationURI()</code> is a Modulo extension, not part of ERC-721. Marketplaces use <code>tokenURI()</code>.</div>
+          </div>
+        </div>
+
         <div id="artifact-onchain-modal-actions">
           <button id="artifact-onchain-modal-close" type="button">Close</button>
         </div>
@@ -9300,6 +9308,7 @@ const _artifactOnchainModal       = document.getElementById('artifact-onchain-mo
 const _artifactOnchainBtn         = document.getElementById('artifact-expand-onchain-btn');
 const _artifactOnchainTitle       = document.getElementById('artifact-onchain-modal-title');
 const _artifactOnchainIdHint      = document.getElementById('artifact-onchain-id-hint');
+const _artifactOnchainMethod3Id   = document.getElementById('artifact-onchain-method3-id-hint');
 const _artifactOnchainContractEl  = document.getElementById('artifact-onchain-contract-addr');
 const _artifactOnchainEtherscanA  = document.getElementById('artifact-onchain-etherscan-link');
 const _artifactOnchainUriText     = document.getElementById('artifact-onchain-uri-text');
@@ -9311,6 +9320,7 @@ function _openArtifactOnchainModal(artifactId) {
   if (_artifactExpandOpenId === null) return;
   _artifactOnchainTitle.textContent  = 'Verify on-chain — Modulo #' + artifactId;
   _artifactOnchainIdHint.textContent = String(artifactId);
+  if (_artifactOnchainMethod3Id) _artifactOnchainMethod3Id.textContent = String(artifactId);
   _artifactOnchainContractEl.textContent = SETTLE_ARTIFACT_ADDRESS;
   const etherscanBase = _etherscanBase();
   _artifactOnchainEtherscanA.href = etherscanBase + '/address/' + SETTLE_ARTIFACT_ADDRESS + '#readContract';
