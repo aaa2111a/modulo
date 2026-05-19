@@ -31,8 +31,8 @@
      (rare; fallback text+link still readable). -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
-  script-src 'self' 'sha256-I9Yfcq7guXpscFi+G0+tohjedD6HTkxEQAMsmvRwWNM=' 'sha256-A3ETGxrcp9DTjGzMeHPhzmYsPpIQYAylCdYHxrzxAos=' 'sha256-QBnDYJZwhBXOrgmZ9UEkle1nD40H9Vt2YvnqkMJhoZA=' 'sha256-KjVWMhTuGbrm7UCORRBroU+iHvJEmhZBJglyBQ50lNQ=' 'sha256-HaTnKtIwMYUyq6leM7v8L8pjwdLrnR0TBYFsS3tjaEQ=' 'sha256-UVsq2YCUrPG95Lcy/n0zDLwxU89VgkLHK+0hdTHZO7k=' https://cdn.jsdelivr.net;
-  style-src 'self' 'sha256-aO4oPSpGAYjfmpJhFxfqcnyOK8k25wiQhPrnkGb3tNc=';
+  script-src 'self' 'sha256-I9Yfcq7guXpscFi+G0+tohjedD6HTkxEQAMsmvRwWNM=' 'sha256-A3ETGxrcp9DTjGzMeHPhzmYsPpIQYAylCdYHxrzxAos=' 'sha256-QBnDYJZwhBXOrgmZ9UEkle1nD40H9Vt2YvnqkMJhoZA=' 'sha256-KjVWMhTuGbrm7UCORRBroU+iHvJEmhZBJglyBQ50lNQ=' 'sha256-kiizwSgR+4P7t0jnOdKHFd2CA3FFVsn7fuZ3rTsHVuU=' 'sha256-dDSWZarw2uRHIInlXyZ/Avc//aK5jQn14L1kP9TgdGs=' https://cdn.jsdelivr.net;
+  style-src 'self' 'sha256-oOB0pWyiGC5cFvcK9wxFLN9Zw0TyMjo+5qZdSEtdv0E=';
   font-src 'self' data:;
   img-src 'self' data: blob:;
   connect-src 'self' https://rpc.sepolia.org https://ethereum-sepolia-rpc.publicnode.com;
@@ -152,6 +152,14 @@
   integrity="sha384-6Zl0Pc8zjSz8KvmNeXRvUQgY4ryFb+BwDvKCmLYcBME0joAaru491tQgi9B7zsMM"
   crossorigin="anonymous"
   referrerpolicy="no-referrer"></script>
+<!-- mp4-muxer 5.1.3 UMD — MP4 export from canvas + WebCodecs.
+     Same SRI as collection/index.html + app/index.html (single version pinned
+     across the project to avoid drift). Used only by demo MP4 export button —
+     library loads lazily but the script tag is here for SRI integrity. -->
+<script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.3/build/mp4-muxer.js"
+        integrity="sha384-SujebcgqCNlLMRSnVkLD+3eWOzsxobv30Bct+0lV+fc1EHHEuvcePwmDgMzpnptj"
+        crossorigin="anonymous"
+        referrerpolicy="no-referrer"></script>
 <style>
 * { box-sizing:border-box; margin:0; padding:0; }
 /* SVG defs container — refactored from inline style="position:absolute"
@@ -396,12 +404,27 @@ body.night .meta-mint.pre-mint .qty-btn { background:#444; }
   height:42px;
   background:#000; color:#fff;
   border:none; border-radius:6px; cursor:pointer;
-  font-family:monospace; font-size:11px;
+  font-family:monospace; font-size:9px;
   letter-spacing:.20em; text-transform:uppercase;
   transition:background 0.15s;
 }
 .mint-btn:hover { background:#222; }
 .mint-btn:active { background:#333; }
+/* Countdown spinner (countdown-patch-2026-05-19) — shows next to
+   "OPENING ANY MOMENT" text when countdown reached 0 but mintOpen=false. */
+.mint-btn.with-spinner::after {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-left: 8px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  vertical-align: middle;
+  animation: mint-spin 0.8s linear infinite;
+}
+@keyframes mint-spin { to { transform: rotate(360deg); } }
 /* 2026-05-13 — mint counter (X/6666 minted), feature-flagged via
    MINT_COUNTER_LIVE in JS. Pre-launch shows literal "— / 6666 minted"
    placeholder; flip to true in T-1 + swap COUNTER_RPC to mainnet. */
@@ -797,6 +820,27 @@ body.night .long-demo {
   letter-spacing:.03em;
   margin-left:6px;
 }
+/* MP4 export button — sits at right of demo card tbar. Captures live demo
+   canvas at native resolution, encodes via WebCodecs + mp4-muxer (loaded
+   via SRI script tag near top of <head>). Single preset hardcoded (20s × 30fps,
+   H.264, 8 Mbps). Pre-launch marketing hook (CHANGELOG 2026-05-19). */
+.demo-card-mp4-btn {
+  margin-left:auto;
+  background:transparent;
+  border:0.5px solid var(--demo-tbar-border);
+  border-radius:4px;
+  color:var(--demo-stats-title);
+  font-family:monospace; font-size:9px;
+  letter-spacing:.05em;
+  padding:2px 6px;
+  cursor:pointer;
+  transition:background 0.15s, color 0.15s;
+}
+.demo-card-mp4-btn:hover:not(:disabled) {
+  background:var(--demo-stats-title);
+  color:var(--demo-card-bg, #fff);
+}
+.demo-card-mp4-btn:disabled { opacity:0.55; cursor:not-allowed; }
 
 .demo-card-body {
   flex:1;
@@ -2134,7 +2178,7 @@ body.night .sys-entry-label  { color:rgba(255,255,255,0.30); }
       <p class="long-text">The token doesn't point to an image stored somewhere else. It generates one. Every time it's called, it runs a <strong>cellular automaton</strong> — a grid of cells whose state evolves frame by frame following local rules, generating emergent visual patterns — from inside a self-contained HTML file that lives within the token itself, fully on-chain. The automaton operates in one of eight behavioral modes, each defining how cells propagate, shift, and deform.</p>
       <p class="long-text">Some tokens carry additional layers — a bitmap system that stamps text directly into the grid, a dither pattern that introduces a repeating structure across the surface, and a rect-shift system that displaces regions of the canvas at varying density and scale. What the system produces feels alive — never the same frame twice, always within the same visual language. The rules are fixed. What they generate moves.</p>
       <p class="long-text">None of this depends on an external system. The rendering engine, the animation logic, the full computational apparatus — all of it is stored in Ethereum's contract layer through EthFS.</p>
-      <p class="long-text">When a token is called, the contract doesn't return a URL. It builds the entire document on the fly, injecting each token's traits directly into the HTML, and returns it as a self-contained data URI that runs in the browser without a single external request.</p>
+      <p class="long-text">When a token is called, the contract doesn't return a URL. It builds the entire metadata document on the fly — a JSON envelope wrapping the rendered HTML, an SVG thumbnail, and trait data — returned as a self-contained data URI. Marketplaces parse this <code>tokenURI()</code> response. A parallel <code>animationURI()</code> function exposes the rendered HTML standalone — paste that data URI into any browser tab and the animation runs without a single external request.</p>
       <p class="long-text">There's no server that can go offline. No platform that can shut it down or change the rules. A call to any token will return the same engine, the same seed, the same behavior — in a year, in twenty years, under any condition short of the network itself disappearing. Permanence here isn't a promise. It's a property of how it's built.</p>
     </div>
 
@@ -2166,6 +2210,7 @@ body.night .sys-entry-label  { color:rgba(255,255,255,0.30); }
           <div class="demo-card-tbar">
             <div class="demo-dot" id="demo-expand-trigger" title="Expand"></div>
             <span class="demo-card-tbar-title"></span>
+            <button class="demo-card-mp4-btn" id="demo-mp4-btn" title="Export 20s MP4 of this demo (H.264, native resolution)">↓ MP4</button>
           </div>
           <div class="demo-card-body">
             <div class="demo-card-left" id="demo-left">
@@ -2257,14 +2302,15 @@ SettleArtifact            initiates settle
          │                       │                       │
          └───────────────────────┴───────────────────────┘
                                  │
-                  tokenURI()  → data:application/json
-                  settle()    → burn locked + mint artifact
-                  lock/event  → sync layer (off-chain mirror)</pre></div>
+                  tokenURI()     → data:application/json (marketplace metadata)
+                  animationURI() → data:text/html (paste in browser, renders direct)
+                  settle()       → burn locked + mint artifact
+                  lock/event     → sync layer (off-chain mirror)</pre></div>
 
     <div class="sys-body">
       <div class="sys-entry">
         <div class="sys-entry-label">Contract</div>
-        <p class="sys-entry-text">Two ERC-721 contracts are deployed on Ethereum: TokenAgent holds the originals, SettleArtifact holds the composition snapshots that appear at settle. Each token is bound to a unique seed generated at mint, from which its default traits are derived deterministically. When composed in a modulo, the owner can configure which traits are active; settling captures those choices on-chain as part of the artifact. The rendering engine and animation logic are stored on-chain through EthFS, and both contracts share an on-chain library that assembles the token's metadata — wrapping the rendered HTML, a generated thumbnail, and the trait data into a single self-contained data:application/json response. A call to tokenURI() returns this complete metadata document on the fly. No external request, no server, no dependency. The contracts handle ownership and transfer natively. They are the source of truth for what each token is and who holds it.</p>
+        <p class="sys-entry-text">Two ERC-721 contracts are deployed on Ethereum: TokenAgent holds the originals, SettleArtifact holds the composition snapshots that appear at settle. Each token is bound to a unique seed generated at mint, from which its default traits are derived deterministically. When composed in a modulo, the owner can configure which traits are active; settling captures those choices on-chain as part of the artifact. The rendering engine and animation logic are stored on-chain through EthFS, and both contracts share an on-chain library that assembles the token's metadata — wrapping the rendered HTML, a generated thumbnail, and the trait data into a single self-contained data:application/json response. A call to tokenURI() returns this complete metadata document on the fly. A parallel animationURI() function exposes the same rendered HTML standalone, so anyone can paste the data URI into a browser tab and watch the animation run with no external request. No server, no dependency. The contracts handle ownership and transfer natively. They are the source of truth for what each token is and who holds it.</p>
       </div>
       <div class="sys-entry">
         <div class="sys-entry-label">Interface</div>
@@ -3253,6 +3299,27 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
   const COUNTER_POLL_MS = 30_000;
   const COUNTER_RPC = 'https://ethereum-sepolia-rpc.publicnode.com';
 
+  // ════════════════════════════════════════════════════════════════════════
+  // COUNTDOWN TIMER (countdown-patch-2026-05-19, security-auditor agentId
+  // acbcbd3e4d0cd9552 ✅ approved with P1+P2 mitigations applied)
+  // ════════════════════════════════════════════════════════════════════════
+  // false = static "MINTING SOON" (current behavior)
+  // true = live countdown to MINT_OPEN_TIMESTAMP + flip to MINT when mintOpen=true
+  // INDEPENDENT of MINT_ENABLED — countdown runs in pre-mint state, button text
+  // managed by countdown. MINT_ENABLED still gates click handler / wallet flow.
+  // ════════════════════════════════════════════════════════════════════════
+  const COUNTDOWN_ACTIVE = true;
+
+  // Target: 2026-05-21 18:30 UTC = 15:30 Chile (UTC-3, no DST since 2022).
+  // Verify: new Date(1779388200 * 1000).toISOString() → "2026-05-21T18:30:00.000Z"
+  // If launch hora changes: update this + recompute CSP hashes + redeploy.
+  const MINT_OPEN_TIMESTAMP = 1779388200;
+
+  // RPC poll throttle for mintOpen() check post-countdown-zero. 7s balances
+  // responsiveness (button flips to MINT within ~7s of openMint() tx confirm)
+  // vs RPC quota (1 call / 7s × N users in tab × 30min window ≪ Alchemy CUPS).
+  const ONCHAIN_POLL_INTERVAL_MS = 7000;
+
   // ── Constants matching contracts.md / TokenAgent Sepolia deploy ─────────
   // Public on-chain address (visible on Etherscan + contracts.md). Not a secret.
   const TOKEN_AGENT_ADDRESS = '0x628d0b9563529305CAcba0Ed396aE22a98968f0d'; // gitleaks:allow — v4 Sepolia 2026-05-18 (deploy block 10875630)
@@ -3260,6 +3327,7 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
     'function mint(uint256 quantity) external payable',
     'function totalMinted() external view returns (uint256)',
     'function mintedBy(address) external view returns (uint256)',
+    'function mintOpen() external view returns (bool)',
   ];
   const CHAIN_ID = 11155111;                     // Sepolia
   const CHAIN_HEX = '0x' + CHAIN_ID.toString(16);
@@ -3299,6 +3367,10 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
   let _remaining = MAX;
   let _quotaLoaded = false;
   const _hint = $('qty-quota-hint');
+
+  // Countdown state (countdown-patch-2026-05-19)
+  let _countdownTimer = null;
+  let _lastOnchainPoll = 0;
 
   // ── Helpers ─────────────────────────────────────────────────────────────
   const _fmt = n => Number(n.toFixed(4)).toString();
@@ -3721,12 +3793,106 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
   }
   _startMintCounter();
 
+  // ── Countdown timer (countdown-patch-2026-05-19) ─────────────────────────
+  // Runs when COUNTDOWN_ACTIVE=true, regardless of MINT_ENABLED state.
+  // Manages button text/state from countdown phase → opening any moment →
+  // MINT/SOLD OUT terminal states. Pauses on hidden tab. Reuses
+  // _getCounterProvider() for readonly RPC reads.
+  function _formatCountdown(secs) {
+    const days = Math.floor(secs / 86400);
+    const h = Math.floor((secs % 86400) / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = secs % 60;
+    const pad = n => String(n).padStart(2, '0');
+    if (days > 0) {
+      return 'MINTING IN ' + days + 'd ' + pad(h) + ':' + pad(m) + ':' + pad(s);
+    }
+    return 'MINTING IN ' + pad(h) + ':' + pad(m) + ':' + pad(s);
+  }
+
+  async function _updateMintButton() {
+    if (!_b) return;
+    const nowSec = Math.floor(Date.now() / 1000);
+    const remaining = MINT_OPEN_TIMESTAMP - nowSec;
+
+    // P2-B: clear spinner class by default, rebuild per branch
+    _b.classList.remove('with-spinner');
+
+    if (remaining > 0) {
+      _b.textContent = _formatCountdown(remaining);
+      _b.disabled = true;
+      return;
+    }
+
+    // Countdown reached 0 — check on-chain mintOpen state with throttle (P2-A)
+    const nowMs = Date.now();
+    if (nowMs - _lastOnchainPoll < ONCHAIN_POLL_INTERVAL_MS) return;
+    _lastOnchainPoll = nowMs;
+
+    try {
+      const provider = _getCounterProvider();
+      const agent = new window.ethers.Contract(TOKEN_AGENT_ADDRESS, TOKEN_AGENT_ABI, provider);
+      const isOpen = await agent.mintOpen();
+
+      if (isOpen) {
+        const minted = await agent.totalMinted();
+        if (minted >= BigInt(MAX_SUPPLY)) {
+          _b.textContent = 'SOLD OUT';
+          _b.disabled = true;
+        } else {
+          _b.textContent = 'MINT';
+          // MINT_ENABLED still gates click handler — if false, keep disabled
+          // visually (no wallet flow wired). When MINT_ENABLED flips true at
+          // T-0 atomic change, this branch will enable normally.
+          _b.disabled = !MINT_ENABLED;
+          if (MINT_ENABLED) {
+            _b.classList.remove('pre-mint');
+          }
+        }
+        // Terminal state — stop polling (P2-A)
+        if (_countdownTimer) {
+          clearInterval(_countdownTimer);
+          _countdownTimer = null;
+        }
+      } else {
+        // Mint not yet opened by owner
+        _b.textContent = 'OPENING ANY MOMENT';
+        _b.classList.add('with-spinner');
+        _b.disabled = true;
+      }
+    } catch (e) {
+      // RPC error — graceful fallback
+      _b.textContent = 'OPENING ANY MOMENT';
+      _b.classList.add('with-spinner');
+      _b.disabled = true;
+    }
+  }
+
+  function _startCountdown() {
+    if (!COUNTDOWN_ACTIVE || !_b) return;
+    _updateMintButton();
+    _countdownTimer = setInterval(_updateMintButton, 1000);
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        if (_countdownTimer) { clearInterval(_countdownTimer); _countdownTimer = null; }
+      } else if (!_countdownTimer && COUNTDOWN_ACTIVE) {
+        _updateMintButton();
+        _countdownTimer = setInterval(_updateMintButton, 1000);
+      }
+    });
+  }
+
   // ── Pre-mint mode: button disabled, no wallet wiring, no listeners ──────
   if (!MINT_ENABLED) {
     if (_b) {
-      _b.textContent = 'MINTING SOON';
-      _b.disabled = true;
-      _b.classList.add('pre-mint');
+      if (COUNTDOWN_ACTIVE) {
+        // Countdown drives button text/state (overrides static MINTING SOON)
+        _startCountdown();
+      } else {
+        _b.textContent = 'MINTING SOON';
+        _b.disabled = true;
+        _b.classList.add('pre-mint');
+      }
       // Defensive: even though disabled, prevent click from doing anything if
       // some wallet extension or browser quirk fires the event.
       _b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); });
@@ -6464,6 +6630,189 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
   //    picks mode/size/etc via the trait editor.
   _refreshModuloState();
 })();
+
+// ════════════════════════════════════════════════════════════════════════
+// MP4 EXPORT (CHANGELOG 2026-05-19, security-auditor agentId a8deafc3470543c4c)
+// ────────────────────────────────────────────────────────────────────────
+// Captures the demo at full expand-canvas resolution (1500×900 to 2700×1500
+// depending on DPR + viewport) via WebCodecs + mp4-muxer 5.1.3 (loaded via
+// SRI script tag near top of <head>).
+//
+// Strategy: programmatically open the expand modal if not already open
+// (so we capture the FULL-RES expand canvas, not the small ~534×390 card
+// canvas). paintTo() in the demo engine dynamically adapts to canvas.width/
+// height — at expand size, the full GRID_COLS×GRID_ROWS (450×250 cells)
+// is visible vs. the tiny ~89×65 region in the card.
+//
+// Single hardcoded preset: 20s × 30fps × H.264 × dynamic bitrate.
+//
+// Mitigations applied per reviewer brief:
+//   - P2-1: full try/finally with _exportInFlight + encoder cleanup
+//   - P2-2: null-safe `!support || !support.supported` check (in codec loop)
+//   - P1-1: CSP recomputed post-edit
+// ════════════════════════════════════════════════════════════════════════
+let _exportInFlight = false;
+
+async function _exportMP4() {
+  if (_exportInFlight) return;
+
+  if (!window.VideoEncoder || !window.Mp4Muxer) {
+    alert(!window.VideoEncoder
+      ? 'WebCodecs not supported. Try Chrome 94+, Firefox 130+, or Safari 16+.'
+      : 'mp4-muxer library not loaded. Check network/CSP.');
+    return;
+  }
+
+  // BACKGROUND RECORDING STRATEGY (Le directive 2026-05-19):
+  //   Open expand modal but HIDE IT via visibility:hidden — _resizeModalCanvas
+  //   still reads the wrap rect (visibility preserves layout, unlike display:none),
+  //   so canvas bitmap snaps to viewport-cap resolution (2700×1500 max via
+  //   GRID_COLS*PIXEL × GRID_ROWS*PIXEL clamps in _resizeModalCanvas).
+  //   paintTo() continues to write to the hidden canvas every render tick.
+  //   VideoFrame(canvas) reads the pixel buffer regardless of visibility.
+  //   No fullscreen transition needed — bitmap cap is the same.
+  //   User sees nothing visible except the button progress indicator.
+  const expandOverlay = document.getElementById('demo-expand-overlay');
+  const expandTrigger = document.getElementById('demo-expand-trigger');
+  const expandCanvas  = document.getElementById('demo-expand-canvas');
+  const expandClose   = document.getElementById('demo-expand-close');
+  if (!expandOverlay || !expandCanvas || !expandTrigger) {
+    alert('Expand canvas not found in DOM.');
+    return;
+  }
+
+  const wasOpenInitially = expandOverlay.classList.contains('open');
+  // Save original inline styles for restore in finally
+  const origVisibility = expandOverlay.style.visibility;
+  const origPointerEvents = expandOverlay.style.pointerEvents;
+
+  if (!wasOpenInitially) {
+    // Hide BEFORE opening so user never sees the modal flash.
+    // visibility:hidden preserves layout → wrap rect valid → canvas resizes properly.
+    // pointer-events:none defensively prevents accidental clicks during background record.
+    expandOverlay.style.visibility = 'hidden';
+    expandOverlay.style.pointerEvents = 'none';
+    expandTrigger.click();
+    // Wait for: modal `open` class added + rAF for _resizeModalCanvas
+    // (sizes canvas to wrap rect × DPR, capped 2700×1500) + first paintTo.
+    // 350ms covers all (no CSS transition to wait for since modal invisible).
+    await new Promise(r => setTimeout(r, 350));
+  }
+
+  if (!expandOverlay.classList.contains('open')) {
+    alert('Could not open expand modal for export.');
+    return;
+  }
+
+  const canvas = expandCanvas;
+  const btn = document.getElementById('demo-mp4-btn');
+  const origText = btn ? btn.textContent : '↓ MP4';
+  _exportInFlight = true;
+  if (btn) btn.disabled = true;
+
+  const W = canvas.width, H = canvas.height;
+  const FPS = 30;
+  const DURATION_SEC = 20;
+  const TOTAL_FRAMES = FPS * DURATION_SEC;
+  const FRAME_INTERVAL_MS = 1000 / FPS;
+  // Bitrate scales with resolution. ~0.15 bits/pixel/frame gives clean H.264
+  // for pixel-art content (most cells are flat color → high spatial compression).
+  // Clamped 8-25 Mbps for sensible file sizes (20s × 25 Mbps = 60 MB max).
+  const BITRATE = Math.min(25_000_000, Math.max(8_000_000, Math.round(W * H * FPS * 0.15)));
+  const KEYFRAME_EVERY = 60;
+
+  let encoder = null, muxer = null;
+
+  try {
+    // Try codecs in order of quality preference. First supported wins.
+    // High profile = best compression. Higher levels support larger frames.
+    const codecCandidates = [
+      'avc1.640033', // High 5.1 — best quality, 5.6 Mpx max (covers 2700×1500)
+      'avc1.4D0033', // Main 5.1 — wider compat
+      'avc1.640028', // High 4.0 — 1080p max
+      'avc1.42E028', // Baseline 4.0
+      'avc1.42E01F', // Baseline 3.1 — 720p max, universal fallback
+    ];
+    let cfg = null;
+    for (const codec of codecCandidates) {
+      const tryCfg = {
+        codec, width: W, height: H, bitrate: BITRATE,
+        framerate: FPS, bitrateMode: 'constant', latencyMode: 'quality',
+        hardwareAcceleration: 'prefer-software',
+      };
+      const support = await VideoEncoder.isConfigSupported(tryCfg);
+      if (support && support.supported) { cfg = tryCfg; break; }
+    }
+    if (!cfg) {
+      alert('No H.264 codec supported at ' + W + 'x' + H + '. Try Chrome.');
+      return;
+    }
+
+    const target = new Mp4Muxer.ArrayBufferTarget();
+    muxer = new Mp4Muxer.Muxer({
+      target,
+      video: { codec: 'avc', width: W, height: H, frameRate: FPS },
+      fastStart: 'in-memory',
+    });
+    encoder = new VideoEncoder({
+      output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+      error: e => console.error('[export]', e),
+    });
+    encoder.configure(cfg);
+
+    for (let f = 0; f < TOTAL_FRAMES; f++) {
+      // VideoFrame from expand canvas — demo engine's paintTo() is running on
+      // a setInterval and continuously updates this canvas in the background.
+      // We sample at FPS rate; canvas paint atomicity ensures no tearing.
+      const frame = new VideoFrame(canvas, {
+        timestamp: Math.round(f * 1_000_000 / FPS),
+        duration: Math.round(1_000_000 / FPS),
+      });
+      encoder.encode(frame, { keyFrame: f % KEYFRAME_EVERY === 0 });
+      frame.close();
+
+      if (btn && f % FPS === 0) {
+        const pct = Math.round(f / TOTAL_FRAMES * 100);
+        btn.textContent = '▪ ' + pct + '%';
+      }
+      // Yield to event loop so demo engine setInterval can tick + paint
+      await new Promise(r => setTimeout(r, FRAME_INTERVAL_MS));
+    }
+
+    await encoder.flush();
+    encoder.close();
+    encoder = null;
+    muxer.finalize();
+
+    const blob = new Blob([target.buffer], { type: 'video/mp4' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    a.download = 'modulo-demo-' + stamp + '.mp4';
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error('[export] failed:', err);
+    alert('Export failed. See console.');
+  } finally {
+    _exportInFlight = false;
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = origText;
+    }
+    if (encoder) { try { encoder.close(); } catch (_) {} }
+    // Restore state: close modal + restore visibility styles (if WE hid them)
+    if (!wasOpenInitially) {
+      if (expandClose) expandClose.click();
+      // Restore original inline styles — empty string removes our temporary override
+      expandOverlay.style.visibility = origVisibility;
+      expandOverlay.style.pointerEvents = origPointerEvents;
+    }
+  }
+}
+
+document.getElementById('demo-mp4-btn')?.addEventListener('click', _exportMP4);
 </script>
 
 </body>
