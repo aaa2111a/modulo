@@ -32,7 +32,7 @@
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
   script-src 'self' 'sha256-I9Yfcq7guXpscFi+G0+tohjedD6HTkxEQAMsmvRwWNM=' 'sha256-A3ETGxrcp9DTjGzMeHPhzmYsPpIQYAylCdYHxrzxAos=' 'sha256-QBnDYJZwhBXOrgmZ9UEkle1nD40H9Vt2YvnqkMJhoZA=' 'sha256-KjVWMhTuGbrm7UCORRBroU+iHvJEmhZBJglyBQ50lNQ=' 'sha256-kiizwSgR+4P7t0jnOdKHFd2CA3FFVsn7fuZ3rTsHVuU=' 'sha256-dDSWZarw2uRHIInlXyZ/Avc//aK5jQn14L1kP9TgdGs=' https://cdn.jsdelivr.net;
-  style-src 'self' 'sha256-oOB0pWyiGC5cFvcK9wxFLN9Zw0TyMjo+5qZdSEtdv0E=';
+  style-src 'self' 'sha256-U2A+UzAvwB47kSXoLHdQYJ4CZluXxeuRwgdaJjt9rPs=';
   font-src 'self' data:;
   img-src 'self' data: blob:;
   connect-src 'self' https://rpc.sepolia.org https://ethereum-sepolia-rpc.publicnode.com;
@@ -807,6 +807,20 @@ body.night .long-demo {
   border-radius:50%;
   flex-shrink:0;
   display:inline-block;
+}
+
+/* touch-action: manipulation on all 4 demo tbars — defeats iOS Safari
+   double-tap-to-zoom on the small dot buttons. Without this, double-tap on
+   .demo-dot triggers viewport zoom instead of click → expand modal / inventory
+   close don't fire on iOS. `manipulation` allows tap + pan, blocks
+   double-tap-zoom on the element only (pinch-zoom elsewhere on page still
+   works — critical for the mobile-visibility-via-pinch strategy at L1916+).
+   Reviewer Brief #4 a37d5d28c5d26e000 P1 mitigation. */
+.demo-card-tbar,
+.demo-inv-tbar,
+.demo-snapshot-tbar,
+.demo-expand-tbar {
+  touch-action: manipulation;
 }
 .demo-card-tbar .demo-dot {
   background:#28c840;
@@ -1612,7 +1626,10 @@ body.night .demo-expand-modal { background:rgb(30,30,30); }
   flex:1;
   background:#0e0e0e;
   position:relative;
-  min-height:50vh;
+  /* min-height:50vh removed 2026-05-19 — conflicted with aspect-ratio:5/3 at
+     portrait viewports (canvas stretched vertically, breaking 5:3). flex:1
+     inside the modal column flex already gives meaningful canvas area on
+     landscape desktop. Reviewer Brief #2 af0c2677eb8e58e28 GO (P2). */
   aspect-ratio:5/3;
 }
 body.night .demo-expand-canvas-wrap { background:#080808; }
@@ -1910,6 +1927,44 @@ body.night .sys-entry-label  { color:rgba(255,255,255,0.30); }
   .long-col:last-child  .long-text:nth-child(n) { margin-left:0; margin-right:0; }
 }
 
+/* Demo modulo visibility strategy (2026-05-19 mobile-responsive audit P0-2):
+   .long-demo is now visible at ALL viewports. The previous `display:none ≤1023px`
+   band-aid was a workaround for sub-HIG tap targets on mobile (scale 0.467 ×
+   8px dots = 3.7px rendered, impossible to tap with finger). Decision: rely on
+   browser-native pinch-to-zoom for mobile interactivity instead of redesigning
+   the demo for touch. User pinch-zooms to interact with small targets, zooms
+   out to continue reading. Apple HIG permits this for "content that benefits
+   from detailed inspection" (cellular automaton visual). Viewport meta tag
+   (L5) does not restrict zoom. Reviewer Brief #4 a37d5d28c5d26e000 GO.
+   Post-mainnet TODO: M2 native-size bumping or M3 mobile redesign for users
+   unfamiliar with pinch-zoom. */
+
+/* Inventory fix — extended to entire fluid-scale range (0-1647px).
+   The fluid-scale block (L1871 `@media (max-width:1647px)`) sets single-column
+   layout + overflow:hidden on .long-demo. Within that range, the inventory
+   positioned `right:100%` slides outside the .long-demo box (toward viewport
+   left edge) and gets clipped. Override `right:auto; left:0` so inventory
+   opens INSIDE scale-wrap on the left side — overlays the stats list, canvas
+   right column stays visible. Range history: original 1024-1514 (PM patch
+   2026-05-19), extended to 1024-1647 P0-1 (Brief #2), extended to 0-1647 P0-2
+   (Brief #4 mobile visibility). The legacy `@media (max-width:768px)
+   .demo-inventory { right:auto; left:0 }` at L1976+ is now redundant (covered
+   by this rule) but left for clarity. */
+@media (max-width:1647px) {
+  .demo-inventory { right:auto; left:0; }
+}
+
+/* (MP4 button mobile gate REMOVED 2026-05-19 Brief #5 ab0d47e4c6d7074ea GO.)
+   Brief #3 P2-1 had recommended hiding the button at ≤768px assuming
+   WebCodecs would encode at 2700×1500 cap. Re-examination: modal is
+   viewport-bounded on mobile (.demo-expand-modal width = min(96vw, ...)).
+   Actual mobile canvas raster at 375×667 viewport = 720×432 (DPR×2 of
+   CSS 360×216) — 14× smaller than desktop. Encode load trivial on phone
+   CPU. iOS Safari ≤16 lacks VideoEncoder → alert fallback at _exportMP4
+   handles cleanly. Export loop is 20s real wall-time (captures live animation
+   at 30fps) regardless of platform — by design, button shows 0→100% progress,
+   no UI freeze. Button now visible at every viewport. */
+
 @media (max-width:768px) {
   .page-header, .body-section, .specs-section { padding-left:24px; padding-right:24px; }
   .body-inner { grid-template-columns:1fr; }
@@ -1924,17 +1979,13 @@ body.night .sys-entry-label  { color:rgba(255,255,255,0.30); }
   .meta-box { width:100%; min-width:0; }
   .meta-label { font-size:10px; }
   .meta-value { font-size:12px; }
-  /* Demo cap (mobile): set explicit dimensions matching the counter-scaled
-     wrap's visible footprint. See `.demo-scale-wrap` mobile override below
-     for the scale factor rationale. */
-  .long-demo {
-    display:block;
-    max-width:327px;
-    width:100%;
-    height:195px;       /* 418 × 0.467 ≈ 195 (scaled wrap visible footprint) */
-    overflow:hidden;    /* clip the wrap's native 700×418 layout overflow */
-    margin:0 auto;
-  }
+  /* .long-demo display:none for ≤768px AND ≤1023px both extracted to a
+     separate @media block below (`@media (max-width:1023px)`) — covers both
+     mobile sub-HIG tap target issue (button 15px @ scale(0.467)) AND tablet
+     inventory-clipped-by-overflow-hidden issue (reviewer a5f0c986c8b9e0cbb).
+     Original mobile dimensions kept here commented for post-mainnet restore:
+       max-width:327px; width:100%; height:195px; overflow:hidden;
+       margin:0 auto; */
   .long-section {
     clip-path:none; -webkit-clip-path:none;
     /* Mobile: tighter padding so text + demo use viewport width efficiently.
@@ -1958,19 +2009,19 @@ body.night .sys-entry-label  { color:rgba(255,255,255,0.30); }
      display:none doesn't break it (querySelectorAll still returns hidden
      elements, style assignment is silent). Reviewer P3-A confirmed safe. */
   .modulo-bg-word { display:none; }
-  /* Demo restore — Option B (Le 2026-05-12 iteration). Earlier this session
-     hid the demo entirely. Le's call: keep visible so the user sees "it's
-     there", even if interior is too small to read or tap. Counter-scale the
-     `.demo-scale-wrap` from desktop's scale(1.439) down to scale(0.467) so
-     the native 700px card renders at 327px — fits mobile viewport. Caveats
-     accepted: text labels inside the card render at ~7px (illegible), tap
-     targets ~20px (marginally workable). Post-mainnet TODO: touch-friendly
-     variant or animated GIF replacement. */
-  .demo-scale-wrap { transform:scale(0.467); }
-  /* Demo inventory: stays at native 240px width inside .long-demo's 327×195
-     clipped area. Will visually overflow the .long-demo when opened — the
-     `overflow:hidden` on .long-demo clips it. Acceptable v1 for "show it's
-     there"; can refine post-mainnet. */
+  /* (Removed 2026-05-19 mobile-responsive audit) The hardcoded
+     `.demo-scale-wrap { transform:scale(0.467) }` was a calibrated override
+     for mobile 375px (=327/700). It silently fired at viewports 376-768px
+     too, leaving the demo locked at 327px wide while the container had room
+     for 542-705px. The fluid-scale rule at L1897 (inside `@media (max-width:
+     1647px)`) `transform:scale(calc(100cqw / 700px))` already handles every
+     viewport correctly — at 375px it naturally produces 0.467, at 590px
+     0.774, at 768px 1.007. Removed this override. Reviewer Brief #4 confirmed
+     CSS cascade clean (a37d5d28c5d26e000), preview-eval verified bbox math
+     (a60d4991a1a8cf8b0). */
+  /* Demo inventory at mobile/small viewports: explicit `right:auto; left:0`.
+     Redundant with `@media (max-width:1647px)` extended rule at L1953 but
+     left for clarity. */
   .demo-inventory { right:auto; left:0; }
   /* Specs section: */
   .specs-grid { grid-template-columns:1fr; }
