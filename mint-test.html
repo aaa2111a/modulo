@@ -34,7 +34,7 @@
      (rare; fallback text+link still readable). -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
-  script-src 'self' 'sha256-I9Yfcq7guXpscFi+G0+tohjedD6HTkxEQAMsmvRwWNM=' 'sha256-A3ETGxrcp9DTjGzMeHPhzmYsPpIQYAylCdYHxrzxAos=' 'sha256-QBnDYJZwhBXOrgmZ9UEkle1nD40H9Vt2YvnqkMJhoZA=' 'sha256-KjVWMhTuGbrm7UCORRBroU+iHvJEmhZBJglyBQ50lNQ=' 'sha256-yZxuS2f9drXq5SsaWL0ogSRQdWeu9wLJvgMdG6Mvp2I=' 'sha256-dDSWZarw2uRHIInlXyZ/Avc//aK5jQn14L1kP9TgdGs=' https://cdn.jsdelivr.net;
+  script-src 'self' 'sha256-I9Yfcq7guXpscFi+G0+tohjedD6HTkxEQAMsmvRwWNM=' 'sha256-A3ETGxrcp9DTjGzMeHPhzmYsPpIQYAylCdYHxrzxAos=' 'sha256-QBnDYJZwhBXOrgmZ9UEkle1nD40H9Vt2YvnqkMJhoZA=' 'sha256-KjVWMhTuGbrm7UCORRBroU+iHvJEmhZBJglyBQ50lNQ=' 'sha256-KyupDVBwVntOwaGhnxW183TkXJKCI50saonAAiiMvEM=' 'sha256-dDSWZarw2uRHIInlXyZ/Avc//aK5jQn14L1kP9TgdGs=' https://cdn.jsdelivr.net;
   style-src 'self' 'sha256-2lp384dlvRuYBsLICnKUM4kysqO051TF9Eti20co5KY=';
   font-src 'self' data:;
   img-src 'self' data: blob:;
@@ -2187,11 +2187,8 @@ body.night .sys-entry-label  { color:rgba(255,255,255,0.30); }
           </div>
           <div class="qty-cost"><b id="qty-cost-val">0.0069</b> ETH<span id="qty-quota-hint"></span></div>
           <button class="mint-btn" id="mint-btn">MINT</button>
-          <!-- Mint counter disabled 2026-05-17 per Le directive. To re-enable:
-               restore this div + flip MINT_COUNTER_LIVE = true in the JS section
-               (see also MINT_DAY.md §3 T-1 item — flip + COUNTER_RPC mainnet swap).
+          <!-- Mint counter ENABLED for v6 test 2026-05-20 (live totalMinted poll). -->
           <div class="mint-counter" id="mint-counter">— / 6666 minted</div>
-          -->
           <div class="mint-wallet" id="mint-wallet" title="click to disconnect">
             <b id="mint-wallet-addr">—</b>
           </div>
@@ -3352,7 +3349,7 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
   // early return so MINT_COUNTER_LIVE=true / MINT_ENABLED=false (showing
   // pre-launch live count) works correctly. Reviewer P1 fix 2026-05-13.
   // ════════════════════════════════════════════════════════════════════════
-  const MINT_COUNTER_LIVE = false;
+  const MINT_COUNTER_LIVE = true;  // v6 test 2026-05-20 — live totalMinted poll vs Sepolia
   const MAX_SUPPLY = 6666;
   const COUNTER_POLL_MS = 30_000;
   const COUNTER_RPC = 'https://ethereum-sepolia-rpc.publicnode.com';
@@ -3368,12 +3365,12 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
   // ════════════════════════════════════════════════════════════════════════
   const COUNTDOWN_ACTIVE = true;
 
-  // mint-test copy OVERRIDE: set to a PAST timestamp so the countdown resolves
-  // immediately to the on-chain state (Sepolia v5 openMint() already called).
-  // The button is then driven by the WL-aware on-chain state machine in
-  // _updateMintButton (mintOpen + wlEndTime), not a future countdown.
+  // mint-test copy OVERRIDE: near-future timestamp to watch the countdown tick
+  // down then hand off to the on-chain state machine (v6 phase test 2026-05-20).
+  // After zero: polls mintOpen()/wlEndTime() → OPENING ANY MOMENT → (owner calls
+  // openMint) → MINT WHITELIST / WHITELIST ONLY → (30min) → MINT public.
   // PRODUCTION about/ keeps MINT_OPEN_TIMESTAMP = 1779388200 (jueves 21 18:30 UTC).
-  const MINT_OPEN_TIMESTAMP = 1;  // past → countdown immediately 0 → on-chain check
+  const MINT_OPEN_TIMESTAMP = 1779311847;  // 2026-05-20 21:17 UTC = 18:17 Chile
 
   // RPC poll throttle for mintOpen() check post-countdown-zero. 7s balances
   // responsiveness (button flips to MINT within ~7s of openMint() tx confirm)
@@ -3382,7 +3379,7 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
 
   // ── Constants matching contracts.md / TokenAgent Sepolia deploy ─────────
   // Public on-chain address (visible on Etherscan + contracts.md). Not a secret.
-  const TOKEN_AGENT_ADDRESS = '0x68e93ab79a3d6BaFBF475012437D5EadD39a413c'; // gitleaks:allow — v5 Sepolia 2026-05-20 (WL bundle, deploy block 10883254)
+  const TOKEN_AGENT_ADDRESS = '0x731cF874ec7d74307CAED555af9285268c9B073A'; // gitleaks:allow — v6 Sepolia 2026-05-20 (WL + ownerMint premint, owner=OWNER_WALLET)
   const TOKEN_AGENT_ABI = [
     'function mint(uint256 quantity) external payable',
     'function mintWl(uint256 quantity, bytes32[] proof) external payable',
