@@ -56,7 +56,7 @@
   style-src 'self' 'unsafe-inline';
   font-src 'self' data:;
   img-src 'self' data: blob:;
-  connect-src 'self' https://ethereum-rpc.publicnode.com https://*.firebaseio.com wss://*.firebaseio.com https://*.googleapis.com https://www.gstatic.com https://www.google.com https://*.cloudfunctions.net;
+  connect-src 'self' https://*.firebaseio.com wss://*.firebaseio.com https://*.googleapis.com https://www.gstatic.com https://www.google.com https://*.cloudfunctions.net;
   frame-src 'self' https://www.google.com;
   base-uri 'self';
   form-action 'self';
@@ -1699,7 +1699,7 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
 const TOKEN_AGENT_ADDRESS     = '0x66556B93cC898040d7F49B9534394F40937ec199';
 const SETTLE_ARTIFACT_ADDRESS = '0xBFb21e5B736e85160A2FA2056764A7D5f4ab2cd9';
 const CHAIN_ID                = 1;
-const RPC_URL                 = 'https://ethereum-rpc.publicnode.com';
+const RPC_URL                 = 'https://modulo.ubk.art/rpc'; // Cloudflare Worker → Alchemy (key hidden). 2026-05-21: was publicnode (429 under load).
 const ETHERSCAN_BASE          = 'https://etherscan.io';
 const OPENSEA_BASE            = 'https://opensea.io';
 
@@ -1736,7 +1736,10 @@ function _initOnChain() {
     return false;
   }
   try {
-    _provider = new window.ethers.JsonRpcProvider(RPC_URL, CHAIN_ID);
+    // batchMaxCount:20 — matches the Worker proxy's MAX_BATCH cap (it 400s on
+    // JSON-RPC batches >20). Without this ethers batches up to 100 concurrent
+    // reads → 400 storm. (2026-05-21, same fix as app/.)
+    _provider = new window.ethers.JsonRpcProvider(RPC_URL, CHAIN_ID, { batchMaxCount: 20 });
     _tokenAgent     = new window.ethers.Contract(TOKEN_AGENT_ADDRESS,     TOKEN_AGENT_ABI,     _provider);
     _settleArtifact = new window.ethers.Contract(SETTLE_ARTIFACT_ADDRESS, SETTLE_ARTIFACT_ABI, _provider);
     return true;
