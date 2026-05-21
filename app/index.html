@@ -53,11 +53,11 @@
     throw new Error('embedded in iframe — execution halted');
   }
 </script>
-<title>Modulo · Workshop</title>
+<title>App</title>
 <meta name="description" content="On-chain generative art by ubk. Compose tokens into cellular automaton artifacts via the modulo flow.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Modulo">
-<meta property="og:title" content="Modulo · Workshop">
+<meta property="og:title" content="Modulo · App">
 <meta property="og:description" content="On-chain generative art by ubk. Compose tokens into cellular automaton artifacts via the modulo flow.">
 <meta property="og:url" content="https://modulo.ubk.art/app/">
 <meta property="og:image" content="https://modulo.ubk.art/preview.png">
@@ -65,7 +65,7 @@
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Modulo — generative cellular automaton artifact">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Modulo · Workshop">
+<meta name="twitter:title" content="Modulo · App">
 <meta name="twitter:description" content="On-chain generative art by ubk. Compose tokens into cellular automaton artifacts via the modulo flow.">
 <meta name="twitter:image" content="https://modulo.ubk.art/preview.png">
 <meta name="twitter:image:alt" content="Modulo — generative cellular automaton artifact">
@@ -12105,15 +12105,16 @@ function _getReadonlyProvider() {
     // batches of 100 → 400 storm. Capping at 20 keeps ethers batches within the
     // Worker's accepted size. (security-auditor a05a2db5, 2026-05-21.)
     _readonlyProvider = new window.ethers.JsonRpcProvider(urls[0], WALLET_TARGET_CHAIN_ID, { batchMaxCount: 20 });
-    // Force a snappy polling interval for the Transfer event listener (2026-05-07).
-    // ethers v6 default for JsonRpcProvider is 4000ms, but in practice with
-    // public RPC providers it can drift to 60s+ if the provider doesn't
-    // signal new blocks reliably. Cross-tab event sync is UX-critical here
-    // (Le reported 2-3 min delays before this), so we set 4s explicitly to
-    // match Sepolia block time / 3. Trade-off: ~15 polling calls per minute
-    // per tab. publicnode.com handles this without rate-limiting.
+    // Polling interval for the Transfer event block-poll (provider.on('block')).
+    // 12000ms = mainnet block time (~12s). 2026-05-21: was 4000ms (a Sepolia-era
+    // value = blocktime/3); on mainnet that polled eth_blockNumber 3× per block —
+    // 2 of every 3 polls were no-ops wasting a Worker request + an Alchemy CU. A
+    // new block (and thus any mint/transfer/burn) can't be observed before its
+    // block is mined (~12s) anyway, so 12s loses no real detection latency. The
+    // independent 60s safety-net poll + visibilitychange re-arm cover any gaps.
+    // (security-auditor a319f48b GO.)
     if (_readonlyProvider.pollingInterval !== undefined) {
-      _readonlyProvider.pollingInterval = 4000;
+      _readonlyProvider.pollingInterval = 12000;
     }
   } catch (err) {
     console.error('[rpc] failed to create readonly provider:', err);
