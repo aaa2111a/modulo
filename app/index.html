@@ -23,7 +23,7 @@
   style-src 'self' 'unsafe-inline';
   font-src 'self' data:;
   img-src 'self' data: blob:;
-  connect-src 'self' https://*.firebaseio.com wss://*.firebaseio.com https://*.googleapis.com https://www.gstatic.com https://*.cloudfunctions.net https://www.google.com https://ethereum-rpc.publicnode.com wss://ethereum-rpc.publicnode.com;
+  connect-src 'self' https://*.firebaseio.com wss://*.firebaseio.com https://*.googleapis.com https://www.gstatic.com https://*.cloudfunctions.net https://www.google.com;
   frame-src 'self' https://www.google.com;
   base-uri 'self';
   form-action 'self';
@@ -12322,6 +12322,16 @@ let _transferListenerActive = false;
 let _transferListenerContract = null;
 
 function _getEventProvider() {
+  // 2026-05-21 (Option B, security-auditor a8240a9d): WSS DISABLED. publicnode's
+  // keyless WSS was rate-limiting (429 + connection failures) under load and
+  // won't survive launch-day. Returning null forces _setupTransferListener to
+  // fall through to _getReadonlyProvider() (the Cloudflare Worker → Alchemy
+  // JsonRpcProvider), which block-polls via eth_blockNumber + eth_getLogs — all
+  // through the key-hidden, method-allowlisted Worker. Background-tab throttling
+  // is covered by the existing 60s safety-net poll + visibility re-arm. A proper
+  // Worker-proxied Alchemy WSS is a post-mainnet upgrade (Option A).
+  return null;
+  // eslint-disable-next-line no-unreachable
   if (_wsProvider) return _wsProvider;
   if (!window.ethers || !window.ethers.WebSocketProvider) return null;
   try {
