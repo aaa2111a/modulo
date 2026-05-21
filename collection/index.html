@@ -56,7 +56,7 @@
   style-src 'self' 'unsafe-inline';
   font-src 'self' data:;
   img-src 'self' data: blob:;
-  connect-src 'self' https://ethereum-sepolia-rpc.publicnode.com https://*.firebaseio.com wss://*.firebaseio.com https://*.googleapis.com https://www.gstatic.com https://www.google.com https://*.cloudfunctions.net;
+  connect-src 'self' https://ethereum-rpc.publicnode.com https://*.firebaseio.com wss://*.firebaseio.com https://*.googleapis.com https://www.gstatic.com https://www.google.com https://*.cloudfunctions.net;
   frame-src 'self' https://www.google.com;
   base-uri 'self';
   form-action 'self';
@@ -1690,18 +1690,18 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
 
 <script>
 // ─────────────────────────────────────────────────────────────────────────────
-// On-chain wiring — Sepolia (T-1 mainnet swap-list below)
+// On-chain wiring — MAINNET v6 (2026-05-21)
 // ─────────────────────────────────────────────────────────────────────────────
 // SWAP LIST PRE-MAINNET (T-1 runbook): change ALL 6 strings below + the SRI
 // hash above (if ethers version bumps) + the CSP `connect-src` URL above.
 // No other constants in this file are network-dependent.
-// Sepolia v4 (2026-05-18): post-AdversarialFork 54/54 PASS + animationURI() + VERSION constant
-const TOKEN_AGENT_ADDRESS     = '0x628d0b9563529305CAcba0Ed396aE22a98968f0d';
-const SETTLE_ARTIFACT_ADDRESS = '0x65A0C67024153dC089C2A34fc0A98eAe1431b4c4';
-const CHAIN_ID                = 11155111;
-const RPC_URL                 = 'https://ethereum-sepolia-rpc.publicnode.com';
-const ETHERSCAN_BASE          = 'https://sepolia.etherscan.io';
-const OPENSEA_BASE            = 'https://testnets.opensea.io';
+// MAINNET v6 (2026-05-21): WL + ownerMint, deployed + verified Etherscan
+const TOKEN_AGENT_ADDRESS     = '0x6608cF973ba7DaA8f935bbFB4DF4f787e7b91c80';
+const SETTLE_ARTIFACT_ADDRESS = '0xFE0553B77074EC52bBdb3997cf71b4b7fb0f2145';
+const CHAIN_ID                = 1;
+const RPC_URL                 = 'https://ethereum-rpc.publicnode.com';
+const ETHERSCAN_BASE          = 'https://etherscan.io';
+const OPENSEA_BASE            = 'https://opensea.io';
 
 // Minimal ABIs — only the methods this page calls. Verified against
 // Code/contracts/src/{TokenAgent,SettleArtifact}.sol on 2026-05-08.
