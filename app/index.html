@@ -12098,7 +12098,13 @@ function _getReadonlyProvider() {
   const urls = WALLET_TARGET_CHAIN_INFO.rpcUrls || [];
   if (!urls.length) return null;
   try {
-    _readonlyProvider = new window.ethers.JsonRpcProvider(urls[0], WALLET_TARGET_CHAIN_ID);
+    // batchMaxCount: 20 — ethers v6 auto-batches concurrent reads into JSON-RPC
+    // arrays (default cap 100). The Cloudflare Worker proxy rejects any batch
+    // >20 (worker.js MAX_BATCH=20) with HTTP 400. _sepoliaSync fans out 2 reads
+    // per minted token (ownerOf+getTraits), so at 100 mints that's 200 calls →
+    // batches of 100 → 400 storm. Capping at 20 keeps ethers batches within the
+    // Worker's accepted size. (security-auditor a05a2db5, 2026-05-21.)
+    _readonlyProvider = new window.ethers.JsonRpcProvider(urls[0], WALLET_TARGET_CHAIN_ID, { batchMaxCount: 20 });
     // Force a snappy polling interval for the Transfer event listener (2026-05-07).
     // ethers v6 default for JsonRpcProvider is 4000ms, but in practice with
     // public RPC providers it can drift to 60s+ if the provider doesn't
