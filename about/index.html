@@ -16,14 +16,15 @@
      SHA-256 hashes of the 6 inline blocks. See collection/index.html for
      full rationale + recompute command.
 
-     Hashes (recomputed 2026-05-17 post animated favicon addition):
+     Hashes (recomputed 2026-05-21 post mainnet v6 re-cutover — TOKEN_AGENT_ADDRESS
+     swapped to redeployed contract; only the main-mint script hash changed):
        script L49   frame-buster   sha256-I9Yfcq7guXpscFi+G0+tohjedD6HTkxEQAMsmvRwWNM=
        script L76   DEBUG wrapper  sha256-A3ETGxrcp9DTjGzMeHPhzmYsPpIQYAylCdYHxrzxAos=
-       script L92   favicon anim   sha256-QBnDYJZwhBXOrgmZ9UEkle1nD40H9Vt2YvnqkMJhoZA=  (NEW 2026-05-17 — animated favicon, 2x2 rotation + 9 palette pair cycle; doc-header hash synced with meta CSP 2026-05-18)
-       script L1983 (812B)         sha256-KjVWMhTuGbrm7UCORRBroU+iHvJEmhZBJglyBQ50lNQ=
-       script L2292 main mint      sha256-HaTnKtIwMYUyq6leM7v8L8pjwdLrnR0TBYFsS3tjaEQ=
-       script L3818 demoEngine     sha256-UVsq2YCUrPG95Lcy/n0zDLwxU89VgkLHK+0hdTHZO7k=  (recomputed 2026-05-17 — token ID padding 3→4 chars)
-       style  L132  main CSS       sha256-aO4oPSpGAYjfmpJhFxfqcnyOK8k25wiQhPrnkGb3tNc=
+       script L92   favicon anim   sha256-QBnDYJZwhBXOrgmZ9UEkle1nD40H9Vt2YvnqkMJhoZA=
+       script L2098 (812B)         sha256-KjVWMhTuGbrm7UCORRBroU+iHvJEmhZBJglyBQ50lNQ=
+       script L2408 main mint      sha256-JuqsdGplBcALU7JBXMY60J/XWsMNTjcvgK9vSUXwL9E=
+       script L4155 demoEngine     sha256-dDSWZarw2uRHIInlXyZ/Avc//aK5jQn14L1kP9TgdGs=
+       style  L163  main CSS       sha256-U2A+UzAvwB47kSXoLHdQYJ4CZluXxeuRwgdaJjt9rPs=
 
      KNOWN LIMITATION: frame-buster fallback (~L48) builds replacement body
      via DOM element.style.cssText. Without 'unsafe-inline' in style-src those
@@ -31,7 +32,7 @@
      (rare; fallback text+link still readable). -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
-  script-src 'self' 'sha256-I9Yfcq7guXpscFi+G0+tohjedD6HTkxEQAMsmvRwWNM=' 'sha256-A3ETGxrcp9DTjGzMeHPhzmYsPpIQYAylCdYHxrzxAos=' 'sha256-QBnDYJZwhBXOrgmZ9UEkle1nD40H9Vt2YvnqkMJhoZA=' 'sha256-KjVWMhTuGbrm7UCORRBroU+iHvJEmhZBJglyBQ50lNQ=' 'sha256-M0Y6avZqYyrSU4PySQQ1vusnKNvNUJPy/NsDSSc/9i0=' 'sha256-dDSWZarw2uRHIInlXyZ/Avc//aK5jQn14L1kP9TgdGs=' https://cdn.jsdelivr.net;
+  script-src 'self' 'sha256-I9Yfcq7guXpscFi+G0+tohjedD6HTkxEQAMsmvRwWNM=' 'sha256-A3ETGxrcp9DTjGzMeHPhzmYsPpIQYAylCdYHxrzxAos=' 'sha256-QBnDYJZwhBXOrgmZ9UEkle1nD40H9Vt2YvnqkMJhoZA=' 'sha256-KjVWMhTuGbrm7UCORRBroU+iHvJEmhZBJglyBQ50lNQ=' 'sha256-JuqsdGplBcALU7JBXMY60J/XWsMNTjcvgK9vSUXwL9E=' 'sha256-dDSWZarw2uRHIInlXyZ/Avc//aK5jQn14L1kP9TgdGs=' https://cdn.jsdelivr.net;
   style-src 'self' 'sha256-U2A+UzAvwB47kSXoLHdQYJ4CZluXxeuRwgdaJjt9rPs=';
   font-src 'self' data:;
   img-src 'self' data: blob:;
@@ -2156,8 +2157,8 @@ body.night .sys-entry-label  { color:rgba(255,255,255,0.30); }
           <div class="meta-row">
             <span class="meta-label">Contract</span>
             <a class="meta-value meta-link" id="meta-contract-link"
-               href="https://etherscan.io/address/0x6608cF973ba7DaA8f935bbFB4DF4f787e7b91c80"
-               target="_blank" rel="noopener noreferrer">0x6608…91c80 ↗</a>
+               href="https://etherscan.io/address/0x66556B93cC898040d7F49B9534394F40937ec199"
+               target="_blank" rel="noopener noreferrer">0x6655…ec199 ↗</a>
           </div>
           <div class="meta-row">
             <span class="meta-label">Storage</span>
@@ -3365,7 +3366,7 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
 
   // ── Constants matching contracts.md / TokenAgent Sepolia deploy ─────────
   // Public on-chain address (visible on Etherscan + contracts.md). Not a secret.
-  const TOKEN_AGENT_ADDRESS = '0x6608cF973ba7DaA8f935bbFB4DF4f787e7b91c80'; // gitleaks:allow — MAINNET v6 (WL + ownerMint), deployed 2026-05-21
+  const TOKEN_AGENT_ADDRESS = '0x66556B93cC898040d7F49B9534394F40937ec199'; // gitleaks:allow — MAINNET v6 (WL + ownerMint), deployed 2026-05-21
   const TOKEN_AGENT_ABI = [
     'function mint(uint256 quantity) external payable',
     'function mintWl(uint256 quantity, bytes32[] proof) external payable',
