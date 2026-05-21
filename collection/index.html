@@ -1529,7 +1529,7 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
       <div class="meta-rows">
         <div class="meta-row">
           <span class="meta-label">Floor Price</span>
-          <span class="meta-value">— ETH</span>
+          <span class="meta-value" id="stat-floor">— ETH</span>
         </div>
         <div class="meta-row">
           <span class="meta-label">Top Offer</span>
@@ -1537,7 +1537,7 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
         </div>
         <div class="meta-row">
           <span class="meta-label">Total Volume</span>
-          <span class="meta-value">— ETH</span>
+          <span class="meta-value" id="stat-volume">— ETH</span>
         </div>
         <div class="meta-row">
           <span class="meta-label">Listed</span>
@@ -1545,7 +1545,7 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
         </div>
         <div class="meta-row">
           <span class="meta-label">Owners (unique)</span>
-          <span class="meta-value">—</span>
+          <span class="meta-value" id="stat-owners">—</span>
         </div>
       </div>
     </div>
@@ -1699,6 +1699,36 @@ const CHAIN_ID                = 1;
 const RPC_URL                 = 'https://modulo.ubk.art/rpc'; // Cloudflare Worker → Alchemy (key hidden). 2026-05-21: was publicnode (429 under load).
 const ETHERSCAN_BASE          = 'https://etherscan.io';
 const OPENSEA_BASE            = 'https://opensea.io';
+
+// ── OpenSea market data (stats box) — via the modulo-os Worker (key hidden) ──
+// OFF until post-mint (OS_ENABLED=false): no secondary listings exist during the
+// drop, and a fetch bug must NEVER touch the mint. Flip to true post-mint to
+// activate. Renders NUMBERS ONLY via textContent — no OpenSea free-text reaches
+// the DOM, no innerHTML/srcdoc sink. Wrapped in its own try/catch so it can
+// never block the on-chain card render. (security-auditor a3be235f, 2026-05-21.)
+const OS_ENABLED = true;
+const OS_PROXY   = 'https://modulo.ubk.art/os';
+
+async function _loadOsStats(tab) {
+  if (!OS_ENABLED) return;
+  try {
+    const contract = tab === 'modulo' ? SETTLE_ARTIFACT_ADDRESS : TOKEN_AGENT_ADDRESS;
+    const r = await fetch(OS_PROXY + '?op=stats&contract=' + encodeURIComponent(contract));
+    if (!r.ok) return;
+    const d = await r.json();
+    const elFloor  = document.getElementById('stat-floor');
+    const elVol    = document.getElementById('stat-volume');
+    const elOwners = document.getElementById('stat-owners');
+    // Numeric-only render; show "—" when there's no real data yet (0/null) —
+    // e.g. no secondary listings → floor/volume 0 → "—" not "0.0000 ETH".
+    if (elFloor)  elFloor.textContent  = (typeof d.floor === 'number' && d.floor > 0)
+      ? (d.floor.toFixed(4) + ' ' + (d.floorSymbol === 'WETH' ? 'WETH' : 'ETH')) : '— ETH';
+    if (elVol)    elVol.textContent    = (typeof d.volume === 'number' && d.volume > 0)
+      ? (d.volume.toFixed(2) + ' ETH') : '— ETH';
+    if (elOwners) elOwners.textContent = (typeof d.owners === 'number' && d.owners > 0)
+      ? Math.round(d.owners).toLocaleString('en-US') : '—';
+  } catch (_) { /* graceful: leave placeholders, never block the render */ }
+}
 
 // Minimal ABIs — only the methods this page calls. Verified against
 // Code/contracts/src/{TokenAgent,SettleArtifact}.sol on 2026-05-08.
@@ -2296,6 +2326,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + target));
     if (_displayTitle && _TAB_TITLES[target]) _scrambleTitle(_TAB_TITLES[target]);
     if (typeof _setMetaCount === 'function') _setMetaCount(target);
+    if (typeof _loadOsStats === 'function') _loadOsStats(target); // no-op while OS_ENABLED=false
     // Mount sweep — IO observers attached to cards inside a `display:none`
     // panel get their initial callback with isIntersecting=false and Chrome
     // does NOT re-fire when the parent transitions to `display:block`. Cards
@@ -2696,6 +2727,7 @@ async function _buildCards() {
   _aliveArtifactCount = aliveArtifactIds.length;
   // Active tab at boot is 'tokens' (default in the markup) — set its count
   _setMetaCount(document.querySelector('.tab-btn.active')?.dataset.tab || 'tokens');
+  if (typeof _loadOsStats === 'function') _loadOsStats(document.querySelector('.tab-btn.active')?.dataset.tab || 'tokens'); // no-op while OS_ENABLED=false
 
   // ── Token cards (alive only) ──────────────────────────────────────────────
   tokGrid.innerHTML = '';
