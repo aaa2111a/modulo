@@ -23,7 +23,7 @@
   style-src 'self' 'unsafe-inline';
   font-src 'self' data:;
   img-src 'self' data: blob:;
-  connect-src 'self' https://*.firebaseio.com wss://*.firebaseio.com https://*.googleapis.com https://www.gstatic.com https://*.cloudfunctions.net https://www.google.com https://rpc.sepolia.org https://ethereum-sepolia-rpc.publicnode.com wss://ethereum-sepolia-rpc.publicnode.com;
+  connect-src 'self' https://*.firebaseio.com wss://*.firebaseio.com https://*.googleapis.com https://www.gstatic.com https://*.cloudfunctions.net https://www.google.com https://ethereum-rpc.publicnode.com wss://ethereum-rpc.publicnode.com;
   frame-src 'self' https://www.google.com;
   base-uri 'self';
   form-action 'self';
@@ -2822,8 +2822,7 @@ html.dark .settle-modal .settle-modal-warn {
       <span id="wallet-address"></span>
       <button id="ens-verify-btn" title="Verify your ENS name (mainnet reverse record)">verify ENS</button>
       <button id="wallet-toggle-btn" title="Connect wallet">connect</button>
-      <!-- T-1 NOTE: swap title="Switch to Sepolia" → "Switch to Ethereum" when WALLET_TARGET_CHAIN_INFO swapped to mainnet. Kept as Sepolia 2026-05-17 because Le continues Sepolia testing. -->
-      <button id="wallet-chain-warn" title="Switch to Sepolia">wrong chain — switch</button>
+      <button id="wallet-chain-warn" title="Switch to Ethereum">wrong chain — switch</button>
       <span id="topbar-inv-sep">·</span>
       <span id="topbar-inv"></span>
     </div>
@@ -8958,7 +8957,7 @@ function _etherscanBase() {
   return (
     (typeof WALLET_TARGET_CHAIN_INFO !== 'undefined' &&
      WALLET_TARGET_CHAIN_INFO.blockExplorerUrls &&
-     WALLET_TARGET_CHAIN_INFO.blockExplorerUrls[0]) || 'https://sepolia.etherscan.io'
+     WALLET_TARGET_CHAIN_INFO.blockExplorerUrls[0]) || 'https://etherscan.io'
   );
 }
 
@@ -11833,17 +11832,17 @@ async function _walletDeferredFallback() {
 // Target chain: Sepolia (11155111). Chain warning is decorative until the
 // contract is deployed.
 // ─────────────────────────────────────────────────────────────────────────────
-const WALLET_TARGET_CHAIN_ID = 11155111; // Sepolia for testing; mainnet later
+const WALLET_TARGET_CHAIN_ID = 1; // Ethereum mainnet
 const WALLET_TARGET_CHAIN_HEX = '0x' + WALLET_TARGET_CHAIN_ID.toString(16);
 const WALLET_TARGET_CHAIN_INFO = {
   chainId: WALLET_TARGET_CHAIN_HEX,
-  chainName: 'Sepolia',
-  nativeCurrency: { name: 'Sepolia Ether', symbol: 'ETH', decimals: 18 },
-  // Order matters: _getReadonlyProvider uses rpcUrls[0]. publicnode.com supports
-  // browser CORS for read calls; rpc.sepolia.org does NOT (returns no
-  // Access-Control-Allow-Origin header). Keep publicnode first.
-  rpcUrls: ['https://ethereum-sepolia-rpc.publicnode.com', 'https://rpc.sepolia.org'],
-  blockExplorerUrls: ['https://sepolia.etherscan.io'],
+  chainName: 'Ethereum',
+  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+  // Order matters: _getReadonlyProvider uses rpcUrls[0] = Cloudflare Worker
+  // (Alchemy paid, read-only, same-origin → covered by CSP 'self'). publicnode
+  // mainnet keyless is the automatic fallback. Tx go via MetaMask, not these.
+  rpcUrls: ['https://modulo.ubk.art/rpc', 'https://ethereum-rpc.publicnode.com'],
+  blockExplorerUrls: ['https://etherscan.io'],
 };
 const WALLET_LS_KEY = 'tc-wallet-address';
 
@@ -11855,10 +11854,12 @@ const WALLET_LS_KEY = 'tc-wallet-address';
 // Sepolia v4 (2026-05-18): post-AdversarialFork 54/54 PASS + animationURI() + VERSION constant
 const TOKEN_AGENT_ADDRESS_SEPOLIA     = '0x628d0b9563529305CAcba0Ed396aE22a98968f0d';
 const SETTLE_ARTIFACT_ADDRESS_SEPOLIA = '0x65A0C67024153dC089C2A34fc0A98eAe1431b4c4';
+const TOKEN_AGENT_ADDRESS_MAINNET     = '0x6608cF973ba7DaA8f935bbFB4DF4f787e7b91c80';
+const SETTLE_ARTIFACT_ADDRESS_MAINNET = '0xFE0553B77074EC52bBdb3997cf71b4b7fb0f2145';
 
-// Active addresses (toggle by network — Sepolia only for now)
-const TOKEN_AGENT_ADDRESS     = TOKEN_AGENT_ADDRESS_SEPOLIA;
-const SETTLE_ARTIFACT_ADDRESS = SETTLE_ARTIFACT_ADDRESS_SEPOLIA;
+// Active addresses (MAINNET v6 — 2026-05-21)
+const TOKEN_AGENT_ADDRESS     = TOKEN_AGENT_ADDRESS_MAINNET;
+const SETTLE_ARTIFACT_ADDRESS = SETTLE_ARTIFACT_ADDRESS_MAINNET;
 
 // Minimal ABIs — only the methods we actually call from the frontend.
 const TOKEN_AGENT_ABI = [
@@ -11910,7 +11911,7 @@ const SETTLE_ARTIFACT_ABI = [
 // Look up via `contracts/broadcast/Deploy.s.sol/<chainId>/run-latest.json`
 // → `transactions[].blockNumber` for SettleArtifact (hex → decimal).
 // SWAP: at T-0 mainnet deploy, update this to the mainnet SettleArtifact block.
-const SETTLE_ARTIFACT_DEPLOY_BLOCK = 10875630;
+const SETTLE_ARTIFACT_DEPLOY_BLOCK = 25140728;
 
 // EIP-712 domain MUST match SettleArtifact.DOMAIN_SEPARATOR exactly. Any drift
 // here produces an unverifiable signature on-chain.
@@ -12308,7 +12309,7 @@ window._sepoliaSync = _sepoliaSync;
 // Auto-reconnect on close: WS can drop on network blip / RPC maintenance.
 // Reconnect logic recreates the provider and re-attaches the Transfer listener.
 const _ZERO_ADDR = '0x0000000000000000000000000000000000000000';
-const _WSS_URL_SEPOLIA = 'wss://ethereum-sepolia-rpc.publicnode.com';
+const _WSS_URL_SEPOLIA = 'wss://ethereum-rpc.publicnode.com'; // mainnet WSS (const name kept; internal only)
 let _wsProvider = null;
 let _wsReconnectTimer = null;
 let _transferListenerActive = false;
@@ -12878,7 +12879,7 @@ function _renderWalletUI() {
     addrEl.classList.toggle('wrong-chain', wrongChain);
     addrEl.title = wrongChain
       ? `${_walletAddress} — wrong chain (${_walletChainId}). Click to switch.`
-      : `${_walletAddress} (Sepolia)`;
+      : `${_walletAddress} (Ethereum)`;
     if (warnEl) warnEl.classList.toggle('visible', wrongChain);
     // ENS button: visible when wallet connected + correct chain.
     // Label flips between "verify ENS" / "remove ENS" based on cache state.
