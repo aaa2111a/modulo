@@ -2896,23 +2896,26 @@ if (new URLSearchParams(location.search).has('debug')) window._debug = function 
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Header action buttons (copy contract + Etherscan + OpenSea testnet)
+// Header action buttons (copy contract + Etherscan + OpenSea) — tab-aware:
+// Tokens tab → TokenAgent; Artifacts tab (data-tab="modulo") → SettleArtifact.
 // ─────────────────────────────────────────────────────────────────────────────
 document.querySelectorAll('.id-action-btn').forEach(btn => {
   btn.addEventListener('click', async () => {
     const action = btn.dataset.action;
+    const activeTab = document.querySelector('.tab-btn.active')?.dataset.tab;
+    const contractAddr = activeTab === 'modulo' ? SETTLE_ARTIFACT_ADDRESS : TOKEN_AGENT_ADDRESS;
     if (action === 'copy') {
       try {
-        await navigator.clipboard.writeText(TOKEN_AGENT_ADDRESS);
+        await navigator.clipboard.writeText(contractAddr);
         const orig = btn.title;
         btn.title = 'copied!';
         setTimeout(() => { btn.title = orig; }, 1500);
       } catch (_) {}
     } else if (action === 'opensea') {
-      window.open(OPENSEA_BASE + '/assets/ethereum/' + TOKEN_AGENT_ADDRESS, '_blank', 'noopener,noreferrer');
+      window.open(OPENSEA_BASE + '/assets/ethereum/' + contractAddr, '_blank', 'noopener,noreferrer');
     } else if (action === 'etherscan' || action === 'share') {
       // Reuse the existing 'share' icon as Etherscan link (icon is generic enough).
-      window.open(ETHERSCAN_BASE + '/address/' + TOKEN_AGENT_ADDRESS, '_blank', 'noopener,noreferrer');
+      window.open(ETHERSCAN_BASE + '/address/' + contractAddr, '_blank', 'noopener,noreferrer');
     }
     // 'x' and 'more' kept as no-ops (already-existing placeholder buttons)
   });
