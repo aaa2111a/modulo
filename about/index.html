@@ -31,11 +31,11 @@
      (rare; fallback text+link still readable). -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
-  script-src 'self' 'sha256-I9Yfcq7guXpscFi+G0+tohjedD6HTkxEQAMsmvRwWNM=' 'sha256-A3ETGxrcp9DTjGzMeHPhzmYsPpIQYAylCdYHxrzxAos=' 'sha256-QBnDYJZwhBXOrgmZ9UEkle1nD40H9Vt2YvnqkMJhoZA=' 'sha256-KjVWMhTuGbrm7UCORRBroU+iHvJEmhZBJglyBQ50lNQ=' 'sha256-kiizwSgR+4P7t0jnOdKHFd2CA3FFVsn7fuZ3rTsHVuU=' 'sha256-dDSWZarw2uRHIInlXyZ/Avc//aK5jQn14L1kP9TgdGs=' https://cdn.jsdelivr.net;
+  script-src 'self' 'sha256-I9Yfcq7guXpscFi+G0+tohjedD6HTkxEQAMsmvRwWNM=' 'sha256-A3ETGxrcp9DTjGzMeHPhzmYsPpIQYAylCdYHxrzxAos=' 'sha256-QBnDYJZwhBXOrgmZ9UEkle1nD40H9Vt2YvnqkMJhoZA=' 'sha256-KjVWMhTuGbrm7UCORRBroU+iHvJEmhZBJglyBQ50lNQ=' 'sha256-M0Y6avZqYyrSU4PySQQ1vusnKNvNUJPy/NsDSSc/9i0=' 'sha256-dDSWZarw2uRHIInlXyZ/Avc//aK5jQn14L1kP9TgdGs=' https://cdn.jsdelivr.net;
   style-src 'self' 'sha256-U2A+UzAvwB47kSXoLHdQYJ4CZluXxeuRwgdaJjt9rPs=';
   font-src 'self' data:;
   img-src 'self' data: blob:;
-  connect-src 'self' https://rpc.sepolia.org https://ethereum-sepolia-rpc.publicnode.com;
+  connect-src 'self' https://ethereum-rpc.publicnode.com;
   base-uri 'self';
   form-action 'self';
 ">
@@ -2155,11 +2155,9 @@ body.night .sys-entry-label  { color:rgba(255,255,255,0.30); }
           </div>
           <div class="meta-row">
             <span class="meta-label">Contract</span>
-            <!-- Value cleared pre-launch (2026-05-12). At mainnet, replace with:
-                 <a class="meta-value meta-link" id="meta-contract-link"
-                    href="https://etherscan.io/address/0xMAINNET_ADDR"
-                    target="_blank" rel="noopener noreferrer">0xMAIN…NETXX ↗</a> -->
-            <span class="meta-value"></span>
+            <a class="meta-value meta-link" id="meta-contract-link"
+               href="https://etherscan.io/address/0x6608cF973ba7DaA8f935bbFB4DF4f787e7b91c80"
+               target="_blank" rel="noopener noreferrer">0x6608…91c80 ↗</a>
           </div>
           <div class="meta-row">
             <span class="meta-label">Storage</span>
@@ -2167,9 +2165,7 @@ body.night .sys-entry-label  { color:rgba(255,255,255,0.30); }
           </div>
           <div class="meta-row">
             <span class="meta-label">Status</span>
-            <!-- Value cleared pre-launch (2026-05-12). At mainnet: "Mainnet" /
-                 "Live" / "Mint open" / etc. -->
-            <span class="meta-value"></span>
+            <span class="meta-value">Mainnet</span>
           </div>
         </div>
         <div class="meta-mint">
@@ -2180,11 +2176,7 @@ body.night .sys-entry-label  { color:rgba(255,255,255,0.30); }
           </div>
           <div class="qty-cost"><b id="qty-cost-val">0.0069</b> ETH<span id="qty-quota-hint"></span></div>
           <button class="mint-btn" id="mint-btn">MINT</button>
-          <!-- Mint counter disabled 2026-05-17 per Le directive. To re-enable:
-               restore this div + flip MINT_COUNTER_LIVE = true in the JS section
-               (see also MINT_DAY.md §3 T-1 item — flip + COUNTER_RPC mainnet swap).
           <div class="mint-counter" id="mint-counter">— / 6666 minted</div>
-          -->
           <div class="mint-wallet" id="mint-wallet" title="click to disconnect">
             <b id="mint-wallet-addr">—</b>
           </div>
@@ -3330,7 +3322,7 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
   // To launch: flip false → true, redeploy. Nothing else to change here.
   // T-1 runbook: also swap TOKEN_AGENT_ADDRESS + CHAIN_ID + RPC URLs + CSP.
   // ════════════════════════════════════════════════════════════════════════
-  const MINT_ENABLED = false;
+  const MINT_ENABLED = true;
 
   // ════════════════════════════════════════════════════════════════════════
   // MINT COUNTER FEATURE FLAG (P2 backlog 2026-05-13)
@@ -3345,10 +3337,10 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
   // early return so MINT_COUNTER_LIVE=true / MINT_ENABLED=false (showing
   // pre-launch live count) works correctly. Reviewer P1 fix 2026-05-13.
   // ════════════════════════════════════════════════════════════════════════
-  const MINT_COUNTER_LIVE = false;
+  const MINT_COUNTER_LIVE = true;
   const MAX_SUPPLY = 6666;
   const COUNTER_POLL_MS = 30_000;
-  const COUNTER_RPC = 'https://ethereum-sepolia-rpc.publicnode.com';
+  const COUNTER_RPC = 'https://modulo.ubk.art/rpc'; // Cloudflare Worker → Alchemy mainnet (read-only, paid)
 
   // ════════════════════════════════════════════════════════════════════════
   // COUNTDOWN TIMER (countdown-patch-2026-05-19, security-auditor agentId
@@ -3373,23 +3365,28 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
 
   // ── Constants matching contracts.md / TokenAgent Sepolia deploy ─────────
   // Public on-chain address (visible on Etherscan + contracts.md). Not a secret.
-  const TOKEN_AGENT_ADDRESS = '0x628d0b9563529305CAcba0Ed396aE22a98968f0d'; // gitleaks:allow — v4 Sepolia 2026-05-18 (deploy block 10875630)
+  const TOKEN_AGENT_ADDRESS = '0x6608cF973ba7DaA8f935bbFB4DF4f787e7b91c80'; // gitleaks:allow — MAINNET v6 (WL + ownerMint), deployed 2026-05-21
   const TOKEN_AGENT_ABI = [
     'function mint(uint256 quantity) external payable',
+    'function mintWl(uint256 quantity, bytes32[] proof) external payable',
     'function totalMinted() external view returns (uint256)',
     'function mintedBy(address) external view returns (uint256)',
     'function mintOpen() external view returns (bool)',
+    'function wlEndTime() external view returns (uint256)',
   ];
-  const CHAIN_ID = 11155111;                     // Sepolia
+  // WL proofs (Merkle) hosted alongside this page (about/proofs.json). Relative
+  // path so it works at modulo.ubk.art/about/. connect-src 'self' covers it.
+  const PROOFS_URL = './proofs.json';
+  const CHAIN_ID = 1;                            // Ethereum mainnet
   const CHAIN_HEX = '0x' + CHAIN_ID.toString(16);
   const CHAIN_INFO = {
     chainId: CHAIN_HEX,
-    chainName: 'Sepolia',
-    nativeCurrency: { name: 'Sepolia Ether', symbol: 'ETH', decimals: 18 },
-    rpcUrls: ['https://ethereum-sepolia-rpc.publicnode.com', 'https://rpc.sepolia.org'],
-    blockExplorerUrls: ['https://sepolia.etherscan.io'],
+    chainName: 'Ethereum',
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    rpcUrls: ['https://ethereum-rpc.publicnode.com'],
+    blockExplorerUrls: ['https://etherscan.io'],
   };
-  const ETHERSCAN_TX = 'https://sepolia.etherscan.io/tx/';
+  const ETHERSCAN_TX = 'https://etherscan.io/tx/';
   const WALLET_LS_KEY = 'tc-wallet-address';     // shared across modulo.ubk.art pages
   const MIN = 1, MAX = 20;                       // matches MAX_PER_WALLET (lowered 100 → 20 on 2026-05-17, see CHANGELOG Brief #6)
   const PRICE_ETH = 0.0069;                      // matches MINT_PRICE
@@ -3422,6 +3419,15 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
   // Countdown state (countdown-patch-2026-05-19)
   let _countdownTimer = null;
   let _lastOnchainPoll = 0;
+
+  // ── WL state (Paso 8 WL integration 2026-05-20) ─────────────────────────
+  let _isWl = false;            // current wallet is in the Merkle whitelist
+  let _wlProof = null;          // bytes32[] proof for current wallet (or null)
+  let _proofsCache = null;      // parsed proofs.json (fetched lazily on connect)
+  let _proofsFetchPromise = null; // dedup concurrent fetches (P2-2)
+  let _wlEndTime = null;        // cached once — immutable post-deploy (P2-3)
+  // phase: 'unknown' | 'pre-open' | 'wl-window' | 'public' | 'sold-out'
+  let _mintPhase = 'unknown';   // set by _updateMintButton, read by _renderWallet (P3-3)
 
   // ── Helpers ─────────────────────────────────────────────────────────────
   const _fmt = n => Number(n.toFixed(4)).toString();
@@ -3456,6 +3462,34 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
     }
   }
 
+  // ── WL helpers (Paso 8 WL integration 2026-05-20) ──────────────────────
+  // Fetch proofs.json once, cache it, dedup concurrent fetches (P2-2). 2.2MB
+  // lazy-loaded on connect (not page-load) so non-minting visitors don't pay.
+  async function _fetchProofs() {
+    if (_proofsCache) return _proofsCache;
+    if (_proofsFetchPromise) return _proofsFetchPromise;
+    _proofsFetchPromise = fetch(PROOFS_URL)
+      .then(r => { if (!r.ok) throw new Error('proofs ' + r.status); return r.json(); })
+      .then(data => { _proofsCache = data; return data; })
+      .catch(err => { _proofsFetchPromise = null; throw err; }); // null → allow retry
+    return _proofsFetchPromise;
+  }
+
+  // Look up the connected wallet in the WL proofs → set _isWl + _wlProof.
+  // UX-only: the contract is the source of truth. Forging _isWl client-side
+  // just produces a NotInWl revert (leaf is bound to msg.sender on-chain).
+  async function _checkWl() {
+    _isWl = false; _wlProof = null;
+    if (!_address) return;
+    try {
+      const proofs = await _fetchProofs();
+      const proof = proofs[_address.toLowerCase()];
+      if (Array.isArray(proof) && proof.length) { _isWl = true; _wlProof = proof; }
+    } catch (e) {
+      console.warn('[mint] WL proofs fetch failed:', e); // non-WL fallback
+    }
+  }
+
   function _renderWallet() {
     // Fix #5: chain-mismatch + Fix #3: cap-reached states surfaced via the
     // MINT button. Order of precedence: not connected → cap reached → wrong
@@ -3475,9 +3509,19 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
         _b.textContent = 'WALLET CAP REACHED';
         _b.disabled = true;
       } else if (wrongChain) {
-        _b.textContent = 'SWITCH TO SEPOLIA';
+        _b.textContent = 'SWITCH TO ETHEREUM';
         _b.disabled = false;
+      } else if (_mintPhase === 'wl-window') {
+        // WL sub-window: only whitelisted wallets can mint (via mintWl).
+        if (_isWl) {
+          _b.textContent = 'MINT (WHITELIST)';
+          _b.disabled = false;
+        } else {
+          _b.textContent = 'WHITELIST ONLY';
+          _b.disabled = true;
+        }
       } else {
+        // public phase (or phase unknown but wallet ready) → standard mint()
         _b.textContent = 'MINT';
         _b.disabled = false;
       }
@@ -3585,6 +3629,8 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
       // Awaited (was fire-and-forget) so callers like _onMintClick block until
       // _remaining is loaded — otherwise modal could open with qty > real cap.
       await _refreshQuota();
+      await _checkWl();   // Paso 8: determine WL status (fetch proofs + lookup)
+      _renderWallet();    // re-render now that _isWl is known
       return _address;
     } catch (err) {
       if (err && err.code === 4001) {
@@ -3652,11 +3698,11 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
           }
           return id === CHAIN_ID;
         } catch (e2) {
-          _toast('Chain switch failed', { sub: 'Switch to Sepolia in your wallet', variant: 'error' });
+          _toast('Chain switch failed', { sub: 'Switch to Ethereum mainnet in your wallet', variant: 'error' });
           return false;
         }
       }
-      _toast('Chain switch rejected', { sub: 'Switch to Sepolia in your wallet', ttlMs: 4000 });
+      _toast('Chain switch rejected', { sub: 'Switch to Ethereum mainnet in your wallet', ttlMs: 4000 });
       return false;
     }
   }
@@ -3691,7 +3737,7 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
     // Fix #3: cap reached → block at click level (button is also disabled, but
     // belt-and-suspenders in case state drifts between render and click).
     if (_quotaLoaded && _remaining === 0) {
-      _toast('Wallet cap reached', { sub: 'You have already minted 100 tokens', ttlMs: 4000 });
+      _toast('Wallet cap reached', { sub: 'You have already minted ' + MAX + ' tokens', ttlMs: 4000 });
       return;
     }
     // Fix #2: treat _chainId === null as "unknown chain → force switch".
@@ -3720,15 +3766,35 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
       const signer = await _provider.getSigner();
       const agent = new window.ethers.Contract(TOKEN_AGENT_ADDRESS, TOKEN_AGENT_ABI, signer);
       const totalWei = window.ethers.toBigInt(PRICE_WEI_STR) * window.ethers.toBigInt(q);
-      tx = await agent.mint(q, { value: totalWei });
+      // P1-1: re-read on-chain state FRESH at tx time (the window may have closed
+      // between modal open and signing). Route to mintWl only if still in WL
+      // window AND wallet is whitelisted; otherwise public mint().
+      let useWl = false;
+      try {
+        const mintOpenNow = await agent.mintOpen();
+        if (_wlEndTime === null) { _wlEndTime = Number(await agent.wlEndTime()); }
+        const nowS = Math.floor(Date.now() / 1000);
+        useWl = !!(mintOpenNow && nowS < _wlEndTime && _isWl && _wlProof);
+      } catch (_) { useWl = false; }
+      if (useWl) {
+        tx = await agent.mintWl(q, _wlProof, { value: totalWei });
+      } else {
+        tx = await agent.mint(q, { value: totalWei });
+      }
     } catch (err) {
       _dismissToast(_toastPending);
       _mmConfirm.disabled = false;
       _mmCancel.disabled = false;
+      const msg = (err && (err.shortMessage || err.reason || err.message)) || 'unknown error';
       if (err && (err.code === 4001 || err.code === 'ACTION_REJECTED')) {
         _toast('Mint cancelled', { sub: 'You rejected the transaction', ttlMs: 3500 });
+      } else if (/WlEnded|wl.?ended/i.test(msg)) {
+        // P1-1: WL window closed between modal open and signing. Fall back to
+        // public mint — invalidate WL state so next click routes to mint().
+        _isWl = false; _wlProof = null; _mintPhase = 'public';
+        _renderWallet();
+        _toast('WL window closed', { sub: 'Public mint is now open — click MINT again', variant: 'error', ttlMs: 8000 });
       } else {
-        const msg = (err && (err.shortMessage || err.reason || err.message)) || 'unknown error';
         console.error('[mint] tx submit failed:', err);
         _toast('Mint failed', { sub: String(msg).slice(0, 100), variant: 'error', ttlMs: 6500 });
       }
@@ -3888,25 +3954,46 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
       if (isOpen) {
         const minted = await agent.totalMinted();
         if (minted >= BigInt(MAX_SUPPLY)) {
+          _mintPhase = 'sold-out';
           _b.textContent = 'SOLD OUT';
           _b.disabled = true;
-        } else {
-          _b.textContent = 'MINT';
-          // MINT_ENABLED still gates click handler — if false, keep disabled
-          // visually (no wallet flow wired). When MINT_ENABLED flips true at
-          // T-0 atomic change, this branch will enable normally.
-          _b.disabled = !MINT_ENABLED;
-          if (MINT_ENABLED) {
-            _b.classList.remove('pre-mint');
-          }
+          if (_countdownTimer) { clearInterval(_countdownTimer); _countdownTimer = null; }
+          return;
         }
-        // Terminal state — stop polling (P2-A)
-        if (_countdownTimer) {
-          clearInterval(_countdownTimer);
-          _countdownTimer = null;
+        // WL-aware (Paso 8): distinguish WL window from public phase.
+        // wlEndTime is immutable — cache after first successful read (P2-3).
+        if (_wlEndTime === null) {
+          try { _wlEndTime = Number(await agent.wlEndTime()); } catch { _wlEndTime = null; }
+        }
+        const nowS = Math.floor(Date.now() / 1000);
+        const inWlWindow = _wlEndTime !== null && nowS < _wlEndTime;
+        _b.classList.remove('pre-mint');
+
+        if (inWlWindow) {
+          _mintPhase = 'wl-window';
+          if (_address) {
+            // wallet connected → _renderWallet shows MINT (WHITELIST) / WHITELIST ONLY
+            _renderWallet();
+          } else {
+            const mins = Math.max(0, Math.ceil((_wlEndTime - nowS) / 60));
+            _b.textContent = 'WHITELIST MINT · public in ' + mins + 'm';
+            _b.disabled = !MINT_ENABLED;
+          }
+          // KEEP polling — window transitions to public when wlEndTime passes.
+        } else {
+          _mintPhase = 'public';
+          if (_address) {
+            _renderWallet();
+          } else {
+            _b.textContent = 'MINT';
+            _b.disabled = !MINT_ENABLED;
+          }
+          // Public phase is terminal — stop polling (P2-A).
+          if (_countdownTimer) { clearInterval(_countdownTimer); _countdownTimer = null; }
         }
       } else {
         // Mint not yet opened by owner
+        _mintPhase = 'pre-open';
         _b.textContent = 'OPENING ANY MOMENT';
         _b.classList.add('with-spinner');
         _b.disabled = true;
@@ -3994,6 +4081,12 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
   if (localStorage.getItem(WALLET_LS_KEY) && window.ethereum) {
     _connect(true);
   }
+  // Paso 8: drive the WL-aware on-chain state machine (sets _mintPhase, picks
+  // wl-window vs public). In production (MINT_ENABLED=false) _startCountdown
+  // runs in the pre-mint block; with MINT_ENABLED=true we must start it here
+  // too, otherwise _updateMintButton never runs and the button can't reflect
+  // the WL window / public phase.
+  if (COUNTDOWN_ACTIVE) _startCountdown();
 })();
 </script>
 
