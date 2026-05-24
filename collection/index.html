@@ -3096,7 +3096,11 @@ function _createArtifactEngine(canvas, rawComposition) {
     if (t.hasDX && t.dx && t.dx.length) tokenDitherPatterns[sId][i] = DX_KEY_BY_INDEX[t.dx[0]] || 'x';
     if (t.rv && t.rv.length) tokenRectVariants[sId][i] = RV_NAME_BY_INDEX[t.rv[0]] || null;
   });
-  const _tokenOpsArr = COMPOSITION.tokens.map(t => Math.max(1, Math.round((t.speed || 49) / 7)));
+  // v3 sync (2026-05-22): speed is canonical ops range 1..28 (matches workshop
+  // engine + the on-chain artifact-render-v2.html); default 10. Was: round(speed/7)
+  // — legacy v1 conversion → MP4 export rendered at 1/7 the ops/frame of the
+  // on-chain renderer (~7× intensity drift). security-auditor a321707f GO.
+  const _tokenOpsArr = COMPOSITION.tokens.map(t => Math.max(1, t.speed || 10));
   const _sumTokenOps = _tokenOpsArr.reduce((a, b) => a + b, 0) || 14;
 
   function getTokenDitherPattern(modId, i) { return tokenDitherPatterns[modId] && tokenDitherPatterns[modId][i] != null ? tokenDitherPatterns[modId][i] : null; }
