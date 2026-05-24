@@ -3073,8 +3073,8 @@ html.dark .settle-modal .settle-modal-warn {
   <div id="toast-stack"></div>
 
   <!-- Lock confirmation modal (plan.md §6.3). Production duration options:
-       1h/6h/12h. Sepolia-only `1m` button removed 2026-05-17 ahead of mainnet
-       per Le directive. -->
+       1h/6h/12h/24h/48h. 24h+48h added 2026-05-24 (async collaboration).
+       Sepolia-only `1m` button removed 2026-05-17 ahead of mainnet. -->
   <div class="overlay" id="lock-overlay">
     <div class="modal lock-modal">
       <div class="lock-modal-tbar">
@@ -3091,6 +3091,8 @@ html.dark .settle-modal .settle-modal-warn {
           <button class="lock-dur-btn active" data-dur="1h">1h</button>
           <button class="lock-dur-btn" data-dur="6h">6h</button>
           <button class="lock-dur-btn" data-dur="12h">12h</button>
+          <button class="lock-dur-btn" data-dur="24h">24h</button>
+          <button class="lock-dur-btn" data-dur="48h">48h</button>
         </div>
         <div class="mbtns">
           <button class="mbtn" id="lock-modal-cancel">Cancel</button>
@@ -9964,7 +9966,11 @@ function _createArtifactEngine(canvas, rawComposition) {
     if (t.hasDX && t.dx && t.dx.length) tokenDitherPatterns[sId][i] = DX_KEY_BY_INDEX[t.dx[0]] || 'x';
     if (t.rv && t.rv.length) tokenRectVariants[sId][i] = RV_NAME_BY_INDEX[t.rv[0]] || null;
   });
-  const _tokenOpsArr = COMPOSITION.tokens.map(t => Math.max(1, Math.round((t.speed || 49) / 7)));
+  // v3 sync (2026-05-22): speed is canonical ops range 1..28 (matches the on-chain
+  // artifact-render-v2.html + workshop engine); default 10. Was: round(speed/7) —
+  // legacy v1 → MP4 export rendered at 1/7 the ops/frame of on-chain (~7× drift).
+  // security-auditor a321707f GO.
+  const _tokenOpsArr = COMPOSITION.tokens.map(t => Math.max(1, t.speed || 10));
   const _sumTokenOps = _tokenOpsArr.reduce((a, b) => a + b, 0) || 14;
   function getTokenDitherPattern(modId, i) { return tokenDitherPatterns[modId] && tokenDitherPatterns[modId][i] != null ? tokenDitherPatterns[modId][i] : null; }
   function getTokenSize(modId, i) { return tokenSizes[modId] && tokenSizes[modId][i] != null ? tokenSizes[modId][i] : null; }
@@ -11321,13 +11327,17 @@ else window.addEventListener('fb-ready', _fbInitEnsSync, { once: true });
 // ≥2 distinct owners' locks to preserve the social/collaborative aspect.
 
 // Duration constants. See plan.md §1.4 + §4.2.
-// Production options: 1h / 6h / 12h. Sepolia-only `1m` removed 2026-05-17 per
-// Le directive ahead of mainnet (was testnet ergonomic for quick lock-and-settle
-// rehearsal; would create grief vector on mainnet if any caller forced it).
+// Production options: 1h / 6h / 12h / 24h / 48h. 24h+48h added 2026-05-24 per
+// Le directive (async collaboration across timezones). CF MAX_LOCK_DURATION_MS
+// raised to 48h in lockstep; lowering the FE map without lowering CF cap is
+// safe, but adding FE keys above CF cap would server-reject with invalid-argument.
+// Sepolia-only `1m` removed 2026-05-17 ahead of mainnet (was testnet ergonomic).
 const LOCK_DURATIONS = {
   '1h':  1  * 60 * 60 * 1000,
   '6h':  6  * 60 * 60 * 1000,
   '12h': 12 * 60 * 60 * 1000,
+  '24h': 24 * 60 * 60 * 1000,
+  '48h': 48 * 60 * 60 * 1000,
 };
 /** Default duration selected when the lock modal opens. */
 const LOCK_DURATION_DEFAULT = '1h';
@@ -11461,7 +11471,7 @@ async function lockToken(modId, tokenNum, durationMs) {
 // from a different wallet, etc.). When the orphan timer eventually fires,
 // the defensive guard at line 8278-8280 (`!entry || entry.owner !== SESSION_USER`)
 // short-circuits the unlockToken call. Bounded: MAX_OWN_PER_MODULO=4 × ~10
-// modulos = 40 entries max, ~12 KB worst case, lifetime ≤ MAX_LOCK_DURATION
+// modulos = 40 entries max, ~12 KB worst case, lifetime ≤ MAX_LOCK_DURATION (~48h)
 // (~12h). Diff-cleanup logic in the _fbInitSync onValue handler was considered
 // but skipped — cost (10+ LOC + cognitive overhead "did I get the diff right")
 // outweighs benefit (12 KB self-resolving in ≤12h).
@@ -13957,8 +13967,8 @@ function _dismissToast(el) {
 }
 
 // ═══ Lock UI — confirmation modal + button wiring (plan.md §6.3) ═══
-// Duration selector: 3 production options (1h/6h/12h). Sepolia-only `1m`
-// option removed 2026-05-17 per Le (see LOCK_DURATIONS comment).
+// Duration selector: 5 production options (1h/6h/12h/24h/48h). 24h+48h added
+// 2026-05-24 per Le. Sepolia-only `1m` removed 2026-05-17 (see LOCK_DURATIONS).
 
 // Pending lock request — set when user clicks the checkmark, cleared on confirm/cancel.
 let _pendingLock = null;
@@ -13971,6 +13981,8 @@ const _LOCK_DURATION_LABELS = {
   '1h':  '1 hour',
   '6h':  '6 hours',
   '12h': '12 hours',
+  '24h': '24 hours',
+  '48h': '48 hours',
 };
 
 function openLockModal(modId, tokenNum) {
@@ -14061,7 +14073,7 @@ async function confirmLockModal() {
     // Click on the backdrop (outside the modal body) dismisses
     if (e.target === overlay) closeLockModal();
   });
-  // Wire duration selector buttons. The 1m/1h/6h/12h buttons all have
+  // Wire duration selector buttons. The 1h/6h/12h/24h/48h buttons all have
   // class .lock-dur-btn with data-dur="<key>". On click, update the pending
   // duration + re-render the visual selection.
   document.querySelectorAll('.lock-dur-btn').forEach(btn => {
