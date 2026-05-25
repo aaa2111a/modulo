@@ -2659,6 +2659,11 @@ html.dark .settle-modal .settle-modal-warn {
   .minimap    { zoom: 0.7; }
   .modulo-nav { zoom: 0.7; }
 
+  /* Viewport top compensates for topbar zoom (34px × 0.7 = 23.8px rendered).
+     Default #viewport.top = 34px (L581) does not respect the zoom, leaving a
+     ~10px gap of cream --bg visible between topbar and viewport. */
+  #viewport { top: 24px; }
+
   /* ── Phase diagram hidden in overview (mobile) ───────────────
      In overview mode the cards compress to tiny tiles. The phase diagram
      (mode/size sequence chips) becomes unreadable noise that clutters the
@@ -10400,6 +10405,9 @@ document.querySelector('.topbar-home-dot').addEventListener('click', e => {
 // on-chain read). Phase 2: pure on-chain — there is no JS-side preview pool
 // any more, the contract's `totalMinted()` is the only source of truth.
 let _onchainTotalMinted = null;
+// Topbar pills shrink labels on mobile (≤1024px, matches the .topbar zoom:0.7
+// scope at L2652+). matchMedia is sync — safe to read on initial render.
+const _widthMQ = window.matchMedia('(max-width:1024px)');
 function updatePillTokens() {
   // "Locked" = tokens placed in shared (non-personal) modulos. Workshop drafts
   // (personal modulo) are private and excluded. The pill is a public counter:
@@ -10407,10 +10415,21 @@ function updatePillTokens() {
   // out of the on-chain total minted.
   const locked = MODULOS.filter(m => !m.personal).reduce((a,c) => a + c.tokens.length, 0);
   const denom  = (_onchainTotalMinted != null) ? _onchainTotalMinted : '—';
-  document.getElementById('pill-tokens').textContent = `${locked}/${denom} tokens`;
+  document.getElementById('pill-tokens').textContent = `${locked}/${denom} ${_widthMQ.matches ? 't' : 'tokens'}`;
+}
+function updatePillModulos() {
+  document.getElementById('pill-modulos').textContent = `${MODULOS.length} ${_widthMQ.matches ? 'm' : 'modulos'}`;
 }
 updatePillTokens();
-document.getElementById('pill-modulos').textContent=`${MODULOS.length} modulos`;
+updatePillModulos();
+// Re-render on viewport crossing the 1024px threshold (rotation, devtools toggle).
+// Guard for legacy Safari ≤13 / Chrome ≤61 (same pattern as L10477).
+if (_widthMQ.addEventListener) {
+  _widthMQ.addEventListener('change', () => {
+    updatePillTokens();
+    updatePillModulos();
+  });
+}
 
 function updateTopbarWallet() {
   // The connected wallet address is rendered by `_renderWalletUI()` into
