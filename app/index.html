@@ -403,7 +403,7 @@ button, a, [role="button"], .pill, #info-btn, .toggle-btn, .modal-close,
 }
 #topbar-inv-sep { opacity:0.3; }
 #topbar-inv { opacity:0.85; }
-.pill { font-size:10px; padding:2px 9px; border-radius:20px; border:0.5px solid var(--pill-border); color:var(--pill-color); background:var(--pill-bg); }
+.pill { font-size:10px; padding:2px 9px; border-radius:20px; border:0.5px solid var(--pill-border); color:var(--pill-color); background:var(--pill-bg); white-space:nowrap; }
 .toggle-btn { padding:3px 11px; border-radius:20px; border:0.5px solid var(--toggle-border); background:var(--toggle-bg); color:var(--toggle-color); font-size:10px; cursor:pointer; letter-spacing:.04em; transition:background 0.2s, color 0.2s, border-color 0.2s; }
 #bg-color-btn { width:16px; height:16px; border-radius:50%; border:1.5px solid var(--node-border); cursor:pointer; flex-shrink:0; transition:transform 0.15s; padding:0; }
 #bg-color-btn:hover { transform:scale(1.25); }
@@ -3291,7 +3291,7 @@ let SESSION_USER = null;
 
 // ═══ TOKEN_DATA — on-chain population (Phase 2, 2026-05-04) ═══
 // In Phase 2 the entire TOKEN_DATA array is hydrated from the TokenAgent
-// contract via `_sepoliaSync()` (see below): for each minted tokenId we read
+// contract via `_chainSync()` (see below): for each minted tokenId we read
 // `getTraits(id)` + `ownerOf(id)` and store the converted record at
 // TOKEN_DATA[id]. The array is 1-INDEXED (slot 0 is unused / null) to mirror
 // the contract's 1-based tokenId convention. Burned / un-minted slots stay
@@ -3433,7 +3433,7 @@ const RECT_VARIANTS = ['core','mecha','hysteria','metro','side-b','earthquake','
 
 // TOKEN_DATA is 1-indexed: TOKEN_DATA[id] is the record for tokenId `id`.
 // Slot 0 is unused (kept as null so the indexing math stays trivial).
-// Hydrated by `_sepoliaSync()` post wallet-connect. Burned / un-minted
+// Hydrated by `_chainSync()` post wallet-connect. Burned / un-minted
 // tokens stay null — every consumer guards with `TOKEN_DATA[i] && ...`.
 const TOKEN_DATA = [null];
 
@@ -3748,7 +3748,7 @@ function reseedPositionOps(modId) {
 
 // ═══ Inventory state ═══
 // Inventory = user-owned tokens NOT already placed in a modulo.
-// Initial pass runs before _sepoliaSync hydrates TOKEN_DATA, so this list
+// Initial pass runs before _chainSync hydrates TOKEN_DATA, so this list
 // is empty until _rebuildInventory is called post-connect. Kept here so
 // `tokenInventory` is a stable identity referenced by other modules.
 const _placed = new Set(MODULOS.flatMap(m => m.tokens));
@@ -3828,7 +3828,7 @@ function _rebuildInventory() {
 //      changed even if identities didn't), skip heavy UI rebuild
 //   3. If tokens changed: full UI rebuild path
 // `forceRebuild=true` skips the `tokensChanged` guard for the heavy UI rebuild
-// at the bottom of the function. Used by `_sepoliaSync` post-hydration: locks
+// at the bottom of the function. Used by `_chainSync` post-hydration: locks
 // that landed via Firebase listener BEFORE TOKEN_DATA was hydrated produced
 // a render with rank-9999 fallback + default color; once hydration completes
 // we must re-run the sort + visual rebuild even though `mod.tokens` itself
@@ -3840,12 +3840,12 @@ function _syncModuloState(mod, forceRebuild = false) {
   // 1. Build merged token list
   const lockedEntries = fbLocked[mod.id] || {};
   // Filter out zombie locks: tokens that were burned on-chain (TOKEN_DATA[id]
-  // is null after _sepoliaSync's ownerOf() reverted with ERC721NonexistentToken)
+  // is null after _chainSync's ownerOf() reverted with ERC721NonexistentToken)
   // but whose Firebase entry still lingers because no client called unlockToken.
   // Without this filter the slot renders with rank-0 + default color (TOKEN_DATA
   // lookup fails → fallback path). The sweeper will eventually clean Firebase,
   // but we don't want to wait visually. Pre-hydration (TOKEN_DATA[id] === undefined
-  // before _sepoliaSync runs) keep the lock — assume it's valid until proven otherwise.
+  // before _chainSync runs) keep the lock — assume it's valid until proven otherwise.
   const lockedTokens = Object.keys(lockedEntries)
     .map(Number)
     .filter(t => TOKEN_DATA[t] !== null);
@@ -3937,7 +3937,7 @@ function _syncModuloState(mod, forceRebuild = false) {
   }
 
   // 5. UI refresh. Only do the heavy rebuild if the token list actually changed,
-  // OR the caller explicitly forces it (e.g. _sepoliaSync post-hydration).
+  // OR the caller explicitly forces it (e.g. _chainSync post-hydration).
   if (tokensChanged || forceRebuild) {
     // Wait for the card DOM to exist before touching it — early init may call this
     // before buildModulo has rendered.
@@ -4797,7 +4797,7 @@ function buildTokenList(mod) {
     // token then transfers to wallet2, the row must flip to wallet2's display.
     // Was `fakeAddr(mod.id, i)` (Phase 1 cosmetic placeholder, pre on-chain
     // ownership). Switched 2026-05-17 to TOKEN_DATA[t].owner so ENS names
-    // resolve via _resolveDisplayName. Fallback to fakeAddr until _sepoliaSync
+    // resolve via _resolveDisplayName. Fallback to fakeAddr until _chainSync
     // hydration completes (td.owner can be null on cold start).
     const full  = (td && td.owner) || fakeAddr(mod.id, i);
     const st    = td.status || 'connected';
@@ -8553,7 +8553,7 @@ let _maCurrentFilter = 'owned';        // 'owned' | 'settled' | 'all'
 let _maData          = null;           // { ownedIds: Set, settledIds: Set, allIds: Set }
 let _maScanInFlight  = false;
 const _maCacheKeyFor = (user) => `tc-my-artifacts:${SETTLE_ARTIFACT_ADDRESS}:${user.toLowerCase()}`;
-const _MA_CACHE_TTL_BLOCKS = 25;       // invalidate cache after 25 blocks (~5 min Sepolia)
+const _MA_CACHE_TTL_BLOCKS = 25;       // invalidate cache after 25 blocks (~5 min @ 12s mainnet block time)
 const _MA_CHUNK_SIZE       = 5000;     // safely under publicnode/Alchemy 10k getLogs limit
 const _MA_RENDER_CAP       = 200;      // defensive: don't render more than 200 cards at once
 // `_ZERO_ADDR` reused from L9628's pre-existing declaration (same scope).
@@ -8960,7 +8960,7 @@ function _maHandleCardClick(artifactId) {
 // `openExpand(modId, cardEl)` (LIVE workshop modulos, different semantics)
 // and `#expand-overlay` DOM (also live workshop).
 
-// Etherscan base — derived from WALLET_TARGET_CHAIN_INFO (Sepolia today,
+// Etherscan base — derived from WALLET_TARGET_CHAIN_INFO (mainnet,
 // mainnet on T-0 swap). Used for Settler/Owner/Token links inside DETAILS
 // popup and for the ONCHAIN modal's "Read Contract" deep link.
 //
@@ -10400,7 +10400,7 @@ document.querySelector('.topbar-home-dot').addEventListener('click', e => {
   });
 })();
 
-// _onchainTotalMinted is populated by _sepoliaSync() after wallet connect.
+// _onchainTotalMinted is populated by _chainSync() after wallet connect.
 // Until then we show "—" as the denominator (real total unknown without an
 // on-chain read). Phase 2: pure on-chain — there is no JS-side preview pool
 // any more, the contract's `totalMinted()` is the only source of truth.
@@ -11718,7 +11718,7 @@ async function _sweepStaleGuests() {
 // Generic session bootstrap — writes the presence record at
 // `/{basePath}/{sessionId}` and swaps SESSION_USER. Phase 2: ownership is
 // on-chain via TokenAgent; no pool claim, no inventory rebuild on session
-// start (TOKEN_DATA owners are placeholders until _sepoliaSync runs).
+// start (TOKEN_DATA owners are placeholders until _chainSync runs).
 async function _startSession({ sessionId, basePath, label }) {
   if (!window.FB) return false;
   const { db, ref, set } = window.FB;
@@ -11814,13 +11814,13 @@ async function _initWalletSession(address) {
     basePath:   'wallets',
     label:      'wallet',
   });
-  // Auto-sync on-chain ownership (Phase 2). Replaces manual `_sepoliaSync()`
+  // Auto-sync on-chain ownership (Phase 2). Replaces manual `_chainSync()`
   // call from devtools console. Wired 2026-05-05 — Le's request: "podemos
   // pasar al sepolia async automatico pls". Failure is non-fatal — wallet
   // session still works, just without on-chain inventory hydration.
-  if (typeof _sepoliaSync === 'function') {
-    try { await _sepoliaSync(); }
-    catch (err) { dbg.warn('[wallet] auto-sepoliaSync failed:', err); }
+  if (typeof _chainSync === 'function') {
+    try { await _chainSync(); }
+    catch (err) { dbg.warn('[wallet] auto-chainSync failed:', err); }
   }
   // Activate Transfer event listener once provider is ready. Idempotent —
   // safe to call multiple times across reconnects (NEW 2026-05-07: keeps UI
@@ -11829,7 +11829,7 @@ async function _initWalletSession(address) {
     try { await _setupTransferListener(); }
     catch (err) { dbg.warn('[wallet] transfer listener setup failed:', err); }
   }
-  // Refresh topbar after _sepoliaSync stamps owner=SESSION_USER on the user's
+  // Refresh topbar after _chainSync stamps owner=SESSION_USER on the user's
   // tokens. Otherwise the topbar-inv counter stays at the value from
   // _endSession's call (when SESSION_USER was 0x0000…0000 → matched all the
   // pre-generated TOKEN_DATA placeholders → shown as "600 tokens").
@@ -11846,10 +11846,10 @@ async function _walletDeferredFallback() {
   await _initGuestSession();
   // Hydrate TOKEN_DATA from on-chain even without wallet — guests need it for
   // locks held by other users to render with real rank + color (bug 2026-05-06).
-  // _sepoliaSync now uses _getReadonlyProvider() so this works without ethereum.
-  if (typeof _sepoliaSync === 'function') {
-    try { await _sepoliaSync(); }
-    catch (err) { console.error('[bootstrap] guest sepoliaSync failed:', err); }
+  // _chainSync now uses _getReadonlyProvider() so this works without ethereum.
+  if (typeof _chainSync === 'function') {
+    try { await _chainSync(); }
+    catch (err) { console.error('[bootstrap] guest chainSync failed:', err); }
   }
   // Activate Transfer listener for guests too (read-only) so they see
   // real-time updates of mints/burns/transfers in shared modulos.
@@ -11867,7 +11867,7 @@ async function _walletDeferredFallback() {
 // Does NOT touch SESSION_USER, Firebase, or ownership yet — that comes in
 // Pass 2/3 once the /wallets/ schema is migrated.
 //
-// Target chain: Sepolia (11155111). Chain warning is decorative until the
+// Target chain: Ethereum mainnet (1). Chain warning is decorative until the
 // contract is deployed.
 // ─────────────────────────────────────────────────────────────────────────────
 const WALLET_TARGET_CHAIN_ID = 1; // Ethereum mainnet
@@ -11885,7 +11885,7 @@ const WALLET_TARGET_CHAIN_INFO = {
 const WALLET_LS_KEY = 'tc-wallet-address';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// On-chain contracts (Sepolia POC — addresses replaced for mainnet)
+// On-chain contracts (Ethereum mainnet, v7 deployed 2026-05-21)
 // Deployed 2026-05-04 from `Code/contracts/script/Deploy.s.sol`
 // EthFS placeholders uploaded via `Code/contracts/script/UploadFiles.s.sol`
 // ─────────────────────────────────────────────────────────────────────────────
@@ -12127,7 +12127,7 @@ function _getTokenAgent(runner) {
 // Read-only provider for view calls (`ownerOf`, `getTraits`, `totalMinted`).
 // Bypasses MetaMask so reverts on burned-token reads don't show up as `RPC Error
 // execution reverted` noise in DevTools (MetaMask logs every revert via inpage.js
-// before our try/catch can swallow it). Used by `_sepoliaSync`. Wallet provider
+// before our try/catch can swallow it). Used by `_chainSync`. Wallet provider
 // is still used for state-changing tx (settle, mint) and signing.
 let _readonlyProvider = null;
 function _getReadonlyProvider() {
@@ -12138,7 +12138,7 @@ function _getReadonlyProvider() {
   try {
     // batchMaxCount: 20 — ethers v6 auto-batches concurrent reads into JSON-RPC
     // arrays (default cap 100). The Cloudflare Worker proxy rejects any batch
-    // >20 (worker.js MAX_BATCH=20) with HTTP 400. _sepoliaSync fans out 2 reads
+    // >20 (worker.js MAX_BATCH=20) with HTTP 400. _chainSync fans out 2 reads
     // per minted token (ownerOf+getTraits), so at 100 mints that's 200 calls →
     // batches of 100 → 400 storm. Capping at 20 keeps ethers batches within the
     // Worker's accepted size. (security-auditor a05a2db5, 2026-05-21.)
@@ -12202,27 +12202,27 @@ function _traitsToTokenData(id, t, owner) {
 
 // Phase 2 hydration: pulls every minted token's traits + owner from the
 // TokenAgent contract and populates TOKEN_DATA. Called automatically after
-// wallet connect (see _initWalletSession). For Sepolia test mode the volume
+// wallet connect (see _initWalletSession). The volume
 // (≤100 mints) is fine for a parallel fan-out; mainnet at full supply will
 // need pagination + an indexer-driven batch path.
 //
 // Burned / un-minted tokenIds revert on `getTraits` / `ownerOf` — caught
 // silently and left as null in TOKEN_DATA. Every consumer null-guards.
-// 2026-05-14: mutex against concurrent _sepoliaSync runs. Without this, safety-net
+// 2026-05-14: mutex against concurrent _chainSync runs. Without this, safety-net
 // polling (fire-and-forget) + visibilitychange (awaited) can overlap and both
 // iterate the workshop cleanup loop, racing on stale mod.tokens indices and
 // removing the wrong slot. Reviewer-flagged P3 risk addressed defensively.
-let _sepoliaSyncRunning = false;
+let _chainSyncRunning = false;
 
-async function _sepoliaSync() {
-  if (_sepoliaSyncRunning) return { ok: false, reason: 'already-running' };
-  _sepoliaSyncRunning = true;
+async function _chainSync() {
+  if (_chainSyncRunning) return { ok: false, reason: 'already-running' };
+  _chainSyncRunning = true;
   try {
   // Use a dedicated readonly RPC provider for view calls instead of MetaMask's
   // BrowserProvider. Reason: view calls on burned tokens revert with
   // ERC721NonexistentToken — perfectly normal, our try/catch handles it — but
   // MetaMask's inpage.js logs every revert as "RPC Error: execution reverted"
-  // before our catch runs, polluting DevTools. Public Sepolia RPC handles the
+  // before our catch runs, polluting DevTools. The Worker-proxied RPC handles the
   // revert without logging. Wallet provider remains for tx + signing.
   //
   // Guest mode: this function still hydrates TOKEN_DATA via the readonly RPC
@@ -12232,7 +12232,7 @@ async function _sepoliaSync() {
   // connected a wallet (bug 2026-05-06).
   const provider = _getReadonlyProvider() || _walletProvider;
   if (!provider) {
-    dbg.warn('[sepolia] no provider available');
+    dbg.warn('[chain] no provider available');
     return { ok: false, reason: 'no-provider' };
   }
   const agent = _getTokenAgent(provider);
@@ -12240,13 +12240,13 @@ async function _sepoliaSync() {
 
   let total;
   try { total = Number(await agent.totalMinted()); }
-  catch (err) { console.error('[sepolia] totalMinted failed:', err); return { ok: false, reason: 'rpc-error', err }; }
-  dbg.log('[sepolia] totalMinted on-chain:', total);
+  catch (err) { console.error('[chain] totalMinted failed:', err); return { ok: false, reason: 'rpc-error', err }; }
+  dbg.log('[chain] totalMinted on-chain:', total);
   // Stash on a module global so the topbar pill can show the truthful denominator.
   // updatePillTokens reads `_onchainTotalMinted` and re-renders.
   _onchainTotalMinted = total;
   if (typeof updatePillTokens === 'function') updatePillTokens();
-  if (total === 0) { dbg.log('[sepolia] no tokens minted yet'); return { ok: true, count: 0 }; }
+  if (total === 0) { dbg.log('[chain] no tokens minted yet'); return { ok: true, count: 0 }; }
 
   // Grow TOKEN_DATA to total+1 so direct index writes don't sparse-fill it.
   while (TOKEN_DATA.length <= total) TOKEN_DATA.push(null);
@@ -12276,9 +12276,9 @@ async function _sepoliaSync() {
     owned = TOKEN_DATA
       .filter(t => t && t.owner && t.owner.toLowerCase() === _walletAddress.toLowerCase())
       .map(t => t.id);
-    dbg.log('[sepolia] tokens owned by', _shortAddr(_walletAddress), ':', owned);
+    dbg.log('[chain] tokens owned by', _shortAddr(_walletAddress), ':', owned);
   } else {
-    dbg.log('[sepolia] hydrated', TOKEN_DATA.filter(t => t).length, 'tokens (guest mode, no inventory)');
+    dbg.log('[chain] hydrated', TOKEN_DATA.filter(t => t).length, 'tokens (guest mode, no inventory)');
   }
 
   if (typeof _rebuildInventory === 'function') _rebuildInventory();
@@ -12287,7 +12287,7 @@ async function _sepoliaSync() {
 
   // Re-sync shared modulos so locks already in fbLocked pick up TOKEN_DATA
   // owners/ranks now that hydration is complete. Without this, locks that
-  // landed via Firebase listener BEFORE _sepoliaSync finished render with
+  // landed via Firebase listener BEFORE _chainSync finished render with
   // rank-9999 fallback + default color, and stay stale until the user
   // manually triggers a re-render (e.g. dragging an inventory token in).
   // forceRebuild=true bypasses the `tokensChanged` guard since mod.tokens
@@ -12326,10 +12326,10 @@ async function _sepoliaSync() {
 
   return { ok: true, count: owned.length, tokens: owned };
   } finally {
-    _sepoliaSyncRunning = false;
+    _chainSyncRunning = false;
   }
 }
-window._sepoliaSync = _sepoliaSync;
+window._chainSync = _chainSync;
 
 // ── Transfer event listener (NEW 2026-05-07, WS upgrade 2026-05-08) ───────
 // Keeps TOKEN_DATA + UI in sync with on-chain state without page refresh.
@@ -12354,9 +12354,7 @@ window._sepoliaSync = _sepoliaSync;
 // Auto-reconnect on close: WS can drop on network blip / RPC maintenance.
 // Reconnect logic recreates the provider and re-attaches the Transfer listener.
 const _ZERO_ADDR = '0x0000000000000000000000000000000000000000';
-const _WSS_URL_SEPOLIA = 'wss://ethereum-rpc.publicnode.com'; // mainnet WSS (const name kept; internal only)
 let _wsProvider = null;
-let _wsReconnectTimer = null;
 let _transferListenerActive = false;
 let _transferListenerContract = null;
 
@@ -12368,60 +12366,10 @@ function _getEventProvider() {
   // JsonRpcProvider), which block-polls via eth_blockNumber + eth_getLogs — all
   // through the key-hidden, method-allowlisted Worker. Background-tab throttling
   // is covered by the existing 60s safety-net poll + visibility re-arm. A proper
-  // Worker-proxied Alchemy WSS is a post-mainnet upgrade (Option A).
+  // Worker-proxied Alchemy WSS is a post-mainnet upgrade (Option A); 2026-05-25
+  // dead WSS reconnect/destroy body removed (Brief #7, reviewer a293e6684011cd067).
+  // Note: `let _wsProvider` is kept (used by visibilitychange handler downstream).
   return null;
-  // eslint-disable-next-line no-unreachable
-  if (_wsProvider) return _wsProvider;
-  if (!window.ethers || !window.ethers.WebSocketProvider) return null;
-  try {
-    _wsProvider = new window.ethers.WebSocketProvider(_WSS_URL_SEPOLIA, WALLET_TARGET_CHAIN_ID);
-    // Capture provider ref at attach-time so the close handler always destroys
-    // the provider that owns THIS socket, not whatever `_wsProvider` happens to
-    // point at when the close fires (matters during reconnect storms — 3+
-    // reconnects in 10s could otherwise destroy the wrong instance).
-    const ourProvider = _wsProvider;
-    // Hook into the underlying browser WebSocket for connection state events.
-    // ethers v6 exposes the raw socket on `_wsProvider.websocket`.
-    const sock = _wsProvider.websocket;
-    if (sock && typeof sock.addEventListener === 'function') {
-      sock.addEventListener('close', () => {
-        dbg.warn('[ws] provider closed, reconnecting in 3s...');
-        // 2026-05-08 audit Round 3 fix: explicitly destroy the provider
-        // before nulling. ethers v6 WebSocketProvider holds internal
-        // references (PollingBlockSubscriber, scheduled drainer timeout,
-        // socket handler chain) that defeat GC if only the external ref is
-        // nulled. Without destroy(), 5-10 silent-kill reconnects in a 1-2h
-        // session = 5-10 zombie providers held by their internal closures.
-        // Destroy is idempotent + try/catch covers the InvalidStateError
-        // case where the socket is already closed.
-        try { ourProvider && ourProvider.destroy && ourProvider.destroy(); } catch (_) {}
-        // Only null the global ref if it's still pointing at the provider
-        // we just destroyed — protects against the storm-reconnect race
-        // where a fresh provider replaced this one between the close event
-        // queueing and firing.
-        if (_wsProvider === ourProvider) _wsProvider = null;
-        _transferListenerActive = false;
-        _transferListenerContract = null;
-        clearTimeout(_wsReconnectTimer);
-        _wsReconnectTimer = setTimeout(() => {
-          if (typeof _setupTransferListener === 'function') {
-            _setupTransferListener().catch(err => {
-              dbg.warn('[ws] reconnect failed:', err && err.message);
-            });
-          }
-        }, 3000);
-      });
-      sock.addEventListener('error', (err) => {
-        // close handler will fire reconnect; just log here
-        dbg.warn('[ws] socket error:', (err && err.message) || 'unknown');
-      });
-    }
-    dbg.log('[ws] provider connected:', _WSS_URL_SEPOLIA);
-    return _wsProvider;
-  } catch (err) {
-    dbg.warn('[ws] failed to create provider:', err && err.message);
-    return null;
-  }
 }
 
 // Handler for a single Transfer event — extracted as a shared function so
@@ -12559,7 +12507,7 @@ async function _handleTransferEvent(from, to, tokenId, agent) {
 let _lastProcessedBlock = null;
 // Heartbeat: timestamp (ms) of last block event received. Used by the
 // visibility handler to detect a "silent dead" WS even when readyState
-// lies (or close event never fired). Sepolia block time = 12s, so >120s
+// lies (or close event never fired). Block time = 12s, so >120s
 // without a block = at least 10 blocks missed = the socket is unreliable.
 let _lastBlockReceivedTs = 0;
 
@@ -12660,13 +12608,13 @@ async function _setupTransferListener() {
 window._setupTransferListener = _setupTransferListener;
 
 // Safety-net polling (NEW 2026-05-13): publicnode WSS observed pushing block
-// events every 30-60s instead of expected ~12s (Sepolia block time). When WS is
+// events every 30-60s instead of expected ~12s (block time). When WS is
 // slow/degraded, the listener catches up via queryFilter at the next block event
 // — but UI lag can be 60-90s. This polling layer ensures max ~60s lag regardless
 // of WS health by combining a totalMinted() check (catches new mints) AND a
 // balanceOf(wallet) check (catches burns and transfers in/out, which don't
 // change totalMinted). Bounded cost: 2 RPCs/60s when wallet connected, 1 in
-// guest mode. Full _sepoliaSync only runs if either signal advanced.
+// guest mode. Full _chainSync only runs if either signal advanced.
 //
 // Why both checks: totalMinted is monotonic (never decreases). Settle burns
 // tokens but totalMinted stays the same — without balanceOf as a second signal,
@@ -12691,7 +12639,7 @@ function _startSafetyNetPolling() {
       if (_walletAddress) {
         currentBalance = Number(await agent.balanceOf(_walletAddress));
       }
-      // cachedBalance may be 0 before first _sepoliaSync completes — that's
+      // cachedBalance may be 0 before first _chainSync completes — that's
       // intentional: the mismatch triggers a sync, which is the correct behavior.
       const cachedBalance = _walletAddress
         ? TOKEN_DATA.filter(t => t && t.owner && t.owner.toLowerCase() === _walletAddress.toLowerCase()).length
@@ -12699,8 +12647,8 @@ function _startSafetyNetPolling() {
       // Skip only if BOTH totalMinted and user's balance are unchanged from cache.
       if (currentTotal === _onchainTotalMinted && currentBalance === cachedBalance) return;
     } catch (_) { /* fall through to full sync on error */ }
-    if (typeof _sepoliaSync === 'function') {
-      _sepoliaSync().catch(err => dbg.warn('[safety-net] sepoliaSync failed:', err && err.message));
+    if (typeof _chainSync === 'function') {
+      _chainSync().catch(err => dbg.warn('[safety-net] chainSync failed:', err && err.message));
     }
   }, 60000);
 }
@@ -12712,7 +12660,7 @@ _startSafetyNetPolling();
 // fast tab-switching doesn't spam RPC reads.
 let _lastVisibilitySync = 0;
 const _MIN_VIS_SYNC_MS = 10000;
-const _HEARTBEAT_DEAD_MS = 120000;  // 120s = 10+ Sepolia blocks missed = socket unreliable
+const _HEARTBEAT_DEAD_MS = 120000;  // 120s = 10+ blocks missed = socket unreliable
 document.addEventListener('visibilitychange', async () => {
   if (document.hidden) return;
   const now = Date.now();
@@ -12755,8 +12703,8 @@ document.addEventListener('visibilitychange', async () => {
     _wsProvider = null;
   }
 
-  if (typeof _sepoliaSync === 'function') {
-    try { await _sepoliaSync(); }
+  if (typeof _chainSync === 'function') {
+    try { await _chainSync(); }
     catch (err) { dbg.warn('[vis] sync failed:', err && err.message); }
   }
   // Re-arm Transfer listener if it was dropped while the tab was hidden
@@ -13030,7 +12978,7 @@ async function _walletConnect({ silent = false } = {}) {
     // Locked-MetaMask gate (silent path only). MetaMask returns the cached
     // account from eth_accounts even when the extension is locked, which makes
     // the page show as "connected" with the address displayed — but signing,
-    // _sepoliaSync hydration, and any owner-mutation flow silently fail because
+    // _chainSync hydration, and any owner-mutation flow silently fail because
     // MetaMask refuses signer requests until unlocked. Cleaner UX: treat locked
     // as disconnected. User unlocks → click "connect" (or the unlock event
     // listener below auto-retries) → normal flow proceeds.
@@ -13976,7 +13924,7 @@ function _showToast(text, opts) {
   stack.appendChild(el);
   // sticky=true → caller manages lifecycle via el.classList.add('fade-out') + remove(),
   // typically wrapped in _dismissToast() below. Used for tx-pending feedback where the
-  // toast must stay visible for the full network round-trip (10-30s on Sepolia).
+  // toast must stay visible for the full network round-trip (10-30s on mainnet).
   if (!o.sticky) {
     const ttl = o.ttlMs || 4200;
     setTimeout(() => {
@@ -14313,7 +14261,7 @@ async function confirmSettleModal() {
  */
 async function _runSettle(mod, settleBtn) {
   if (settleBtn) settleBtn.disabled = true;
-  // Tx-pending feedback: settle takes 10-30s on Sepolia (sign + nonce
+  // Tx-pending feedback: settle takes 10-30s on mainnet (sign + nonce
   // read + attestSettle + signTypedData + submit + tx.wait). Without this
   // toast the user sees a frozen disabled button and assumes the click was lost.
   const _toast = _showToast('Settling…', { sticky: true, sub: 'sign + submit + confirm' });
