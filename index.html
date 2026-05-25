@@ -10,10 +10,12 @@
      SHA-256 hashes of the 3 inline blocks. See collection/index.html for
      full rationale + recompute command.
 
-     Hashes (recomputed 2026-05-10 post innerHTML→createElement refactor):
-       script L33  frame-buster sha256-cooyBZAlZu1T3HOVT2HZ2IZLls6JoUhfWkQASjIzBck=
-       script L389 main         sha256-KMyNcRhUKcexFeW6RE5WohNiWKMdSqT5eh/krtW9x7I=  (recomputed 2026-05-13 — _navigateTo debounce + bfcache reset)
-       style  L64  main CSS     sha256-tvdyL0JDjyJQO79zj8QEve3eMioXUf4Rfb593Ol3lsw=
+     Hashes (recomputed 2026-05-25 — Brief #6 homepage audit fixes: WX-1 window
+     clamp + CT-1 CTA mobile bump):
+       script L36  frame-buster sha256-cooyBZAlZu1T3HOVT2HZ2IZLls6JoUhfWkQASjIzBck=  (unchanged)
+       script L67  favicon      sha256-sJrvXijSCIizqGtBssKayf/JcGhbabJZUlW+iEKkXIE=  (unchanged)
+       script L469 main         sha256-lEkUs0GyAUnjaViBAJ18QZdlCUxZXQl9HIQkngv+afQ=  (window clamp in _openWindows)
+       style  L136 main CSS     sha256-u3fXQqsZbaXlpa4y/2uMIw6tBVi9XJFUmOl0rYzxreo=  (CT-1 @media pointer:coarse for .hero-cta)
 
      KNOWN LIMITATION: frame-buster fallback (~L33) builds replacement HTML
      with style="..." attrs via DOM element.style. cssText. Without 'unsafe-inline'
@@ -21,8 +23,8 @@
      iframe-bust scenario (rare; fallback text+link still readable). -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
-  script-src 'self' 'sha256-cooyBZAlZu1T3HOVT2HZ2IZLls6JoUhfWkQASjIzBck=' 'sha256-sJrvXijSCIizqGtBssKayf/JcGhbabJZUlW+iEKkXIE=' 'sha256-KMyNcRhUKcexFeW6RE5WohNiWKMdSqT5eh/krtW9x7I=';
-  style-src 'self' 'sha256-tvdyL0JDjyJQO79zj8QEve3eMioXUf4Rfb593Ol3lsw=';
+  script-src 'self' 'sha256-cooyBZAlZu1T3HOVT2HZ2IZLls6JoUhfWkQASjIzBck=' 'sha256-sJrvXijSCIizqGtBssKayf/JcGhbabJZUlW+iEKkXIE=' 'sha256-lEkUs0GyAUnjaViBAJ18QZdlCUxZXQl9HIQkngv+afQ=';
+  style-src 'self' 'sha256-u3fXQqsZbaXlpa4y/2uMIw6tBVi9XJFUmOl0rYzxreo=';
   font-src 'self' data:;
   img-src 'self' data: blob:;
   connect-src 'self';
@@ -315,6 +317,14 @@ html, body { width:100%; margin:0; padding:0; height:100%; overflow:hidden; back
 .hero-cta:hover {
   background:var(--cta-hbg);
   border-color:var(--cta-hborder);
+}
+
+/* Touch devices: bump CTA to meet practical tap-target threshold.
+   Default padding:7px font:10px → 28px height (below 30px on the page's only
+   primary CTA). Gated to (pointer:coarse) so desktop mouse precision is
+   unaffected. Brief #6 audit 2026-05-25, security-auditor abda576e GO. */
+@media (pointer: coarse) {
+  .hero-cta { padding:11px 22px; font-size:11px; }
 }
 
 /* ── Page transition ── */
@@ -1888,7 +1898,16 @@ function _openWindows() {
   WIN_DATA.forEach(d => {
     const wrap = document.createElement('div');
     wrap.className = 'mod-wrapper';
-    wrap.style.left            = d.x;
+    // Clamp initial x position so windows always fit inside the viewport.
+    // Without this, Collection (x:'67vw', w:312) overflows by 188px at 375px
+    // viewport — its .mod-label link sits off-screen with no scroll fallback
+    // (body { overflow:hidden }). Mirrors the same Math.max/min bound that
+    // _dodgeWindow already applies on window close (L1857+). Brief #6 audit
+    // 2026-05-25, security-auditor abda576e GO.
+    const _vw = window.innerWidth;
+    const _rawX = parseFloat(d.x) / 100 * _vw;   // 'NNvw' → px
+    const _clampedX = Math.max(10, Math.min(_vw - d.w - 10, _rawX));
+    wrap.style.left            = _clampedX + 'px';
     wrap.style.top             = d.y;
     wrap.style.animation       = `win-float ${d.fDur} ease-in-out ${d.fDel} infinite`;
 
