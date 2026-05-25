@@ -290,8 +290,9 @@ html, body {
   overscroll-behavior: none;
   touch-action: manipulation;
 }
-button, a, [role="button"], .pill, .info-btn, .toggle-btn, .modal-close,
-.tr-lock-btn, .info-tab {
+button, a, [role="button"], .pill, #info-btn, .toggle-btn, .modal-close,
+.tr-lock-btn, .info-tab,
+#wallet-toggle-btn, #wallet-chain-warn, #ens-verify-btn, #wallet-address {
   touch-action: manipulation;
 }
 
@@ -303,7 +304,7 @@ button, a, [role="button"], .pill, .info-btn, .toggle-btn, .modal-close,
    (the ::after is never even generated). */
 @media (pointer: coarse) {
   .pill,
-  .info-btn,
+  #info-btn,
   #info-close,
   .info-tab,
   .card-settle-btn,
@@ -313,11 +314,15 @@ button, a, [role="button"], .pill, .info-btn, .toggle-btn, .modal-close,
   #bg-color-btn,
   #toggle,
   .toggle-btn,
-  #nav-overview-btn {
+  #nav-overview-btn,
+  #wallet-toggle-btn,
+  #wallet-chain-warn,
+  #ens-verify-btn,
+  #wallet-address {
     position: relative;
   }
   .pill::after,
-  .info-btn::after,
+  #info-btn::after,
   #info-close::after,
   .info-tab::after,
   .card-settle-btn::after,
@@ -327,7 +332,11 @@ button, a, [role="button"], .pill, .info-btn, .toggle-btn, .modal-close,
   #bg-color-btn::after,
   #toggle::after,
   .toggle-btn::after,
-  #nav-overview-btn::after {
+  #nav-overview-btn::after,
+  #wallet-toggle-btn::after,
+  #wallet-chain-warn::after,
+  #ens-verify-btn::after,
+  #wallet-address::after {
     content: '';
     position: absolute;
     top: 50%; left: 50%;
