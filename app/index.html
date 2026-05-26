@@ -11314,6 +11314,16 @@ function _fbInitSync() {
         });
       });
     }
+
+    // OPT-3 Phase B v2 (Brief #11+#11b 2026-05-26): Opción C re-trigger.
+    // On every snapshot (first or subsequent), hydrate TOKEN_DATA for newly-
+    // seen FB-locked tokens. Resolves Bug 2: at boot, fbLocked is empty when
+    // _chainSync runs → locks would render as blue blanks rank-9999. This
+    // re-trigger covers that race. Idempotent (mutex + === undefined filter
+    // skip already-hydrated). Fire-and-forget — onValue handler is sync.
+    if (typeof _hydrateFbLocked === 'function') {
+      _hydrateFbLocked().catch(err => dbg.warn('[FB] _hydrateFbLocked failed:', err && err.message));
+    }
   }, err => console.error('[FB] listener error:', err));
 }
 
@@ -12261,32 +12271,27 @@ async function _chainSync() {
   // Without this, guests saw locked tokens as "blue blanks" until they
   // connected a wallet (bug 2026-05-06).
   //
-  // OPT-3 Phase B ATTEMPTED 2026-05-26 and ROLLED BACK same-day. Post-mortem
-  // validated by security-auditor Brief #9 (agentId `af3bbf2e59d1d150c`):
-  //   Bug 1 (mutex collision): when _walletConnect({silent:true}) FAILS at boot
-  //     (MetaMask locked / no accounts), bootstrap falls to _walletDeferredFallback
-  //     → _initGuestSession → _chainSync() with _walletAddress=null (guest path).
-  //     User then clicks "connect" → _walletConnect → _initWalletSession →
-  //     _chainSync(), which hits `_chainSyncRunning=true` mutex from guest call
-  //     still in flight → returns early → USER tokens never hydrate.
-  //     (Initial main-agent diagnosis "bootstrap before _walletAddress set" was
-  //     a FP — happy-path silent reconnect DOES set _walletAddress at L13136
-  //     before _initWalletSession. The real trigger is guest-fallback-then-connect.)
-  //   Bug 2 (fbLocked empty): fbLocked listener (`_fbInitSync` L11273) registers
-  //     onValue async; first snapshot arrives AFTER _chainSync completes during
-  //     boot. Phase B's `for (const modId of Object.keys(fbLocked))` iterated
-  //     empty object → cero locks hydrated → blue blanks rank-9999 (regression
-  //     of bug fixed 2026-05-06).
-  // Pre-OPT-3 the O(N) loop hydrated all tokens unconditionally + a post-pass
-  // `_syncModuloState(mod, forceRebuild=true)` + Firebase-listener-triggered
-  // re-render covered the timing — Phase B broke that robustness.
-  // Phase A helper `_userScopedTokenIds` retained at L12336+ (works standalone,
-  // testable from console). Post-mint redesign options documented in CHANGELOG
-  // 2026-05-26: A subscribe-first w/ timeout, B lazy-hydrate from consumers,
-  // C re-trigger on fbLocked snapshot, D mutex queue. Brief #9 also flagged a
-  // silent correctness bug in Phase B (P2): _traitsToTokenData(id, traits,
-  // _walletAddress) assumes all scan results are user-owned — must use ownerOf
-  // confirmation in any Phase C attempt.
+  // OPT-3 Phase B v2 (Brief #11+#11b 2026-05-26, reviewer a7fb15e31f178254f):
+  // Two-track scoped hydration:
+  //   Track 1 USER: _userScopedTokenIds Transfer event scan → only hydrate ids
+  //     owned by this wallet. O(blocks/CHUNK) instead of O(totalMinted).
+  //     Fallback: if scan fails or aborts, falls back to full O(N) ownerOf loop
+  //     (pre-OPT-3 behavior) — guarantees correctness on any RPC failure.
+  //     Both paths use Promise.all([ownerOf, getTraits]) for ownership re-verify
+  //     at hydration time (P2 silent-correctness fix from Brief #9).
+  //   Track 2 FB-locked: _hydrateFbLocked helper covers tokens locked by OTHER
+  //     users in shared modulos (not in USER scope). Called here if fbLocked
+  //     already populated (re-connect path); _fbInitSync re-triggers on every
+  //     snapshot (Opción C timing fix for Bug 2 from Brief #9).
+  //
+  // Guest mode (_walletAddress null): skips Track 1 entirely. Track 2
+  // _hydrateFbLocked covers what guest needs to render shared modulos.
+  //
+  // Previous attempt (rolled back same-day 2026-05-26): naively wired
+  // _userScopedTokenIds without fallback + without _hydrateFbLocked re-trigger
+  // → Bug 1 (mutex collision, now resolved by D.2) + Bug 2 (fbLocked empty)
+  // both surfaced. This v2 addresses all three (D.2 mutex + fallback O(N) +
+  // Opción C re-trigger).
   const provider = _getReadonlyProvider() || _walletProvider;
   if (!provider) {
     dbg.warn('[chain] no provider available');
@@ -12308,34 +12313,80 @@ async function _chainSync() {
   // Grow TOKEN_DATA to total+1 so direct index writes don't sparse-fill it.
   while (TOKEN_DATA.length <= total) TOKEN_DATA.push(null);
 
-  // Hydrate in parallel — one ownerOf + getTraits pair per minted id.
-  // Burned tokens revert; the catch keeps TOKEN_DATA[id] = null (skipped).
-  const tasks = [];
-  for (let id = 1; id <= total; id++) {
-    tasks.push((async () => {
-      try {
-        const [owner, traits] = await Promise.all([
-          agent.ownerOf(id),
-          agent.getTraits(id),
-        ]);
-        TOKEN_DATA[id] = _traitsToTokenData(id, traits, owner);
-      } catch (_) {
-        TOKEN_DATA[id] = null; // burned or nonexistent
-      }
-    })());
-  }
-  await Promise.all(tasks);
-
-  // Inventory only relevant when a wallet is connected. Guest mode still
-  // benefits from TOKEN_DATA hydration above (rank + color for shared locks).
   let owned = [];
+
+  // ═══ Track 1 — USER scope (Transfer event scan + fallback O(N)) ═══
   if (_walletAddress) {
-    owned = TOKEN_DATA
-      .filter(t => t && t.owner && t.owner.toLowerCase() === _walletAddress.toLowerCase())
-      .map(t => t.id);
-    dbg.log('[chain] tokens owned by', _shortAddr(_walletAddress), ':', owned);
+    let scanResult = null;
+    try {
+      scanResult = await _userScopedTokenIds(_walletAddress, provider, agent);
+    } catch (err) {
+      dbg.warn('[chain] _userScopedTokenIds failed, falling back to O(N) loop:', err && err.message);
+      scanResult = null;
+    }
+
+    if (scanResult && !scanResult.aborted && scanResult.ownedIds) {
+      // Happy path: Transfer scan succeeded
+      const userIds = scanResult.ownedIds;
+      dbg.log('[chain] Phase B: hydrating', userIds.size, 'user-owned tokens via event scan');
+      const tasks = [];
+      for (const id of userIds) {
+        tasks.push((async () => {
+          try {
+            while (TOKEN_DATA.length <= id) TOKEN_DATA.push(null);
+            const [owner, traits] = await Promise.all([
+              agent.ownerOf(id),
+              agent.getTraits(id),
+            ]);
+            TOKEN_DATA[id] = _traitsToTokenData(id, traits, owner);
+          } catch (_) {
+            TOKEN_DATA[id] = null; // burned since last Transfer event
+          }
+        })());
+      }
+      await Promise.all(tasks);
+      const walletLc = _walletAddress.toLowerCase();
+      for (const id of userIds) {
+        const td = TOKEN_DATA[id];
+        if (td && td.owner && td.owner.toLowerCase() === walletLc) owned.push(id);
+      }
+      dbg.log('[chain] tokens owned by', _shortAddr(_walletAddress), ':', owned);
+    } else {
+      // Fallback path: event scan failed or aborted → full O(N) ownerOf loop
+      // (pre-OPT-3 behavior, guarantees correctness on any RPC failure)
+      dbg.warn('[chain] Phase B fallback: O(N) ownerOf loop');
+      const tasks = [];
+      for (let id = 1; id <= total; id++) {
+        tasks.push((async () => {
+          try {
+            const [owner, traits] = await Promise.all([
+              agent.ownerOf(id),
+              agent.getTraits(id),
+            ]);
+            TOKEN_DATA[id] = _traitsToTokenData(id, traits, owner);
+          } catch (_) {
+            TOKEN_DATA[id] = null;
+          }
+        })());
+      }
+      await Promise.all(tasks);
+      const walletLc = _walletAddress.toLowerCase();
+      owned = TOKEN_DATA
+        .filter(t => t && t.owner && t.owner.toLowerCase() === walletLc)
+        .map(t => t.id);
+      dbg.log('[chain] fallback: tokens owned by', _shortAddr(_walletAddress), ':', owned);
+    }
   } else {
-    dbg.log('[chain] hydrated', TOKEN_DATA.filter(t => t).length, 'tokens (guest mode, no inventory)');
+    dbg.log('[chain] guest mode — deferring hydration to _hydrateFbLocked');
+  }
+
+  // ═══ Track 2 — FB-locked tokens (called if fbLocked already populated) ═══
+  // If fbLocked is empty (normal boot timing where Firebase snapshot arrives
+  // after this point), Track 2 is a no-op here and _fbInitSync onValue handler
+  // re-triggers _hydrateFbLocked() when the snapshot arrives (Opción C).
+  if (typeof fbLocked === 'object' && fbLocked && Object.keys(fbLocked).length > 0) {
+    try { await _hydrateFbLocked(); }
+    catch (err) { dbg.warn('[chain] _hydrateFbLocked failed:', err && err.message); }
   }
 
   if (typeof _rebuildInventory === 'function') _rebuildInventory();
@@ -12524,6 +12575,88 @@ async function _userScopedTokenIds(user, provider, agent, signal) {
 }
 // Expose for console testing pre-wiring (Phase A standalone validation).
 window._userScopedTokenIds = _userScopedTokenIds;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// _hydrateFbLocked — OPT-3 Phase B companion (Brief #11+#11b 2026-05-26)
+// ═══════════════════════════════════════════════════════════════════════════
+// Hydrates TOKEN_DATA for tokens referenced in fbLocked that are NOT yet
+// hydrated. Called:
+//   1. From _chainSync body when fbLocked already has data (re-connect path)
+//   2. From _fbInitSync onValue handler on EACH snapshot (Opción C re-trigger)
+//      — covers Bug 2: first snapshot typically arrives AFTER _chainSync
+//      completes during boot, so locks were not hydratable inline.
+//
+// Filter `TOKEN_DATA[id] === undefined` (not `!TOKEN_DATA[id]`): skip both
+// already-hydrated (object) AND confirmed-burned (null). Avoids re-fetch of
+// burned tokens on stale FB entries (saves 2 RPC calls per burned per
+// snapshot). Coherent with _syncModuloState L3851 pattern (`!== null`).
+//
+// P2 safety: always calls ownerOf() (real on-chain truth) instead of trusting
+// fbLocked[mod.id][tokenNum].owner (Firebase data, mutable, may lag).
+//
+// Mutex `_hydrateFbLockedRunning`: Firebase snapshots can burst (WS reconnect,
+// flush of accumulated writes) → without mutex, 2+ instances race on writes
+// and rebuilds. Same defensive pattern as _chainSyncRunning. Per reviewer
+// Brief #11b P2-1 (agentId a7fb15e31f178254f).
+//
+// Self-sufficient: triggers _rebuildInventory + _syncModuloState rebuild
+// internally so standalone callers (e.g. _fbInitSync) don't need to chain.
+let _hydrateFbLockedRunning = false;
+async function _hydrateFbLocked() {
+  if (_hydrateFbLockedRunning) return;
+  _hydrateFbLockedRunning = true;
+  try {
+    const provider = _getReadonlyProvider() || _walletProvider;
+    if (!provider) return;
+    const agent = _getTokenAgent(provider);
+    if (!agent) return;
+
+    const toHydrate = new Set();
+    if (typeof fbLocked === 'object' && fbLocked) {
+      for (const modId of Object.keys(fbLocked)) {
+        const locked = fbLocked[modId];
+        if (!locked || typeof locked !== 'object') continue;
+        for (const tokenNumStr of Object.keys(locked)) {
+          const id = Number(tokenNumStr);
+          if (!id || !Number.isInteger(id) || id < 1) continue;
+          // === undefined: only hydrate if never touched. Skip burned (null).
+          if (TOKEN_DATA[id] === undefined) toHydrate.add(id);
+        }
+      }
+    }
+    if (!toHydrate.size) return;
+    dbg.log('[chain] _hydrateFbLocked: hydrating', toHydrate.size, 'FB-locked tokens');
+
+    const tasks = [];
+    for (const id of toHydrate) {
+      tasks.push((async () => {
+        try {
+          while (TOKEN_DATA.length <= id) TOKEN_DATA.push(null);
+          const [owner, traits] = await Promise.all([
+            agent.ownerOf(id),
+            agent.getTraits(id),
+          ]);
+          TOKEN_DATA[id] = _traitsToTokenData(id, traits, owner);
+        } catch (_) {
+          TOKEN_DATA[id] = null; // burned or nonexistent — stale FB entry
+        }
+      })());
+    }
+    await Promise.all(tasks);
+
+    if (typeof _rebuildInventory === 'function') _rebuildInventory();
+    if (typeof updatePillTokens === 'function') updatePillTokens();
+    if (typeof updateTopbarWallet === 'function') updateTopbarWallet();
+    if (typeof MODULOS !== 'undefined' && typeof _syncModuloState === 'function') {
+      MODULOS.forEach(mod => {
+        if (!mod.personal) _syncModuloState(mod, /* forceRebuild */ true);
+      });
+    }
+  } finally {
+    _hydrateFbLockedRunning = false;
+  }
+}
+window._hydrateFbLocked = _hydrateFbLocked;
 
 // ── Transfer event listener (NEW 2026-05-07, WS upgrade 2026-05-08) ───────
 // Keeps TOKEN_DATA + UI in sync with on-chain state without page refresh.
