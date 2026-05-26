@@ -12221,18 +12221,23 @@ async function _chainSync() {
   if (_chainSyncRunning) return { ok: false, reason: 'already-running' };
   _chainSyncRunning = true;
   try {
+  // OPT-3 Phase B (Brief #8b 2026-05-25, reviewer a43cafc79d35dd969):
+  // Replaces O(totalMinted) fan-out with scoped hydration:
+  //   USER path: _userScopedTokenIds() helper (Transfer scan + sessionStorage
+  //              cache) → confirmed-owned set → parallel getTraits
+  //   GUEST path: skip user-scope entirely (no _walletAddress)
+  //   Both paths: hydrate Firebase-locked tokens (shared modulo visibility —
+  //              P1-1 reviewer guard: without this, bug 2026-05-06 regresses
+  //              and guests see locked tokens as "blue blanks" rank-9999)
+  // Tokens neither owned nor locked remain `undefined` in TOKEN_DATA — every
+  // consumer null-guards via `TOKEN_DATA[i] && ...` (existing pattern).
+  //
   // Use a dedicated readonly RPC provider for view calls instead of MetaMask's
   // BrowserProvider. Reason: view calls on burned tokens revert with
   // ERC721NonexistentToken — perfectly normal, our try/catch handles it — but
   // MetaMask's inpage.js logs every revert as "RPC Error: execution reverted"
   // before our catch runs, polluting DevTools. The Worker-proxied RPC handles the
   // revert without logging. Wallet provider remains for tx + signing.
-  //
-  // Guest mode: this function still hydrates TOKEN_DATA via the readonly RPC
-  // even with no wallet connected, so locks held by other users render with
-  // their real rank + color instead of the rank-9999 fallback (default blue).
-  // Without this, guests saw locked tokens as "blue blanks" until they
-  // connected a wallet (bug 2026-05-06).
   const provider = _getReadonlyProvider() || _walletProvider;
   if (!provider) {
     dbg.warn('[chain] no provider available');
@@ -12251,37 +12256,64 @@ async function _chainSync() {
   if (typeof updatePillTokens === 'function') updatePillTokens();
   if (total === 0) { dbg.log('[chain] no tokens minted yet'); return { ok: true, count: 0 }; }
 
-  // Grow TOKEN_DATA to total+1 so direct index writes don't sparse-fill it.
-  while (TOKEN_DATA.length <= total) TOKEN_DATA.push(null);
+  let owned = [];
 
-  // Hydrate in parallel — one ownerOf + getTraits pair per minted id.
-  // Burned tokens revert; the catch keeps TOKEN_DATA[id] = null (skipped).
-  const tasks = [];
-  for (let id = 1; id <= total; id++) {
-    tasks.push((async () => {
+  // ═══ USER PATH ═══ (Phase B: scoped via Transfer event scan)
+  // GUEST mode (_walletAddress null) skips this block entirely — Firebase-locked
+  // hydration below covers what guest needs to render.
+  if (_walletAddress) {
+    let ownedIds = new Set();
+    try {
+      const result = await _userScopedTokenIds(_walletAddress, provider, agent);
+      if (result && !result.aborted && result.ownedIds) ownedIds = result.ownedIds;
+    } catch (err) {
+      dbg.warn('[chain] _userScopedTokenIds failed:', err && err.message);
+      // Fall through with empty ownedIds → user sees empty inventory until next sync
+    }
+    // Hydrate owned tokens via getTraits in parallel (owner === _walletAddress known)
+    const userHydrationTasks = [...ownedIds].map(id => (async () => {
+      try {
+        const traits = await agent.getTraits(id);
+        TOKEN_DATA[id] = _traitsToTokenData(id, traits, _walletAddress);
+      } catch (_) { TOKEN_DATA[id] = null; }
+    }));
+    await Promise.all(userHydrationTasks);
+    owned = [...ownedIds];
+    dbg.log('[chain] tokens owned by', _shortAddr(_walletAddress), ':', owned.length);
+  } else {
+    dbg.log('[chain] guest mode — skipping user-scope Transfer scan');
+  }
+
+  // ═══ FIREBASE-LOCKED PATH ═══ (both USER + GUEST modes)
+  // Reviewer P1-1 (Brief #8b): without this, guests regress bug 2026-05-06.
+  // Hydrate any tokenId present in fbLocked that isn't already hydrated by
+  // the USER path above (a user's locked-by-self tokens are already in
+  // TOKEN_DATA from the userHydrationTasks).
+  const lockedIdsToHydrate = [];
+  if (typeof fbLocked === 'object' && fbLocked) {
+    for (const modId of Object.keys(fbLocked)) {
+      const modLocks = fbLocked[modId];
+      if (!modLocks || typeof modLocks !== 'object') continue;
+      for (const tokenIdStr of Object.keys(modLocks)) {
+        const id = Number(tokenIdStr);
+        // Hydrate only if undefined (not yet touched). `null` means burned
+        // (skip; consumer's null-guard handles render).
+        if (id > 0 && TOKEN_DATA[id] === undefined) lockedIdsToHydrate.push(id);
+      }
+    }
+  }
+  if (lockedIdsToHydrate.length > 0) {
+    const lockedHydrationTasks = lockedIdsToHydrate.map(id => (async () => {
       try {
         const [owner, traits] = await Promise.all([
           agent.ownerOf(id),
           agent.getTraits(id),
         ]);
         TOKEN_DATA[id] = _traitsToTokenData(id, traits, owner);
-      } catch (_) {
-        TOKEN_DATA[id] = null; // burned or nonexistent
-      }
-    })());
-  }
-  await Promise.all(tasks);
-
-  // Inventory only relevant when a wallet is connected. Guest mode still
-  // benefits from TOKEN_DATA hydration above (rank + color for shared locks).
-  let owned = [];
-  if (_walletAddress) {
-    owned = TOKEN_DATA
-      .filter(t => t && t.owner && t.owner.toLowerCase() === _walletAddress.toLowerCase())
-      .map(t => t.id);
-    dbg.log('[chain] tokens owned by', _shortAddr(_walletAddress), ':', owned);
-  } else {
-    dbg.log('[chain] hydrated', TOKEN_DATA.filter(t => t).length, 'tokens (guest mode, no inventory)');
+      } catch (_) { TOKEN_DATA[id] = null; }
+    }));
+    await Promise.all(lockedHydrationTasks);
+    dbg.log('[chain] hydrated', lockedIdsToHydrate.length, 'Firebase-locked tokens (non-user-owned)');
   }
 
   if (typeof _rebuildInventory === 'function') _rebuildInventory();
