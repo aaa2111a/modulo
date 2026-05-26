@@ -11950,6 +11950,9 @@ const SETTLE_ARTIFACT_ABI = [
 // → `transactions[].blockNumber` for SettleArtifact (hex → decimal).
 // SWAP: at T-0 mainnet deploy, update this to the mainnet SettleArtifact block.
 const SETTLE_ARTIFACT_DEPLOY_BLOCK = 25141936;
+// TokenAgent v7 deploy block on mainnet — used by Phase A of OPT-3
+// (`_userScopedTokenIds` Transfer event scan, Brief #8b 2026-05-25).
+const TOKEN_AGENT_DEPLOY_BLOCK = 25141935;
 
 // EIP-712 domain MUST match SettleArtifact.DOMAIN_SEPARATOR exactly. Any drift
 // here produces an unverifiable signature on-chain.
@@ -12330,6 +12333,127 @@ async function _chainSync() {
   }
 }
 window._chainSync = _chainSync;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Phase A of OPT-3 (Brief #8b 2026-05-25, reviewer a43cafc79d35dd969)
+// ═══════════════════════════════════════════════════════════════════════════
+// `_userScopedTokenIds(user, provider, agent, signal)` — STANDALONE HELPER.
+// NOT WIRED into _chainSync yet. Phase B will integrate.
+//
+// Returns the set of token IDs currently owned by `user` via chunked Transfer
+// event scan (TokenAgent does NOT implement ERC721Enumerable, so no
+// `tokenOfOwnerByIndex` — must scan events).
+//
+// Pattern mirrors _maScanAndRender (L8614+): single `Transfer()` filter per
+// chunk, ownerMap-overwrite captures current ownership naturally (latest
+// Transfer wins). Burned tokens have `toAddr=0x0` in map → excluded from
+// ownedIds filter. Sells (transfer-out) update map to new owner → excluded too.
+//
+// Cache: sessionStorage per (contract, user). Reviewer Brief #8b P2-3
+// recommended sessionStorage over localStorage (race-free multi-tab, no
+// stale-by-time concerns, session end auto-clears). cross-tab invalidation
+// optional via localStorage signal key (mirror My Artifacts pattern L10110+).
+//
+// Guest mode: caller MUST check `!user` BEFORE invoking. Helper throws on
+// invalid address. Brief #8b P1-1 (guest path separation) lives in _chainSync
+// wiring (Phase B), not here.
+//
+// Cancellation: optional `signal` (AbortController). Helper checks
+// `signal.aborted` between chunks. Returns `{ ownedIds:null, aborted:true }`
+// on cancel.
+//
+// Phase A testing (console, pre-Phase-B wiring):
+//   const provider = _getReadonlyProvider();
+//   const agent = _getTokenAgent(provider);
+//   const r = await _userScopedTokenIds(_walletAddress, provider, agent);
+//   console.log(r); // → { ownedIds: Set { 42, 137 }, lastScanBlock: 25180000, aborted: false }
+async function _userScopedTokenIds(user, provider, agent, signal) {
+  if (!user || typeof user !== 'string' || !user.startsWith('0x')) {
+    throw new Error('_userScopedTokenIds: invalid user address');
+  }
+  if (!provider) throw new Error('_userScopedTokenIds: no provider');
+  if (!agent)    throw new Error('_userScopedTokenIds: no agent');
+
+  const userLc    = user.toLowerCase();
+  const CHUNK     = 5000;
+  const CACHE_KEY = `tc-chainsync:${TOKEN_AGENT_ADDRESS}:${userLc}`;
+  const ZERO_LC   = '0x0000000000000000000000000000000000000000';
+
+  // 1. Load cache (per Brief #8b P2-3: sessionStorage primary, not localStorage)
+  let cached = null;
+  try {
+    const raw = sessionStorage.getItem(CACHE_KEY);
+    if (raw) cached = JSON.parse(raw);
+  } catch (_) { /* corrupt cache → fall through to fresh scan */ }
+
+  const startBlock = (cached && Number.isInteger(cached.lastScanBlock))
+    ? cached.lastScanBlock + 1
+    : TOKEN_AGENT_DEPLOY_BLOCK;
+
+  let latestBlock;
+  try { latestBlock = await provider.getBlockNumber(); }
+  catch (err) { throw new Error('_userScopedTokenIds: getBlockNumber failed: ' + (err && err.message)); }
+
+  if (signal && signal.aborted) return { ownedIds: null, lastScanBlock: null, aborted: true };
+
+  // 2. Seed ownerMap from cache (ownerMap captures CURRENT owner per tokenId
+  //    as of cache write — last Transfer wins).
+  const ownerMap = new Map();
+  if (cached && cached.ownerMap && typeof cached.ownerMap === 'object') {
+    for (const k of Object.keys(cached.ownerMap)) {
+      const v = cached.ownerMap[k];
+      if (typeof v === 'string') ownerMap.set(k, v);
+    }
+  }
+
+  // 3. Chunked Transfer scan (sequential per Brief #8b Q6 — avoid Promise.all
+  //    burst on Alchemy; pattern mirrors _maScanAndRender L8642-8654).
+  if (startBlock <= latestBlock) {
+    const filter = agent.filters.Transfer();
+    let from = startBlock;
+    while (from <= latestBlock) {
+      if (signal && signal.aborted) return { ownedIds: null, lastScanBlock: null, aborted: true };
+      const to = Math.min(from + CHUNK - 1, latestBlock);
+      try {
+        const events = await agent.queryFilter(filter, from, to);
+        for (const ev of events) {
+          const toAddr  = ((ev.args && (ev.args.to || ev.args[1])) || '').toLowerCase();
+          const tokenId = ((ev.args && (ev.args.tokenId || ev.args[2])) || '').toString();
+          if (tokenId) ownerMap.set(tokenId, toAddr);
+        }
+      } catch (err) {
+        dbg.warn('[chainsync-phaseA] chunk', from, '-', to, 'failed:', err && err.message);
+      }
+      from = to + 1;
+    }
+  }
+
+  if (signal && signal.aborted) return { ownedIds: null, lastScanBlock: null, aborted: true };
+
+  // 4. Derive ownedIds from ownerMap. Burned tokens (owner === 0x0) are
+  //    naturally excluded by the equality check; transferred-out tokens
+  //    likewise (owner !== userLc).
+  const ownedIds = new Set();
+  for (const [id, owner] of ownerMap.entries()) {
+    if (owner === userLc && owner !== ZERO_LC) ownedIds.add(Number(id));
+  }
+
+  // 5. Update cache (serialize Map as plain object for JSON).
+  const ownerMapObj = {};
+  for (const [k, v] of ownerMap.entries()) ownerMapObj[k] = v;
+  try {
+    sessionStorage.setItem(CACHE_KEY, JSON.stringify({
+      lastScanBlock: latestBlock,
+      ownerMap:      ownerMapObj,
+    }));
+  } catch (err) {
+    dbg.warn('[chainsync-phaseA] cache write failed:', err && err.message);
+  }
+
+  return { ownedIds, lastScanBlock: latestBlock, aborted: false };
+}
+// Expose for console testing pre-wiring (Phase A standalone validation).
+window._userScopedTokenIds = _userScopedTokenIds;
 
 // ── Transfer event listener (NEW 2026-05-07, WS upgrade 2026-05-08) ───────
 // Keeps TOKEN_DATA + UI in sync with on-chain state without page refresh.
