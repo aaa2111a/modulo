@@ -12216,9 +12216,36 @@ function _traitsToTokenData(id, t, owner) {
 // iterate the workshop cleanup loop, racing on stale mod.tokens indices and
 // removing the wrong slot. Reviewer-flagged P3 risk addressed defensively.
 let _chainSyncRunning = false;
+// Opción D.2 mutex queue (Brief #10 + #10b 2026-05-26, reviewer aa0b9bab9b98c428b):
+// When a 2nd+ caller arrives while the mutex is held, all share a single
+// pending Promise that resolves with the result of a SINGLE re-run after the
+// current execution finishes. Previously: early-return `{ok:false}` → if
+// caller awaited the result for downstream init (e.g. _initWalletSession
+// chains updateTopbarWallet after `await _chainSync()`), the early `false`
+// short-circuited inventory hydration on the PATH B failure case
+// (MetaMask locked + fast manual connect — guest _chainSync in flight blocks
+// the wallet-triggered second call → inventory never populates until
+// safety-net 60s poll).
+// Variant D.1 (array of resolvers) functionally equivalent but D.2 (shared
+// promise) cleaner semantically: all queued callers share contract "exactly
+// one re-run will occur after current sync, you all receive its result".
+// reject propagated: if re-run throws, all pending callers get rejection
+// (each handles via their existing try/catch or .catch chain — see brief
+// #10b for caller audit at L11822, L12702, L12758, L12857, L13265).
+let _chainSyncPendingPromise = null;
+let _chainSyncPendingResolve = null;
+let _chainSyncPendingReject = null;
 
 async function _chainSync() {
-  if (_chainSyncRunning) return { ok: false, reason: 'already-running' };
+  if (_chainSyncRunning) {
+    if (!_chainSyncPendingPromise) {
+      _chainSyncPendingPromise = new Promise((resolve, reject) => {
+        _chainSyncPendingResolve = resolve;
+        _chainSyncPendingReject = reject;
+      });
+    }
+    return _chainSyncPendingPromise;
+  }
   _chainSyncRunning = true;
   try {
   // Use a dedicated readonly RPC provider for view calls instead of MetaMask's
@@ -12234,17 +12261,32 @@ async function _chainSync() {
   // Without this, guests saw locked tokens as "blue blanks" until they
   // connected a wallet (bug 2026-05-06).
   //
-  // OPT-3 Phase B ATTEMPTED 2026-05-26 and ROLLED BACK same-day: scoped-scan
-  // refactor (USER via _userScopedTokenIds + Firebase-locked-only) broke
-  // inventory hydration AND regressed bug 2026-05-06 (blue locks) due to two
-  // timing assumptions: (1) `_chainSync` can run in bootstrap before
-  // _walletAddress is set, then the wallet-connect call hits mutex and skips;
-  // (2) fbLocked is empty when _chainSync runs during wallet-connect — the
-  // Firebase listener populates it AFTER. Pre-OPT-3 the O(N) loop hydrated all
-  // tokens irrespective of fbLocked timing, masking both issues. The Phase A
-  // helper `_userScopedTokenIds` remains in code (Brief #8b) for future
-  // post-mint refactor that addresses the lifecycle properly (lazy-load on
-  // consumer-side via _syncModuloState or fbLocked-listener-triggered re-sync).
+  // OPT-3 Phase B ATTEMPTED 2026-05-26 and ROLLED BACK same-day. Post-mortem
+  // validated by security-auditor Brief #9 (agentId `af3bbf2e59d1d150c`):
+  //   Bug 1 (mutex collision): when _walletConnect({silent:true}) FAILS at boot
+  //     (MetaMask locked / no accounts), bootstrap falls to _walletDeferredFallback
+  //     → _initGuestSession → _chainSync() with _walletAddress=null (guest path).
+  //     User then clicks "connect" → _walletConnect → _initWalletSession →
+  //     _chainSync(), which hits `_chainSyncRunning=true` mutex from guest call
+  //     still in flight → returns early → USER tokens never hydrate.
+  //     (Initial main-agent diagnosis "bootstrap before _walletAddress set" was
+  //     a FP — happy-path silent reconnect DOES set _walletAddress at L13136
+  //     before _initWalletSession. The real trigger is guest-fallback-then-connect.)
+  //   Bug 2 (fbLocked empty): fbLocked listener (`_fbInitSync` L11273) registers
+  //     onValue async; first snapshot arrives AFTER _chainSync completes during
+  //     boot. Phase B's `for (const modId of Object.keys(fbLocked))` iterated
+  //     empty object → cero locks hydrated → blue blanks rank-9999 (regression
+  //     of bug fixed 2026-05-06).
+  // Pre-OPT-3 the O(N) loop hydrated all tokens unconditionally + a post-pass
+  // `_syncModuloState(mod, forceRebuild=true)` + Firebase-listener-triggered
+  // re-render covered the timing — Phase B broke that robustness.
+  // Phase A helper `_userScopedTokenIds` retained at L12336+ (works standalone,
+  // testable from console). Post-mint redesign options documented in CHANGELOG
+  // 2026-05-26: A subscribe-first w/ timeout, B lazy-hydrate from consumers,
+  // C re-trigger on fbLocked snapshot, D mutex queue. Brief #9 also flagged a
+  // silent correctness bug in Phase B (P2): _traitsToTokenData(id, traits,
+  // _walletAddress) assumes all scan results are user-owned — must use ownerOf
+  // confirmation in any Phase C attempt.
   const provider = _getReadonlyProvider() || _walletProvider;
   if (!provider) {
     dbg.warn('[chain] no provider available');
@@ -12342,6 +12384,22 @@ async function _chainSync() {
   return { ok: true, count: owned.length, tokens: owned };
   } finally {
     _chainSyncRunning = false;
+    // Drain pending queue: capture+clear refs BEFORE await re-run, so a NEW
+    // caller arriving during the re-run creates a fresh _chainSyncPendingPromise
+    // for its own generation (recursive bounded by burst event count, ~4-5 max).
+    if (_chainSyncPendingResolve) {
+      const resolve = _chainSyncPendingResolve;
+      const reject = _chainSyncPendingReject;
+      _chainSyncPendingResolve = null;
+      _chainSyncPendingReject = null;
+      _chainSyncPendingPromise = null;
+      try {
+        const result = await _chainSync();
+        resolve(result);
+      } catch (err) {
+        reject(err);  // propagate to all pending callers (they handle via try/catch / .catch)
+      }
+    }
   }
 }
 window._chainSync = _chainSync;
