@@ -10432,10 +10432,12 @@ let _onchainTotalMinted = null;
 const _widthMQ = window.matchMedia('(max-width:1024px)');
 
 // ─── Inventory loading indicator (Brief #13, divergent-design 2026-05-31) ───
-// Cosmetic spinner in the tokens pill + inventory grid during the FIRST on-chain
-// hydration after wallet connect / account-switch. NOT shown on the 60s
-// safety-net poll or visibilitychange re-syncs (they call _chainSync directly,
-// never _armInventoryLoading). Blast radius is PURELY cosmetic — isUILocked()
+// Cosmetic spinner in the topbar token counter (#topbar-inv) + inventory grid
+// during the FIRST on-chain hydration after wallet connect / account-switch.
+// (Originally in the tokens pill; moved to #topbar-inv per Le 2026-05-31.)
+// NOT shown on the 60s safety-net poll or visibilitychange re-syncs (they call
+// _chainSync directly, never _armInventoryLoading). Blast radius PURELY cosmetic
+// — isUILocked()
 // is NOT tied to this flag, so a stuck spinner blocks no mint/lock/settle.
 // Watchdog (Option B) is the backstop against a hung RPC await (ethers v6 fetch
 // has no per-call timeout): if an await never resolves, _chainSync's finally
@@ -10466,7 +10468,7 @@ const SPINNER_SPOKES_SVG =
 // _initWalletSession (first load / account-switch), AFTER its early-return guards.
 function _armInventoryLoading(account) {
   _inventoryLoadingAccount = account;
-  if (typeof updatePillTokens === 'function') updatePillTokens();
+  if (typeof updateTopbarWallet === 'function') updateTopbarWallet();
   if (typeof renderInventoryGrid === 'function' &&
       typeof inventoryOverlay !== 'undefined' && inventoryOverlay &&
       inventoryOverlay.classList.contains('active')) {
@@ -10494,7 +10496,7 @@ function _clearInventoryLoading() {
   if (_inventoryLoadingWatchdog) { clearTimeout(_inventoryLoadingWatchdog); _inventoryLoadingWatchdog = null; }
   if (_inventoryLoadingAccount === null) return;
   _inventoryLoadingAccount = null;
-  if (typeof updatePillTokens === 'function') updatePillTokens();
+  if (typeof updateTopbarWallet === 'function') updateTopbarWallet();
   if (typeof renderInventoryGrid === 'function' &&
       typeof inventoryOverlay !== 'undefined' && inventoryOverlay &&
       inventoryOverlay.classList.contains('active')) {
@@ -10505,16 +10507,6 @@ function _clearInventoryLoading() {
 function updatePillTokens() {
   const pillEl = document.getElementById('pill-tokens');
   if (!pillEl) return;
-  // Brief #13: during first on-chain hydration, show a spinner instead of the
-  // count. SPINNER_SPOKES_SVG is a hardcoded constant (no external interpolation)
-  // → safe innerHTML. Mobile (zoom:0.7, small pill) shows spinner only, no text.
-  if (_inventoryLoadingAccount) {
-    pillEl.innerHTML =
-      '<svg class="pill-sync-spinner" viewBox="0 0 32 32" aria-hidden="true">' +
-      SPINNER_SPOKES_SVG + '</svg>' +
-      (_widthMQ.matches ? '' : 'syncing…');
-    return;
-  }
   // "Locked" = tokens placed in shared (non-personal) modulos. Workshop drafts
   // (personal modulo) are private and excluded. The pill is a public counter:
   // how many tokens across all shared modulos are currently committed,
@@ -10541,11 +10533,25 @@ function updateTopbarWallet() {
   // The connected wallet address is rendered by `_renderWalletUI()` into
   // #wallet-address. This function only manages the inventory counter
   // (`topbar-inv`) shown after the connect/disconnect button.
+  const el = document.getElementById('topbar-inv');
+  if (!el) return;
+  // Brief #13: during first on-chain hydration show a spinner here instead of
+  // the owned count. Moved from the tokens pill to this counter per Le
+  // 2026-05-31 — the count is the natural place for "loading your tokens".
+  // SPINNER_SPOKES_SVG is a hardcoded constant → safe innerHTML. Mobile
+  // (zoom:0.7) shows spinner only, no text.
+  if (_inventoryLoadingAccount) {
+    el.innerHTML =
+      '<svg class="pill-sync-spinner" viewBox="0 0 32 32" aria-hidden="true">' +
+      SPINNER_SPOKES_SVG + '</svg>' +
+      (_widthMQ.matches ? '' : 'syncing…');
+    return;
+  }
   // Pass 2 made TOKEN_DATA sparse (1-indexed, null at index 0 + at burned ids)
   // so the filter MUST null-guard before reading `.owner`.
   const ownerLc = (SESSION_USER || '').toLowerCase();
   const owned = TOKEN_DATA.filter(t => t && t.owner && t.owner.toLowerCase() === ownerLc).length;
-  document.getElementById('topbar-inv').textContent = owned + ' tokens';
+  el.textContent = owned + ' tokens';
 }
 updateTopbarWallet();
 
