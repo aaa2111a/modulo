@@ -13375,11 +13375,12 @@ function _renderWalletUI() {
 
 // Force wallet onto target chain. Tries switch first; if chain is unknown to
 // the wallet, falls back to wallet_addEthereumChain. Returns true on success.
-async function _walletEnsureChain() {
-  if (!window.ethereum) return false;
+async function _walletEnsureChain(provider) {
+  const p = provider || _activeProvider || window.ethereum;
+  if (!p) return false;
   if (_walletChainId === WALLET_TARGET_CHAIN_ID) return true;
   try {
-    await window.ethereum.request({
+    await p.request({
       method: 'wallet_switchEthereumChain',
       params: [{ chainId: WALLET_TARGET_CHAIN_HEX }],
     });
@@ -13390,7 +13391,7 @@ async function _walletEnsureChain() {
     // would prompt addEthereumChain on unrelated failures. audits.md P2 #11)
     if (err && err.code === 4902) {
       try {
-        await window.ethereum.request({
+        await p.request({
           method: 'wallet_addEthereumChain',
           params: [WALLET_TARGET_CHAIN_INFO],
         });
@@ -13454,12 +13455,199 @@ function _walletShowStatus(msg) {
   el._tid = setTimeout(() => { el.style.opacity = '0'; }, 5000);
 }
 
-async function _walletConnect({ silent = false } = {}) {
+// ════════════════════════════════════════════════════════════════════════════
+// EIP-6963 wallet picker (Brief #15 Fix #3a, divergent-design + adversarial
+// review 2026-05-31 — review verdict GO-WITH-CHANGES, 9 must-fix integrated).
+// ════════════════════════════════════════════════════════════════════════════
+// WHY: the connect flow used raw window.ethereum (last-injector-wins). A user
+// with Phantom + MetaMask on Mac/Chrome could not connect — the request went to
+// the wrong/locked wallet. EIP-6963 lets wallets announce themselves so the user
+// can CHOOSE. Single-wallet users see ZERO change (resolves directly, no picker).
+//
+// Must-fix from the adversarial review (workflow completo):
+//  P0  silent-bootstrap race: registry is async — gate the silent reconnect on a
+//      bounded settle window + NEVER clear the stored rdns against an empty registry.
+//  P1  _activeProvider assigned AFTER the latch + bind with the per-invocation
+//      `conn`, not the mutable global.
+//  P1  listeners: per-provider closures with an IDENTITY GUARD (firing provider
+//      !== _activeProvider -> inert) so leaked listeners (Phantom lacks a working
+//      removeListener) can't corrupt state. Idempotent bind. accountsChanged +
+//      chainChanged bound POST-connect; 'unlock' bound early (locked-on-load).
+//  P1  duplicate-rdns: first-announced wins, never overwrite (anti-hijack).
+//  P1  picker built with createElement/textContent, NEVER innerHTML; icon only
+//      if it startsWith('data:image/'); rdns shown to disambiguate same names.
+//  P1  _pickerOpen guard (no stacked modals); silent+needsPicker -> no picker.
+const _eip6963Providers   = new Map(); // rdns -> announce detail {info, provider}
+let   _eip6963PreferredRdns = null;    // user's remembered choice (localStorage)
+let   _activeProvider       = null;    // raw EIP-1193 provider for the active/in-flight connect
+let   _listenerBoundProvider = null;   // provider the account/chain listeners are bound to (idempotency)
+let   _pickerOpen           = false;
+const WALLET_RDNS_LS_KEY    = 'tc-wallet-rdns';
+
+// Register the announce listener + ask wallets to announce. Called once in the
+// _walletInit IIFE. The listener stays live to catch late announcers.
+function _eip6963Init() {
+  window.addEventListener('eip6963:announceProvider', (e) => {
+    const d = e && e.detail;
+    if (!d || !d.info || !d.provider) return;
+    const rdns = d.info.rdns, name = d.info.name;
+    if (typeof rdns !== 'string' || !rdns) return;   // validate -> avoids size miscount from junk keys
+    if (typeof name !== 'string' || !name) return;
+    if (_eip6963Providers.has(rdns)) {                // anti-hijack: first-announced wins, never overwrite
+      console.warn('[eip6963] duplicate rdns ignored:', rdns);
+      return;
+    }
+    _eip6963Providers.set(rdns, d);
+  });
+  try { window.dispatchEvent(new CustomEvent('eip6963:requestProvider')); } catch (_) {}
+  try { _eip6963PreferredRdns = localStorage.getItem(WALLET_RDNS_LS_KEY) || null; } catch (_) {}
+}
+
+// Bounded wait so the SILENT bootstrap doesn't resolve before wallets announce
+// (P0 fix). Resolves early when the preferred (or any, if no pref) wallet is
+// already in the registry — single-wallet stays instant.
+function _eip6963Settle(ms) {
+  if (_eip6963PreferredRdns && _eip6963Providers.has(_eip6963PreferredRdns)) return Promise.resolve();
+  if (!_eip6963PreferredRdns && _eip6963Providers.size >= 1) return Promise.resolve();
+  return new Promise(r => setTimeout(r, ms));
+}
+
+// Resolve which provider to connect with. Returns {provider, needsPicker}.
+// Opción A (Le 2026-05-31): a MANUAL connect with >1 wallet ALWAYS shows the
+// picker (user re-chooses on every click). The stored pref is used ONLY by the
+// SILENT auto-reconnect, so reloading while connected stays transparent (no
+// picker) but a deliberate connect lets you switch wallets each time.
+function _resolveProvider(silent) {
+  // Stale-clear ONLY against a POPULATED registry (P0 fix): never drop the
+  // stored pref just because announces haven't arrived yet, nor on a partial set.
+  if (_eip6963PreferredRdns && _eip6963Providers.size > 0 && !_eip6963Providers.has(_eip6963PreferredRdns)) {
+    _eip6963PreferredRdns = null;
+    try { localStorage.removeItem(WALLET_RDNS_LS_KEY); } catch (_) {}
+  }
+  // Stored pref auto-selects ONLY on the silent reconnect (Opción A) — a manual
+  // connect ignores it and shows the picker instead (when >1 wallet).
+  if (silent && _eip6963PreferredRdns && _eip6963Providers.has(_eip6963PreferredRdns)) {
+    return { provider: _eip6963Providers.get(_eip6963PreferredRdns).provider, needsPicker: false };
+  }
+  if (_eip6963Providers.size === 1) {
+    return { provider: _eip6963Providers.values().next().value.provider, needsPicker: false };
+  }
+  if (_eip6963Providers.size > 1) {
+    return { provider: null, needsPicker: true };
+  }
+  // Registry empty (no EIP-6963 wallets) -> fall back to the legacy injected provider.
+  const inj = window.ethereum;
+  if (inj) {
+    if (Array.isArray(inj.providers) && inj.providers.length) {
+      return { provider: inj.providers.find(p => p && p.isMetaMask) || inj.providers[0], needsPicker: false };
+    }
+    return { provider: inj, needsPicker: false };
+  }
+  return { provider: null, needsPicker: false };
+}
+
+// Modal wallet picker. SECURITY: createElement + textContent only — never
+// innerHTML (info.name/info.icon are extension-controlled and app/ CSP is
+// unsafe-inline, so injected inline handlers would execute). onSelect(rdns) on
+// choice, onSelect(null) on cancel/ESC/backdrop. Guarded by _pickerOpen.
+function _showWalletPicker(onSelect) {
+  if (_pickerOpen) return;
+  const existing = document.getElementById('wallet-picker-overlay');
+  if (existing) { existing.focus && existing.focus(); return; }
+  _pickerOpen = true;
+
+  let done = false;
+  const finish = (rdns) => {
+    if (done) return; done = true;
+    _pickerOpen = false;
+    document.removeEventListener('keydown', onKey, true);
+    if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    onSelect(rdns || null);
+  };
+  const onKey = (ev) => { if (ev.key === 'Escape') finish(null); };
+
+  const overlay = document.createElement('div');
+  overlay.id = 'wallet-picker-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:10000;display:flex;align-items:center;' +
+    'justify-content:center;background:rgba(0,0,0,0.45);';
+  overlay.addEventListener('click', (ev) => { if (ev.target === overlay) finish(null); });
+
+  const card = document.createElement('div');
+  card.style.cssText = 'background:#fff;color:#111;border-radius:10px;padding:18px;min-width:260px;' +
+    'max-width:90vw;max-height:80vh;overflow:auto;box-shadow:0 8px 40px rgba(0,0,0,0.3);font-size:14px;' +
+    "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;";
+
+  const title = document.createElement('div');
+  title.textContent = 'Choose a wallet';
+  title.style.cssText = 'font-weight:600;margin-bottom:12px;';
+  card.appendChild(title);
+
+  for (const [rdns, d] of _eip6963Providers.entries()) {
+    const info = d.info || {};
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.style.cssText = 'display:flex;align-items:center;gap:10px;width:100%;text-align:left;' +
+      'background:#f4f3f1;border:1px solid #e2e0db;border-radius:6px;padding:10px 12px;margin-bottom:8px;cursor:pointer;';
+    // Phantom (and possibly others) prefix the data URI with a leading newline —
+    // trim before validating, else startsWith('data:image/') rejects a valid icon.
+    const _ic = (typeof info.icon === 'string') ? info.icon.trim() : '';
+    if (_ic.startsWith('data:image/')) {
+      const img = document.createElement('img');
+      img.setAttribute('src', _ic);  // trimmed data: URI only (validated) — img-src data: allowed
+      img.width = 22; img.height = 22; img.alt = '';
+      img.style.cssText = 'border-radius:4px;flex:0 0 auto;';
+      row.appendChild(img);
+    }
+    const nm = document.createElement('div');
+    nm.textContent = info.name || rdns;       // textContent — XSS-safe; rdns only as fallback if name missing
+    nm.style.cssText = 'font-weight:600;font-size:14px;';
+    row.appendChild(nm);
+    row.addEventListener('click', () => finish(rdns));
+    card.appendChild(row);
+  }
+
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.textContent = 'Cancel';
+  cancel.style.cssText = 'margin-top:4px;background:none;border:none;color:#888;cursor:pointer;font-size:13px;';
+  cancel.addEventListener('click', () => finish(null));
+  card.appendChild(cancel);
+
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+  document.addEventListener('keydown', onKey, true);
+}
+
+async function _walletConnect({ silent = false, forcedRdns = null } = {}) {
   if (!window.ethers) {
     if (!silent) alert('Wallet library not loaded.');
     return null;
   }
-  if (!window.ethereum) {
+  // Resolve which wallet to use (EIP-6963) BEFORE the latch, so the picker
+  // callback re-enters cleanly (P1 fix: nothing global is set in this branch).
+  // forcedRdns: set by the picker callback -> connect DIRECTLY to the chosen
+  // wallet, skipping the picker. Required under Opción A (a manual connect always
+  // shows the picker) to avoid an infinite picker loop on the re-entry.
+  let provider, needsPicker;
+  if (forcedRdns && _eip6963Providers.has(forcedRdns)) {
+    provider = _eip6963Providers.get(forcedRdns).provider;
+    needsPicker = false;
+  } else {
+    ({ provider, needsPicker } = _resolveProvider(silent));
+  }
+  if (needsPicker) {
+    if (silent) return null;        // silent bootstrap: no picker UI, fall through to guest
+    if (_pickerOpen) return null;   // no stacked modals
+    _showWalletPicker((rdns) => {
+      if (rdns) {
+        _eip6963PreferredRdns = rdns;
+        try { localStorage.setItem(WALLET_RDNS_LS_KEY, rdns); } catch (_) {}
+        _walletConnect({ silent, forcedRdns: rdns }); // connect directly to the chosen wallet (no re-picker)
+      }
+    });
+    return null;
+  }
+  if (!provider) {
     if (!silent) alert('No injected wallet found. Install MetaMask or Rabby.');
     return null;
   }
@@ -13468,14 +13656,19 @@ async function _walletConnect({ silent = false } = {}) {
   // runs twice and writes the presence record twice. (audits 2026-04-30)
   if (_walletConnecting) { console.warn('[wallet] re-entrancy blocked — connect already in flight'); return null; }
   _walletConnecting = true;
+  // Assign _activeProvider AFTER the latch (P1 fix: a losing re-entrant call
+  // must not clobber the global). `conn` = the provider THIS invocation uses —
+  // bind listeners with `conn`, not the mutable global.
+  _activeProvider = provider;
+  const conn = provider;
   const btn = document.getElementById('wallet-toggle-btn');
   if (btn && !silent) btn.classList.add('busy');
   try {
-    _walletProvider = new window.ethers.BrowserProvider(window.ethereum, 'any');
+    _walletProvider = new window.ethers.BrowserProvider(conn, 'any');
     const method = silent ? 'eth_accounts' : 'eth_requestAccounts';
     // Brief #15 Fix #1: timeout so a hung wallet can't latch the button dead.
     const accounts = await _withTimeout(
-      window.ethereum.request({ method }),
+      conn.request({ method }),
       silent ? WALLET_TIMEOUT_SILENT_MS : WALLET_TIMEOUT_MANUAL_MS,
       method
     );
@@ -13499,9 +13692,9 @@ async function _walletConnect({ silent = false } = {}) {
     // Uses the undocumented `_metamask.isUnlocked()` API (MetaMask-only). For
     // other injected wallets without this API, assume unlocked (they don't
     // expose a lock state distinct from disconnected).
-    if (silent && window.ethereum._metamask && typeof window.ethereum._metamask.isUnlocked === 'function') {
+    if (silent && conn._metamask && typeof conn._metamask.isUnlocked === 'function') {
       let unlocked = true;
-      try { unlocked = await window.ethereum._metamask.isUnlocked(); } catch { unlocked = true; }
+      try { unlocked = await conn._metamask.isUnlocked(); } catch { unlocked = true; }
       if (!unlocked) {
         _walletProvider = null;
         _walletAddress = null;
@@ -13521,8 +13714,12 @@ async function _walletConnect({ silent = false } = {}) {
     // Push to target chain (skip on silent reconnect — user already chose chain
     // last time and a popup on every reload would be annoying).
     if (!silent && _walletChainId !== WALLET_TARGET_CHAIN_ID) {
-      await _withTimeout(_walletEnsureChain(), CHAIN_TIMEOUT_MS, 'ensureChain');
+      await _withTimeout(_walletEnsureChain(conn), CHAIN_TIMEOUT_MS, 'ensureChain');
     }
+    // Bind account/chain listeners to the wallet THIS connect used (P1 fix:
+    // bind with `conn` post-success; the handlers have an identity guard so a
+    // leaked listener from a previously-chosen wallet stays inert).
+    _walletAttachListeners(conn);
     dbg.log('[wallet] connected', _shortAddr(_walletAddress), 'chainId', _walletChainId);
     // Initiate the wallet session (writes /wallets/{addr} presence record)
     if (typeof _initWalletSession === 'function') {
@@ -13563,9 +13760,10 @@ async function _walletDisconnect() {
   // considers the site connected and a silent reconnect on next reload would
   // re-bind. Failing methods (older wallets) just throw and we ignore — the
   // local state clear below still gives the user a "disconnected" UX.
-  if (window.ethereum && typeof window.ethereum.request === 'function') {
+  const _revokeP = _activeProvider || window.ethereum;
+  if (_revokeP && typeof _revokeP.request === 'function') {
     try {
-      await window.ethereum.request({
+      await _revokeP.request({
         method: 'wallet_revokePermissions',
         params: [{ eth_accounts: {} }],
       });
@@ -13579,6 +13777,8 @@ async function _walletDisconnect() {
   _walletAddress = null;
   _walletProvider = null;
   _walletChainId = null;
+  _activeProvider = null;        // clear so a reconnect re-resolves the provider
+  _listenerBoundProvider = null; // allow listener re-bind on next connect (even same wallet)
   localStorage.removeItem(WALLET_LS_KEY);
   _renderWalletUI();
   dbg.log('[wallet] disconnected');
@@ -13601,26 +13801,28 @@ async function _walletToggle() {
   }
 }
 
-function _walletAttachListeners() {
-  if (!window.ethereum || !window.ethereum.on) return;
-  window.ethereum.on('accountsChanged', async accounts => {
-    // Skip while a connect/disconnect is in flight — accountsChanged can fire
-    // synchronously during eth_requestAccounts (initial connect) or during
-    // wallet_revokePermissions (disconnect). Without these guards, the handler
-    // would double-start or double-cleanup the session.
+// Bind accountsChanged + chainChanged to the CHOSEN provider, POST-connect.
+// Per-provider closures + an identity guard (provider !== _activeProvider ->
+// inert) so a leaked listener from a previously-selected wallet can't corrupt
+// state — we do NOT rely on removeListener (Phantom & others lack a working
+// one). Idempotent: won't double-bind to the same provider instance.
+function _walletAttachListeners(provider) {
+  if (!provider || typeof provider.on !== 'function') return;
+  if (_listenerBoundProvider === provider) return; // already bound to this exact instance
+  _listenerBoundProvider = provider;
+
+  provider.on('accountsChanged', async accounts => {
+    if (provider !== _activeProvider) { console.warn('[wallet] accountsChanged from non-active provider ignored'); return; }
     if (_walletDisconnecting) return;
     if (_walletConnecting) { console.warn('[wallet] accountsChanged ignored — connect in flight'); return; }
     if (!accounts || !accounts.length) { await _walletDisconnect(); return; }
     const newAddr = window.ethers ? window.ethers.getAddress(accounts[0]) : accounts[0];
     if (newAddr === _walletAddress) return; // same account, no-op
-    // Defensive: if FB isn't ready or provider isn't initialized yet (event
-    // fired during bootstrap before _walletConnect ran), don't mutate state.
+    // Defensive: if FB isn't ready or provider isn't initialized yet, don't mutate state.
     if (!window.FB || !_walletProvider) {
       dbg.warn('[wallet] accountsChanged ignored — FB or provider not ready');
       return;
     }
-    // Swap the active session: end the old wallet session (clear
-    // /wallets/{oldAddr}), then start a fresh session for the new address.
     if (typeof _endSession === 'function' && _sessionBasePath(SESSION_USER) === 'wallets') {
       await _endSession();
     }
@@ -13636,51 +13838,67 @@ function _walletAttachListeners() {
     }
     dbg.log('[wallet] account switched →', _shortAddr(_walletAddress));
   });
-  window.ethereum.on('chainChanged', hex => {
+  provider.on('chainChanged', hex => {
+    if (provider !== _activeProvider) return; // identity guard
     _walletChainId = parseInt(hex, 16);
     _renderWalletUI();
     if (_walletChainId !== WALLET_TARGET_CHAIN_ID) {
       dbg.warn('[wallet] chain switched to', _walletChainId, '— expected', WALLET_TARGET_CHAIN_ID);
     }
   });
-  // Auto-reconnect when MetaMask is unlocked from a previously-locked state
-  // (silent reconnect aborts on locked, so we need this hook to recover the
-  // session without making the user click "connect" again). 'unlock' is a
-  // MetaMask-specific event; other wallets ignore the listener.
-  if (typeof window.ethereum.on === 'function') {
-    try {
-      window.ethereum.on('unlock', async () => {
-        if (_walletAddress) return; // already connected
-        const stashed = localStorage.getItem(WALLET_LS_KEY);
-        if (!stashed) return;       // user explicitly disconnected previously
-        if (_walletConnecting) { console.warn('[wallet] unlock reconnect ignored — connect in flight'); return; }
-        dbg.log('[wallet] metamask unlocked — silent reconnect');
-        await _walletConnect({ silent: true });
-        if (_walletAddress && typeof _initWalletSession === 'function') {
-          await _initWalletSession(_walletAddress);
-        }
-      });
-    } catch (_) { /* provider doesn't support 'unlock' event — ignore */ }
-  }
+}
+
+// Bind the MetaMask-specific 'unlock' event EARLY (pre-connect) so the
+// locked-on-load -> unlock -> auto-reconnect recovery works (P1 fix: this can't
+// be deferred to post-connect). No identity guard — _activeProvider is null
+// pre-connect, and only MetaMask emits 'unlock' so leak risk is negligible.
+function _walletAttachUnlockListener(provider) {
+  if (!provider || typeof provider.on !== 'function') return;
+  try {
+    provider.on('unlock', async () => {
+      if (_walletAddress) return; // already connected
+      const stashed = localStorage.getItem(WALLET_LS_KEY);
+      if (!stashed) return;       // user explicitly disconnected previously
+      if (_walletConnecting) { console.warn('[wallet] unlock reconnect ignored — connect in flight'); return; }
+      dbg.log('[wallet] unlocked — silent reconnect');
+      await _walletConnect({ silent: true });
+      if (_walletAddress && typeof _initWalletSession === 'function') {
+        await _initWalletSession(_walletAddress);
+      }
+    });
+  } catch (_) { /* provider doesn't support 'unlock' — ignore */ }
 }
 
 (function _walletInit() {
+  _eip6963Init(); // register the EIP-6963 announce listener + request announcements
   const btn = document.getElementById('wallet-toggle-btn');
   if (btn) btn.addEventListener('click', () => _walletToggle());
   const warnBtn = document.getElementById('wallet-chain-warn');
   if (warnBtn) warnBtn.addEventListener('click', async () => {
     warnBtn.classList.add('busy');
-    try { await _walletEnsureChain(); } finally { warnBtn.classList.remove('busy'); }
+    try { await _walletEnsureChain(_activeProvider); } finally { warnBtn.classList.remove('busy'); }
   });
   _renderWalletUI();
-  _walletAttachListeners();
+  // Bind ONLY the 'unlock' listener early (locked-on-load auto-reconnect must be
+  // live BEFORE the first connect). account/chain listeners are bound POST-connect
+  // in _walletAttachListeners(conn). Bind unlock to the injected MetaMask provider
+  // if present (only MetaMask emits 'unlock').
+  const _inj = window.ethereum;
+  const _mmBoot = _inj && (Array.isArray(_inj.providers)
+    ? (_inj.providers.find(p => p && p.isMetaMask) || _inj)
+    : _inj);
+  if (_mmBoot) _walletAttachUnlockListener(_mmBoot);
 
   // Coordinated bootstrap: try silent wallet reconnect first, then fall back to
-  // a guest session if no wallet was previously connected. We block on FB
-  // ready before either path runs.
+  // a guest session if no wallet was previously connected. Block on FB ready.
   async function _bootstrap() {
     const last = localStorage.getItem(WALLET_LS_KEY);
-    if (last && window.ethereum) {
+    if (last && (window.ethereum || _eip6963Providers.size > 0)) {
+      // P0 fix: let EIP-6963 wallets announce before resolving the silent
+      // reconnect — else the registry is empty and we'd fall back to the wrong
+      // window.ethereum (the exact Phantom+MetaMask bug). Single-wallet resolves
+      // instantly inside _eip6963Settle so this adds no delay for them.
+      await _eip6963Settle(250);
       const addr = await _walletConnect({ silent: true });
       if (addr) return; // wallet session is in flight via _walletConnect
     }
