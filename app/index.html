@@ -13406,6 +13406,54 @@ async function _walletEnsureChain() {
   }
 }
 
+// ── Wallet connect timeout (Brief #15 Fix #1, divergent-design 2026-05-31) ──
+// eth_requestAccounts / eth_accounts / wallet_switchEthereumChain can hang
+// forever if the wallet never settles (popup dismissed via OS X, MV3 service
+// worker dormant, late approval). Since _walletConnecting is set BEFORE the
+// await and only cleared in finally, a hung await latched the connect button
+// into a permanent silent no-op until reload. _withTimeout rejects the race so
+// catch+finally run and the latch clears. Promise.race does NOT cancel the
+// underlying request — a LATE settle is harmless: the catch sets
+// _walletProvider=null, and the accountsChanged handler's `!_walletProvider`
+// guard ignores any late event (reviewer P1 late-settle verified as FP,
+// existing guard covers it — agentId a50d503db0443793b GO-WITH-CHANGES).
+function _withTimeout(promise, ms, label) {
+  let tid;
+  const race = Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      tid = setTimeout(() => reject(Object.assign(
+        new Error('[wallet] timeout: ' + label + ' (' + ms + 'ms)'),
+        { code: 'WALLET_TIMEOUT' }
+      )), ms);
+    }),
+  ]);
+  race.finally(() => clearTimeout(tid)); // avoid a dangling timer after the real promise wins
+  return race;
+}
+const WALLET_TIMEOUT_MANUAL_MS = 40000; // eth_requestAccounts — waits for human approval in the wallet
+const WALLET_TIMEOUT_SILENT_MS = 15000; // eth_accounts — no human; 15s covers MetaMask MV3 SW cold start
+const CHAIN_TIMEOUT_MS         = 20000; // wallet_switchEthereumChain
+
+// Transient bottom-center toast (NOT alert, NOT modal) for wallet status.
+// Replaces blocking alert() for the timeout path. app/ CSP is unsafe-inline so
+// the inline style is fine. pointer-events:none so it never blocks the UI.
+function _walletShowStatus(msg) {
+  let el = document.getElementById('wallet-status-toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'wallet-status-toast';
+    el.style.cssText = 'position:fixed;bottom:1rem;left:50%;transform:translateX(-50%);' +
+      'background:#222;color:#fff;padding:.5rem 1rem;border-radius:4px;z-index:9999;' +
+      'font-size:.85rem;pointer-events:none;transition:opacity .3s;max-width:90vw;text-align:center;';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.style.opacity = '1';
+  clearTimeout(el._tid);
+  el._tid = setTimeout(() => { el.style.opacity = '0'; }, 5000);
+}
+
 async function _walletConnect({ silent = false } = {}) {
   if (!window.ethers) {
     if (!silent) alert('Wallet library not loaded.');
@@ -13418,14 +13466,19 @@ async function _walletConnect({ silent = false } = {}) {
   // Re-entrancy guard: accountsChanged can fire during eth_requestAccounts
   // and trigger a duplicate session start. Without this, _initWalletSession
   // runs twice and writes the presence record twice. (audits 2026-04-30)
-  if (_walletConnecting) return null;
+  if (_walletConnecting) { console.warn('[wallet] re-entrancy blocked — connect already in flight'); return null; }
   _walletConnecting = true;
   const btn = document.getElementById('wallet-toggle-btn');
   if (btn && !silent) btn.classList.add('busy');
   try {
     _walletProvider = new window.ethers.BrowserProvider(window.ethereum, 'any');
     const method = silent ? 'eth_accounts' : 'eth_requestAccounts';
-    const accounts = await window.ethereum.request({ method });
+    // Brief #15 Fix #1: timeout so a hung wallet can't latch the button dead.
+    const accounts = await _withTimeout(
+      window.ethereum.request({ method }),
+      silent ? WALLET_TIMEOUT_SILENT_MS : WALLET_TIMEOUT_MANUAL_MS,
+      method
+    );
     if (!accounts || !accounts.length) {
       _walletProvider = null;
       // Silent path: stale LS entry but wallet revoked → ensure UI is clean.
@@ -13468,7 +13521,7 @@ async function _walletConnect({ silent = false } = {}) {
     // Push to target chain (skip on silent reconnect — user already chose chain
     // last time and a popup on every reload would be annoying).
     if (!silent && _walletChainId !== WALLET_TARGET_CHAIN_ID) {
-      await _walletEnsureChain();
+      await _withTimeout(_walletEnsureChain(), CHAIN_TIMEOUT_MS, 'ensureChain');
     }
     dbg.log('[wallet] connected', _shortAddr(_walletAddress), 'chainId', _walletChainId);
     // Initiate the wallet session (writes /wallets/{addr} presence record)
@@ -13477,7 +13530,13 @@ async function _walletConnect({ silent = false } = {}) {
     }
     return _walletAddress;
   } catch (err) {
-    if (err && err.code !== 4001) console.error('[wallet] connect failed:', err);
+    if (err && err.code === 'WALLET_TIMEOUT') {
+      console.warn('[wallet] connect timed out —', err.message);
+      // Non-blocking feedback instead of the button silently doing nothing.
+      if (!silent) _walletShowStatus('Wallet did not respond — open your wallet and try again.');
+    } else if (err && err.code !== 4001) {
+      console.error('[wallet] connect failed:', err);
+    }
     _walletProvider = null;
     return null;
   } finally {
@@ -13550,7 +13609,7 @@ function _walletAttachListeners() {
     // wallet_revokePermissions (disconnect). Without these guards, the handler
     // would double-start or double-cleanup the session.
     if (_walletDisconnecting) return;
-    if (_walletConnecting) return;
+    if (_walletConnecting) { console.warn('[wallet] accountsChanged ignored — connect in flight'); return; }
     if (!accounts || !accounts.length) { await _walletDisconnect(); return; }
     const newAddr = window.ethers ? window.ethers.getAddress(accounts[0]) : accounts[0];
     if (newAddr === _walletAddress) return; // same account, no-op
@@ -13594,7 +13653,7 @@ function _walletAttachListeners() {
         if (_walletAddress) return; // already connected
         const stashed = localStorage.getItem(WALLET_LS_KEY);
         if (!stashed) return;       // user explicitly disconnected previously
-        if (_walletConnecting) return;
+        if (_walletConnecting) { console.warn('[wallet] unlock reconnect ignored — connect in flight'); return; }
         dbg.log('[wallet] metamask unlocked — silent reconnect');
         await _walletConnect({ silent: true });
         if (_walletAddress && typeof _initWalletSession === 'function') {
