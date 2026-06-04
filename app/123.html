@@ -13581,9 +13581,12 @@ function _showWalletPicker(onSelect) {
     row.type = 'button';
     row.style.cssText = 'display:flex;align-items:center;gap:10px;width:100%;text-align:left;' +
       'background:#f4f3f1;border:1px solid #e2e0db;border-radius:6px;padding:10px 12px;margin-bottom:8px;cursor:pointer;';
-    if (typeof info.icon === 'string' && info.icon.startsWith('data:image/')) {
+    // Phantom (and possibly others) prefix the data URI with a leading newline —
+    // trim before validating, else startsWith('data:image/') rejects a valid icon.
+    const _ic = (typeof info.icon === 'string') ? info.icon.trim() : '';
+    if (_ic.startsWith('data:image/')) {
       const img = document.createElement('img');
-      img.setAttribute('src', info.icon);  // data: URI only (validated) — img-src data: allowed
+      img.setAttribute('src', _ic);  // trimmed data: URI only (validated) — img-src data: allowed
       img.width = 22; img.height = 22; img.alt = '';
       img.style.cssText = 'border-radius:4px;flex:0 0 auto;';
       row.appendChild(img);
