@@ -564,6 +564,26 @@ button, a, [role="button"], .pill, #info-btn, .toggle-btn, .modal-close,
 }
 .info-text-body p { margin-bottom:10px; }
 .info-text-body p:last-child { margin-bottom:0; }
+/* Reset tab — Firebase IndexedDB recovery pane (for users stuck on load) */
+.info-reset-pane {
+  flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  text-align:center; padding:40px 48px; gap:18px; overflow-y:auto;
+}
+.info-reset-body {
+  font-size:11px; font-family:monospace; line-height:1.8; letter-spacing:.02em;
+  color:var(--topbar-text); opacity:0.75; max-width:460px;
+}
+.info-reset-body p { margin-bottom:10px; }
+.info-reset-body p:last-child { margin-bottom:0; }
+.info-reset-btn {
+  font-family:monospace; font-size:10px; letter-spacing:.10em; text-transform:uppercase;
+  padding:8px 22px; margin-top:4px; border-radius:4px; cursor:pointer;
+  background:transparent; border:0.5px solid var(--node-border);
+  color:var(--topbar-text); opacity:0.85;
+  transition:opacity 0.12s, border-color 0.12s;
+}
+.info-reset-btn:hover { opacity:1; border-color:var(--topbar-text); }
+.info-reset-btn:disabled { opacity:0.4; cursor:default; }
 .info-tag {
   display:inline-block; font-size:8px; font-family:monospace;
   letter-spacing:.08em; text-transform:uppercase;
@@ -10723,6 +10743,7 @@ document.getElementById('export-btn').addEventListener('click', () => {
       <button class="info-tab" data-page="settle">Settle</button>
       <button class="info-tab" data-page="ownership">Ownership</button>
       <button class="info-tab" data-page="session">Session</button>
+      <button class="info-tab" data-page="reset">Reset</button>
     </div>
     <div id="info-body">
 
@@ -10874,6 +10895,18 @@ document.getElementById('export-btn').addEventListener('click', () => {
         </div>
       </div>
 
+      <!-- RESET -->
+      <div class="info-page" data-page="reset">
+        <div class="info-reset-pane">
+          <div class="info-text-title" style="text-align:center;">App stuck on load?</div>
+          <div class="info-reset-body">
+            <p>If the app hangs on load — a blank screen, or the wallet never connecting — your browser may be holding a corrupted Firebase cache that a normal reload won't clear. This is rare and affects only some devices.</p>
+            <p>The button below clears that cached data (Firebase storage + local session) and reloads the page. It's safe — nothing on-chain is touched. Afterwards, tap <strong>Connect</strong> in the top bar to rejoin your wallet.</p>
+          </div>
+          <button id="info-session-reset-btn" type="button" class="info-reset-btn">Reset app data</button>
+        </div>
+      </div>
+
     </div>
   `;
   document.body.appendChild(win);
@@ -10926,6 +10959,54 @@ document.getElementById('export-btn').addEventListener('click', () => {
       win.querySelector(`.info-page[data-page="${tab.dataset.page}"]`).classList.add('active');
     });
   });
+
+  // ── Reset app data (Firebase IndexedDB recovery) ─────────────────────────
+  // Some users (iOS-heavy) hit a corrupt Firebase IndexedDB (firebase-js-sdk
+  // #9056): the SDK refuses to open IDB so init throws before fb-ready dispatches
+  // → the app hangs, and a plain reload won't fix it (the poison marker lives in
+  // IDB). This button is the in-app equivalent of "Clear site data": it wipes the
+  // 3 Firebase IDBs + tc-* storage and reloads. Purely additive — only runs on an
+  // explicit click; nothing on-chain is touched.
+  let _resetInProgress = false;
+  async function _handleInfoReset() {
+    if (_resetInProgress) return;
+    const ok = window.confirm(
+      'This clears cached Firebase data and reloads the page.\n\n' +
+      'Use only if the app is stuck on load. Afterwards, tap Connect in the top bar to rejoin your wallet.'
+    );
+    if (!ok) return;
+    _resetInProgress = true;
+    const btn = document.getElementById('info-session-reset-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Clearing…'; }
+    // Release the RTDB socket so the IDB deletes aren't blocked. window.FB may be
+    // absent if Firebase init itself hung — guard it.
+    try { if (window.FB && typeof window.FB.goOffline === 'function') window.FB.goOffline(window.FB.db); } catch (_) {}
+    // Wipe tc-* from both stores. Collect-then-delete: removing during the index
+    // walk would shift indices and skip keys.
+    try {
+      for (const store of [localStorage, sessionStorage]) {
+        const del = [];
+        for (let i = 0; i < store.length; i++) { const k = store.key(i); if (k && k.startsWith('tc-')) del.push(k); }
+        del.forEach(k => store.removeItem(k));
+      }
+    } catch (_) { /* storage blocked in some privacy modes — non-fatal */ }
+    // Delete the 3 Firebase IndexedDB DBs by literal name. indexedDB.databases()
+    // enumeration is unsupported in Firefox/older Safari, so use the allowlist.
+    // deleteDatabase fires onblocked (not a throw) if a connection is open; the
+    // reload below force-closes connections so the queued delete finalizes.
+    try {
+      ['firebase-app-check-database', 'firebase-installations-database', 'firebase-heartbeat-database'].forEach(name => {
+        try { const req = indexedDB.deleteDatabase(name); req.onblocked = () => {}; req.onerror = () => {}; } catch (_) {}
+      });
+    } catch (_) {}
+    // Single event-loop yield so the delete requests are queued before we
+    // navigate; the handler never awaits the deletes themselves (they can block
+    // on an open connection). reload() runs unconditionally.
+    await new Promise(r => setTimeout(r, 100));
+    location.reload();
+  }
+  const _infoResetBtn = document.getElementById('info-session-reset-btn');
+  if (_infoResetBtn) _infoResetBtn.addEventListener('click', _handleInfoReset);
 
   // ── Canvas art per page (placeholders) ───────────────────────────────────
   // 6 dedicated placeholders, one per tab. Each mirrors the actual UI element
