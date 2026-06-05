@@ -16,15 +16,16 @@
      SHA-256 hashes of the 6 inline blocks. See collection/index.html for
      full rationale + recompute command.
 
-     Hashes (recomputed 2026-05-21 post mainnet v6 re-cutover — TOKEN_AGENT_ADDRESS
-     swapped to redeployed contract; only the main-mint script hash changed):
-       script L49   frame-buster   sha256-I9Yfcq7guXpscFi+G0+tohjedD6HTkxEQAMsmvRwWNM=
-       script L76   DEBUG wrapper  sha256-A3ETGxrcp9DTjGzMeHPhzmYsPpIQYAylCdYHxrzxAos=
-       script L92   favicon anim   sha256-QBnDYJZwhBXOrgmZ9UEkle1nD40H9Vt2YvnqkMJhoZA=
-       script L2098 (812B)         sha256-KjVWMhTuGbrm7UCORRBroU+iHvJEmhZBJglyBQ50lNQ=
-       script L2408 main mint      sha256-JuqsdGplBcALU7JBXMY60J/XWsMNTjcvgK9vSUXwL9E=
-       script L4155 demoEngine     sha256-dDSWZarw2uRHIInlXyZ/Avc//aK5jQn14L1kP9TgdGs=
-       style  L163  main CSS       sha256-U2A+UzAvwB47kSXoLHdQYJ4CZluXxeuRwgdaJjt9rPs=
+     Hashes (recomputed 2026-06-05 — MINT CLOSED: MINT_ENABLED/COUNTDOWN_ACTIVE/
+     MINT_COUNTER_LIVE flipped to false + closed-state markup/CSS added; only the
+     main-mint script hash + main CSS style hash changed):
+       script L50   frame-buster   sha256-I9Yfcq7guXpscFi+G0+tohjedD6HTkxEQAMsmvRwWNM=
+       script L77   DEBUG wrapper  sha256-A3ETGxrcp9DTjGzMeHPhzmYsPpIQYAylCdYHxrzxAos=
+       script L93   favicon anim   sha256-QBnDYJZwhBXOrgmZ9UEkle1nD40H9Vt2YvnqkMJhoZA=
+       script L2125 (812B)         sha256-KjVWMhTuGbrm7UCORRBroU+iHvJEmhZBJglyBQ50lNQ=
+       script L2445 main mint      sha256-gPZdH4/qBo2t2teMK8MKweuNG4MVNUlSw/I476jOSPk=
+       script L4192 demoEngine     sha256-dDSWZarw2uRHIInlXyZ/Avc//aK5jQn14L1kP9TgdGs=
+       style  L164  main CSS       sha256-ziBSwE5SutBcuqDZR9VVw6oIHNcecZ+Wpgco5PZT5oM=
 
      KNOWN LIMITATION: frame-buster fallback (~L48) builds replacement body
      via DOM element.style.cssText. Without 'unsafe-inline' in style-src those
@@ -32,8 +33,8 @@
      (rare; fallback text+link still readable). -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
-  script-src 'self' 'sha256-I9Yfcq7guXpscFi+G0+tohjedD6HTkxEQAMsmvRwWNM=' 'sha256-A3ETGxrcp9DTjGzMeHPhzmYsPpIQYAylCdYHxrzxAos=' 'sha256-QBnDYJZwhBXOrgmZ9UEkle1nD40H9Vt2YvnqkMJhoZA=' 'sha256-KjVWMhTuGbrm7UCORRBroU+iHvJEmhZBJglyBQ50lNQ=' 'sha256-JuqsdGplBcALU7JBXMY60J/XWsMNTjcvgK9vSUXwL9E=' 'sha256-dDSWZarw2uRHIInlXyZ/Avc//aK5jQn14L1kP9TgdGs=' https://cdn.jsdelivr.net;
-  style-src 'self' 'sha256-U2A+UzAvwB47kSXoLHdQYJ4CZluXxeuRwgdaJjt9rPs=';
+  script-src 'self' 'sha256-I9Yfcq7guXpscFi+G0+tohjedD6HTkxEQAMsmvRwWNM=' 'sha256-A3ETGxrcp9DTjGzMeHPhzmYsPpIQYAylCdYHxrzxAos=' 'sha256-QBnDYJZwhBXOrgmZ9UEkle1nD40H9Vt2YvnqkMJhoZA=' 'sha256-KjVWMhTuGbrm7UCORRBroU+iHvJEmhZBJglyBQ50lNQ=' 'sha256-gPZdH4/qBo2t2teMK8MKweuNG4MVNUlSw/I476jOSPk=' 'sha256-dDSWZarw2uRHIInlXyZ/Avc//aK5jQn14L1kP9TgdGs=' https://cdn.jsdelivr.net;
+  style-src 'self' 'sha256-ziBSwE5SutBcuqDZR9VVw6oIHNcecZ+Wpgco5PZT5oM=';
   font-src 'self' data:;
   img-src 'self' data: blob:;
   connect-src 'self';
@@ -438,6 +439,39 @@ body.night .meta-mint.pre-mint .qty-btn { background:#444; }
   margin-top: 6px;
 }
 body.night .mint-counter { color: rgba(255,255,255,0.5); }
+
+/* MINT CLOSED terminal state (2026-06-05) — mint closed on-chain. The widget
+   shows a closed banner + final count + 2 OpenSea collection buttons. The
+   interactive mint controls are kept in the DOM (JS refs them via the _v/_m/_p
+   guard at the IIFE head) but hidden via .mint-closed. */
+.meta-mint.mint-closed .qty-row,
+.meta-mint.mint-closed .qty-cost,
+.meta-mint.mint-closed .mint-btn,
+.meta-mint.mint-closed .mint-wallet { display:none; }
+.mint-closed-banner {
+  font-family:monospace; font-size:11px; letter-spacing:0.18em;
+  text-transform:uppercase; text-align:center;
+  color:rgba(0,0,0,0.62); padding:4px 0 2px;
+}
+body.night .mint-closed-banner { color:rgba(255,255,255,0.58); }
+.secondary-hint {
+  font-family:monospace; font-size:9px; letter-spacing:0.10em;
+  text-transform:uppercase; text-align:center;
+  color:rgba(0,0,0,0.42); margin-top:10px;
+}
+body.night .secondary-hint { color:rgba(255,255,255,0.42); }
+.opensea-btn-row { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
+.opensea-btn {
+  flex:1 1 0; min-width:120px; box-sizing:border-box;
+  display:flex; align-items:center; justify-content:center; gap:6px;
+  height:42px;
+  background:#000; color:#fff; border-radius:6px;
+  font-family:monospace; font-size:10px; letter-spacing:0.12em;
+  text-transform:uppercase; text-decoration:none; white-space:nowrap;
+  transition:background 0.15s;
+}
+.opensea-btn:hover { background:#222; }
+.opensea-btn svg { flex-shrink:0; }
 
 /* Mint confirmation modal — same pattern as app/index.html lock modal.
    Hidden by default; .open class fades it in. */
@@ -2160,17 +2194,6 @@ body.night .sys-entry-label  { color:rgba(255,255,255,0.30); }
                target="_blank" rel="noopener noreferrer">0x6655…ec199 ↗</a>
           </div>
           <div class="meta-row">
-            <span class="meta-label">Collections</span>
-            <span class="meta-value">
-              <a class="meta-link" href="https://opensea.io/collection/modulo-139579337"
-                 target="_blank" rel="noopener noreferrer"
-                 aria-label="Modulo collection on OpenSea" title="Modulo · OpenSea"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1"><circle cx="8" cy="8" r="6.8"/><circle cx="8" cy="4.6" r="0.7" fill="currentColor" stroke="none"/><path d="M5 9 L8 5.4 L11 9 Z" fill="currentColor" stroke="none"/><path d="M3.4 10.6 Q5 9.8 6.5 10.6 T9.5 10.6 T12.6 10.6" stroke-width="1.1"/></svg></a>
-              <a class="meta-link" href="https://opensea.io/collection/modulo-artifact-870565944"
-                 target="_blank" rel="noopener noreferrer"
-                 aria-label="Modulo Artifacts collection on OpenSea" title="Modulo Artifacts · OpenSea"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1"><circle cx="8" cy="8" r="6.8"/><circle cx="8" cy="4.6" r="0.7" fill="currentColor" stroke="none"/><path d="M5 9 L8 5.4 L11 9 Z" fill="currentColor" stroke="none"/><path d="M3.4 10.6 Q5 9.8 6.5 10.6 T9.5 10.6 T12.6 10.6" stroke-width="1.1"/></svg></a>
-            </span>
-          </div>
-          <div class="meta-row">
             <span class="meta-label">Storage</span>
             <span class="meta-value">100% On-chain</span>
           </div>
@@ -2179,7 +2202,10 @@ body.night .sys-entry-label  { color:rgba(255,255,255,0.30); }
             <span class="meta-value">Mainnet</span>
           </div>
         </div>
-        <div class="meta-mint">
+        <div class="meta-mint mint-closed">
+          <!-- Interactive mint controls kept in DOM (the IIFE refs _v/_m/_p and
+               bails at the head guard if they're absent) but hidden via
+               .mint-closed — the mint is closed on-chain (closeMint, 2026-06-05). -->
           <div class="qty-row">
             <button class="qty-btn" id="qty-minus" aria-label="decrease">−</button>
             <input class="qty-val" id="qty-val" type="number" min="1" max="20" step="1" value="1" inputmode="numeric" aria-label="quantity">
@@ -2187,7 +2213,16 @@ body.night .sys-entry-label  { color:rgba(255,255,255,0.30); }
           </div>
           <div class="qty-cost"><b id="qty-cost-val">0.0069</b> ETH<span id="qty-quota-hint"></span></div>
           <button class="mint-btn" id="mint-btn">MINT</button>
-          <div class="mint-counter" id="mint-counter">— / 6666 minted</div>
+          <!-- Closed state (visible) -->
+          <div class="mint-closed-banner">Mint Closed</div>
+          <div class="mint-counter" id="mint-counter">608 minted</div>
+          <div class="secondary-hint">Buy on secondary here</div>
+          <div class="opensea-btn-row">
+            <a class="opensea-btn" href="https://opensea.io/collection/modulo-139579337"
+               target="_blank" rel="noopener noreferrer" aria-label="Modulo tokens on OpenSea"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><circle cx="8" cy="8" r="6.8"/><circle cx="8" cy="4.6" r="0.7" fill="currentColor" stroke="none"/><path d="M5 9 L8 5.4 L11 9 Z" fill="currentColor" stroke="none"/><path d="M3.4 10.6 Q5 9.8 6.5 10.6 T9.5 10.6 T12.6 10.6" stroke-width="1.1"/></svg>Modulo ↗</a>
+            <a class="opensea-btn" href="https://opensea.io/collection/modulo-artifact-870565944"
+               target="_blank" rel="noopener noreferrer" aria-label="Modulo Artifacts on OpenSea"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><circle cx="8" cy="8" r="6.8"/><circle cx="8" cy="4.6" r="0.7" fill="currentColor" stroke="none"/><path d="M5 9 L8 5.4 L11 9 Z" fill="currentColor" stroke="none"/><path d="M3.4 10.6 Q5 9.8 6.5 10.6 T9.5 10.6 T12.6 10.6" stroke-width="1.1"/></svg>Artifacts ↗</a>
+          </div>
           <div class="mint-wallet" id="mint-wallet" title="click to disconnect">
             <b id="mint-wallet-addr">—</b>
           </div>
@@ -3333,7 +3368,7 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
   // To launch: flip false → true, redeploy. Nothing else to change here.
   // T-1 runbook: also swap TOKEN_AGENT_ADDRESS + CHAIN_ID + RPC URLs + CSP.
   // ════════════════════════════════════════════════════════════════════════
-  const MINT_ENABLED = true;
+  const MINT_ENABLED = false;  // 2026-06-05 MINT CLOSED on-chain (closeMint) — flow disarmed
 
   // ════════════════════════════════════════════════════════════════════════
   // MINT COUNTER FEATURE FLAG (P2 backlog 2026-05-13)
@@ -3348,7 +3383,7 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
   // early return so MINT_COUNTER_LIVE=true / MINT_ENABLED=false (showing
   // pre-launch live count) works correctly. Reviewer P1 fix 2026-05-13.
   // ════════════════════════════════════════════════════════════════════════
-  const MINT_COUNTER_LIVE = true;
+  const MINT_COUNTER_LIVE = false;  // 2026-06-05 frozen at 608 (closed) — hardcoded in HTML, zero RPC
   const MAX_SUPPLY = 6666;
   const COUNTER_POLL_MS = 30_000;
   const COUNTER_RPC = 'https://modulo.ubk.art/rpc'; // Cloudflare Worker → Alchemy mainnet (read-only, paid)
@@ -3362,7 +3397,7 @@ if (localStorage.getItem('tc-night') === '1') _setNight(true);
   // INDEPENDENT of MINT_ENABLED — countdown runs in pre-mint state, button text
   // managed by countdown. MINT_ENABLED still gates click handler / wallet flow.
   // ════════════════════════════════════════════════════════════════════════
-  const COUNTDOWN_ACTIVE = true;
+  const COUNTDOWN_ACTIVE = false;  // 2026-06-05 mint closed — no countdown/polling, no "OPENING ANY MOMENT"
 
   // Target: 2026-05-21 18:30 UTC = 15:30 Chile (UTC-3, no DST since 2022).
   // Verify: new Date(1779388200 * 1000).toISOString() → "2026-05-21T18:30:00.000Z"
