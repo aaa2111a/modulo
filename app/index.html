@@ -8090,6 +8090,25 @@ function renderInventoryGrid() {
     inventoryGrid.appendChild(loadingEl);
     return;
   }
+  // Brief #16: the watchdog flagged a hung/failed sync → show a Retry state
+  // instead of a misleading empty "no tokens" grid. Retry = full reload (safe:
+  // sidesteps any stale-state edge case; the user was stuck anyway). Built with
+  // createElement (no innerHTML/onclick) — .style mutation isn't governed by CSP.
+  if (_inventoryLoadingError) {
+    inventoryCount.textContent = 'sync failed';
+    const errEl = document.createElement('div');
+    errEl.className = 'inv-empty';
+    const msg = document.createElement('div');
+    msg.textContent = _inventoryLoadingError + ' — couldn’t load your tokens.';
+    const btn = document.createElement('button');
+    btn.textContent = 'Retry';
+    btn.style.cssText = 'margin-top:8px;padding:4px 14px;cursor:pointer;font-family:monospace;font-size:11px;border-radius:3px';
+    btn.addEventListener('click', () => location.reload());
+    errEl.append(msg, btn);
+    inventoryGrid.appendChild(errEl);
+    if (inventoryOverlay.classList.contains('active')) _positionInventoryToBtn();
+    return;
+  }
   inventoryCount.textContent =
     `${tokenInventory.length} available · slots ${mod.tokens.length}/8`;
 
@@ -10466,6 +10485,7 @@ const _widthMQ = window.matchMedia('(max-width:1024px)');
 // init L10423ish) to avoid a TDZ ReferenceError on first render.
 let _inventoryLoadingAccount = null;     // address currently first-loading, or null
 let _inventoryLoadingWatchdog = null;    // setTimeout handle
+let _inventoryLoadingError = null;       // Brief #16: error msg if a sync hung/failed → renderInventoryGrid shows a Retry state instead of an empty grid. null when OK. Cleared on the next _armInventoryLoading.
 const _INVENTORY_WATCHDOG_MS = 90000;    // 90s — 50% margin over the observed 30-60s normal load
 // 12-spoke macOS-style spinner spokes, reused from #my-artifacts-loading (L3026+).
 const SPINNER_SPOKES_SVG =
@@ -10488,6 +10508,7 @@ const SPINNER_SPOKES_SVG =
 // _initWalletSession (first load / account-switch), AFTER its early-return guards.
 function _armInventoryLoading(account) {
   _inventoryLoadingAccount = account;
+  _inventoryLoadingError = null;           // Brief #16: a fresh load clears any prior Retry/error state
   if (typeof updateTopbarWallet === 'function') updateTopbarWallet();
   if (typeof renderInventoryGrid === 'function' &&
       typeof inventoryOverlay !== 'undefined' && inventoryOverlay &&
@@ -10503,10 +10524,14 @@ function _armInventoryLoading(account) {
     if (_inventoryLoadingAccount !== account) return;  // already cleared / new account took over
     if (_chainSyncRunning) {
       _inventoryLoadingWatchdog = setTimeout(() => {
-        if (_inventoryLoadingAccount === account) _clearInventoryLoading();
+        if (_inventoryLoadingAccount === account) {
+          _inventoryLoadingError = 'Sync timed out';   // Brief #16: surface a Retry state instead of a misleading empty grid
+          _clearInventoryLoading();
+        }
       }, _INVENTORY_WATCHDOG_MS);
       return;
     }
+    _inventoryLoadingError = 'Sync failed';            // Brief #16: dead sync (finally never ran) → Retry state
     _clearInventoryLoading();
   }, _INVENTORY_WATCHDOG_MS);
 }
@@ -11673,6 +11698,7 @@ async function lockToken(modId, tokenNum, durationMs) {
     }
     if (code === 'functions/already-exists') return { ok: false, reason: 'already-locked' };
     if (code === 'functions/permission-denied') return { ok: false, reason: 'sig-mismatch' };
+    if (code === 'functions/unauthenticated') return { ok: false, reason: 'app-check-failed', err };
     return { ok: false, reason: 'fb-error', err };
   }
 
@@ -12356,7 +12382,17 @@ function _getReadonlyProvider() {
     // per minted token (ownerOf+getTraits), so at 100 mints that's 200 calls →
     // batches of 100 → 400 storm. Capping at 20 keeps ethers batches within the
     // Worker's accepted size. (security-auditor a05a2db5, 2026-05-21.)
-    _readonlyProvider = new window.ethers.JsonRpcProvider(urls[0], WALLET_TARGET_CHAIN_ID, { batchMaxCount: 20 });
+    // Brief #16 (2026-06-05): bound RPC reads + kill the network-detection retry-storm.
+    // ethers' default FetchRequest.timeout is 300000ms (5 min) and, without staticNetwork,
+    // a transient eth_chainId failure makes ethers retry network detection with backoff — an
+    // unbounded hang in a flaky environment (the "inventory doesn't show" bug). A FetchRequest
+    // with a 20s timeout bounds every batched POST; staticNetwork skips detection (chainId is a
+    // known constant). Wrong-chain on the readonly provider is harmless (signer path detects it
+    // separately). (workflow-completo design + VERIFY GO 2026-06-05.)
+    const _fr = new window.ethers.FetchRequest(urls[0]);
+    _fr.timeout = 20000; // == CHAIN_TIMEOUT_MS; literal to avoid any init-order/TDZ doubt
+    const _net = window.ethers.Network.from(WALLET_TARGET_CHAIN_ID);
+    _readonlyProvider = new window.ethers.JsonRpcProvider(_fr, _net, { batchMaxCount: 20, staticNetwork: _net });
     // Polling interval for the Transfer event block-poll (provider.on('block')).
     // 12000ms = mainnet block time (~12s). 2026-05-21: was 4000ms (a Sepolia-era
     // value = blocktime/3); on mainnet that polled eth_blockNumber 3× per block —
@@ -12509,7 +12545,7 @@ async function _chainSync() {
   if (!agent) return { ok: false, reason: 'no-ethers' };
 
   let total;
-  try { total = Number(await agent.totalMinted()); }
+  try { total = Number(await _withTimeout(agent.totalMinted(), CHAIN_TIMEOUT_MS, 'totalMinted')); }
   catch (err) { console.error('[chain] totalMinted failed:', err); return { ok: false, reason: 'rpc-error', err }; }
   dbg.log('[chain] totalMinted on-chain:', total);
   // Stash on a module global so the topbar pill can show the truthful denominator.
@@ -12527,7 +12563,7 @@ async function _chainSync() {
   if (_walletAddress) {
     let scanResult = null;
     try {
-      scanResult = await _userScopedTokenIds(_walletAddress, provider, agent);
+      scanResult = await _withTimeout(_userScopedTokenIds(_walletAddress, provider, agent), HYDRATE_TIMEOUT_MS, 'userScopedTokenIds');
     } catch (err) {
       dbg.warn('[chain] _userScopedTokenIds failed, falling back to O(N) loop:', err && err.message);
       scanResult = null;
@@ -12552,7 +12588,8 @@ async function _chainSync() {
           }
         })());
       }
-      await Promise.all(tasks);
+      try { await _withTimeout(Promise.all(tasks), HYDRATE_TIMEOUT_MS, 'hydrate-user'); }
+      catch (e) { dbg.warn('[chain] user hydration timed out (partial render):', e && e.message); }
       const walletLc = _walletAddress.toLowerCase();
       for (const id of userIds) {
         const td = TOKEN_DATA[id];
@@ -12577,7 +12614,8 @@ async function _chainSync() {
           }
         })());
       }
-      await Promise.all(tasks);
+      try { await _withTimeout(Promise.all(tasks), HYDRATE_TIMEOUT_MS, 'hydrate-fallback'); }
+      catch (e) { dbg.warn('[chain] fallback hydration timed out (partial render):', e && e.message); }
       const walletLc = _walletAddress.toLowerCase();
       owned = TOKEN_DATA
         .filter(t => t && t.owner && t.owner.toLowerCase() === walletLc)
@@ -12857,7 +12895,10 @@ async function _hydrateFbLocked() {
         }
       })());
     }
-    await Promise.all(tasks);
+    // Brief #16: bound this hydration too (it can run on the unbounded || _walletProvider
+    // fallback). Same pattern as _chainSync's user/fallback batches.
+    try { await _withTimeout(Promise.all(tasks), HYDRATE_TIMEOUT_MS, 'hydrate-fblocked'); }
+    catch (e) { dbg.warn('[chain] _hydrateFbLocked hydration timed out (partial render):', e && e.message); }
 
     if (typeof _rebuildInventory === 'function') _rebuildInventory();
     if (typeof updatePillTokens === 'function') updatePillTokens();
@@ -13333,8 +13374,12 @@ async function _signEnsAction(action) {
     ],
   };
   const value = { address: _walletAddress, timestamp: ts };
-  const signer = await _walletProvider.getSigner();
-  const signature = await signer.signTypedData(_ensDomain(), types, value);
+  // Brief #16 (FIX A): bound getSigner + signTypedData so an unresponsive wallet
+  // doesn't latch the ENS button on "signing…" forever. One timeout covers both.
+  const signature = await _withTimeout((async () => {
+    const signer = await _walletProvider.getSigner();
+    return signer.signTypedData(_ensDomain(), types, value);
+  })(), WALLET_TIMEOUT_MANUAL_MS, 'ENS ' + action + ' sign');
   return { signature, ts };
 }
 
@@ -13370,6 +13415,10 @@ async function _verifyEnsClick() {
     const code = err && err.code;
     if (code === 'ACTION_REJECTED' || (err.message || '').includes('rejected')) {
       // User cancelled MetaMask popup — silent reset
+    } else if (code === 'WALLET_TIMEOUT') {
+      _walletShowStatus('Wallet didn’t respond to the signing request — check your wallet and try again.');
+    } else if (code === 'functions/unauthenticated') {
+      alert('Device verification failed. Turn off VPN / incognito / ad-blockers, or use the Reset tab (info → Reset) and reload.');
     } else if (code === 'functions/resource-exhausted') {
       alert('Rate limit reached (5 verifies per hour). Wait and retry.');
     } else if (code === 'functions/unavailable') {
@@ -13393,12 +13442,19 @@ async function _removeEnsClick() {
     const { functions, httpsCallable } = window.FB;
     const removeFn = httpsCallable(functions, 'removeEns');
     await removeFn({ address: _walletAddress, signature, ts });
-    // RTDB listener will clear _ensCache entry → re-render
+    // RTDB listener will clear _ensCache entry → re-render.
+    // Brief #16 (FIX C): backstop refresh so the button updates even if the RTDB
+    // snapshot is slow (mirrors _verifyEnsClick's success path).
+    setTimeout(() => _renderWalletUI(), 500);
   } catch (err) {
     console.error('[ens] remove failed:', err);
     const code = err && err.code;
     if (code === 'ACTION_REJECTED' || (err.message || '').includes('rejected')) {
       // Silent
+    } else if (code === 'WALLET_TIMEOUT') {
+      _walletShowStatus('Wallet didn’t respond to the signing request — check your wallet and try again.');
+    } else if (code === 'functions/unauthenticated') {
+      alert('Device verification failed. Turn off VPN / incognito / ad-blockers, or use the Reset tab (info → Reset) and reload.');
     } else {
       alert('Remove failed: ' + (err.message || code || 'unknown'));
     }
@@ -13516,6 +13572,7 @@ function _withTimeout(promise, ms, label) {
 const WALLET_TIMEOUT_MANUAL_MS = 40000; // eth_requestAccounts — waits for human approval in the wallet
 const WALLET_TIMEOUT_SILENT_MS = 15000; // eth_accounts — no human; 15s covers MetaMask MV3 SW cold start
 const CHAIN_TIMEOUT_MS         = 20000; // wallet_switchEthereumChain
+const HYDRATE_TIMEOUT_MS       = 45000; // Brief #16: outer cap on _chainSync hydration batches + the Transfer scan. Covers the unbounded `|| _walletProvider` fallback (no FetchRequest timeout); per-batch reads on the readonly provider are already bounded by its 20s FetchRequest timeout.
 
 // Transient bottom-center toast (NOT alert, NOT modal) for wallet status.
 // Replaces blocking alert() for the timeout path. app/ CSP is unsafe-inline so
@@ -14228,6 +14285,7 @@ async function settleModulo(modId) {
       }
       if (err && err.code === 'functions/permission-denied')   return { ok: false, reason: 'sig-mismatch' };
       if (err && err.code === 'functions/resource-exhausted')  return { ok: false, reason: 'rate-limited' };
+      if (err && err.code === 'functions/unauthenticated')     return { ok: false, reason: 'app-check-failed', err };
       return { ok: false, reason: 'attest-error', err };
     }
     if (!attestation || !attestation.ok) return { ok: false, reason: 'attest-error' };
@@ -14454,6 +14512,7 @@ async function _workshopSettleOnChain(mod, modId) {
     console.error('[workshop-settle] attestWorkshopSettle CF failed:', err);
     if (err && err.code === 'functions/permission-denied')   return { ok: false, reason: 'sig-mismatch' };
     if (err && err.code === 'functions/resource-exhausted')  return { ok: false, reason: 'rate-limited' };
+    if (err && err.code === 'functions/unauthenticated')     return { ok: false, reason: 'app-check-failed', err };
     return { ok: false, reason: 'attest-error', err };
   }
   if (!attestation || !attestation.ok) return { ok: false, reason: 'attest-error' };
@@ -14849,6 +14908,12 @@ async function confirmLockModal() {
           variant: 'warn',
           ttlMs: 5000
         });
+      } else if (result.reason === 'app-check-failed') {
+        _showToast('Device verification failed', {
+          sub: 'Turn off VPN / incognito / ad-blockers, or use the Reset tab and reload.',
+          variant: 'warn',
+          ttlMs: 7000
+        });
       }
     }
   } finally {
@@ -15107,6 +15172,12 @@ async function _runSettle(mod, settleBtn) {
           sub: 'Shared modulo settle requires locks from at least 2 different users. (Workshop is solo, no minimum.)',
           variant: 'warn',
           ttlMs: 5000
+        });
+      } else if (result.reason === 'app-check-failed') {
+        _showToast('Device verification failed', {
+          sub: 'Turn off VPN / incognito / ad-blockers, or use the Reset tab and reload.',
+          variant: 'warn',
+          ttlMs: 7000
         });
       } else {
         const _msg = (result.err && (result.err.shortMessage || result.err.reason || result.err.message)) || result.reason;
