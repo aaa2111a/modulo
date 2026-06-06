@@ -12539,14 +12539,22 @@ async function _chainSync() {
   const provider = _getReadonlyProvider() || _walletProvider;
   if (!provider) {
     dbg.warn('[chain] no provider available');
+    if (_inventoryLoadingAccount) _inventoryLoadingError = 'Connection failed';  // BUG-2: Retry state, not empty grid (guarded: armed/wallet load only, never guest)
     return { ok: false, reason: 'no-provider' };
   }
   const agent = _getTokenAgent(provider);
-  if (!agent) return { ok: false, reason: 'no-ethers' };
+  if (!agent) {
+    if (_inventoryLoadingAccount) _inventoryLoadingError = 'Connection failed';  // BUG-2
+    return { ok: false, reason: 'no-ethers' };
+  }
 
   let total;
   try { total = Number(await _withTimeout(agent.totalMinted(), CHAIN_TIMEOUT_MS, 'totalMinted')); }
-  catch (err) { console.error('[chain] totalMinted failed:', err); return { ok: false, reason: 'rpc-error', err }; }
+  catch (err) {
+    console.error('[chain] totalMinted failed:', err);
+    if (_inventoryLoadingAccount) _inventoryLoadingError = 'Connection failed';  // BUG-2
+    return { ok: false, reason: 'rpc-error', err };
+  }
   dbg.log('[chain] totalMinted on-chain:', total);
   // Stash on a module global so the topbar pill can show the truthful denominator.
   // updatePillTokens reads `_onchainTotalMinted` and re-renders.
@@ -12561,6 +12569,7 @@ async function _chainSync() {
 
   // ═══ Track 1 — USER scope (Transfer event scan + fallback O(N)) ═══
   if (_walletAddress) {
+    const walletSnapshot = _walletAddress;   // BUG-3: snapshot before awaits (mirror of _syncStartedForAccount L12503); _walletAddress may null on a mid-sync disconnect
     let scanResult = null;
     try {
       scanResult = await _withTimeout(_userScopedTokenIds(_walletAddress, provider, agent), HYDRATE_TIMEOUT_MS, 'userScopedTokenIds');
@@ -12590,7 +12599,7 @@ async function _chainSync() {
       }
       try { await _withTimeout(Promise.all(tasks), HYDRATE_TIMEOUT_MS, 'hydrate-user'); }
       catch (e) { dbg.warn('[chain] user hydration timed out (partial render):', e && e.message); }
-      const walletLc = _walletAddress.toLowerCase();
+      const walletLc = walletSnapshot.toLowerCase();   // BUG-3: snapshot (not live _walletAddress, which may null mid-await)
       for (const id of userIds) {
         const td = TOKEN_DATA[id];
         if (td && td.owner && td.owner.toLowerCase() === walletLc) owned.push(id);
@@ -12616,7 +12625,7 @@ async function _chainSync() {
       }
       try { await _withTimeout(Promise.all(tasks), HYDRATE_TIMEOUT_MS, 'hydrate-fallback'); }
       catch (e) { dbg.warn('[chain] fallback hydration timed out (partial render):', e && e.message); }
-      const walletLc = _walletAddress.toLowerCase();
+      const walletLc = walletSnapshot.toLowerCase();   // BUG-3: snapshot (not live _walletAddress, which may null mid-await)
       owned = TOKEN_DATA
         .filter(t => t && t.owner && t.owner.toLowerCase() === walletLc)
         .map(t => t.id);
@@ -12635,6 +12644,10 @@ async function _chainSync() {
     catch (err) { dbg.warn('[chain] _hydrateFbLocked failed:', err && err.message); }
   }
 
+  // BUG-2 follow-up: a successful hydration clears any prior failed-run error so a
+  // later (e.g. queue-drained) success doesn't leave a stale "Connection failed"
+  // Retry state behind the now-correct counts.
+  _inventoryLoadingError = null;
   if (typeof _rebuildInventory === 'function') _rebuildInventory();
   if (typeof updatePillTokens === 'function') updatePillTokens();
   if (typeof updateTopbarWallet === 'function') updateTopbarWallet();
@@ -12782,6 +12795,7 @@ async function _userScopedTokenIds(user, provider, agent, signal) {
 
   // 3. Chunked Transfer scan (sequential per Brief #8b Q6 — avoid Promise.all
   //    burst on Alchemy; pattern mirrors _maScanAndRender L8642-8654).
+  let chunkFailed = false;   // BUG-1: any chunk failure → return null (O(N) fallback) + skip cache write
   if (startBlock <= latestBlock) {
     const filter = agent.filters.Transfer();
     let from = startBlock;
@@ -12797,12 +12811,24 @@ async function _userScopedTokenIds(user, provider, agent, signal) {
         }
       } catch (err) {
         dbg.warn('[chainsync-phaseA] chunk', from, '-', to, 'failed:', err && err.message);
+        chunkFailed = true;
+        break;   // BUG-1: stop scanning a throttled RPC; the O(N) fallback in _chainSync is authoritative
       }
       from = to + 1;
     }
   }
 
   if (signal && signal.aborted) return { ownedIds: null, lastScanBlock: null, aborted: true };
+
+  // BUG-1: incomplete scan → do NOT derive a partial ownedIds (an empty/undercounted
+  // Set is truthy and would masquerade as success at the _chainSync L12572 guard,
+  // bypassing the O(N) fallback) and do NOT write the cache (would poison future
+  // incremental scans → sticky 0-tokens across reload). Return null so the caller's
+  // guard routes to the authoritative O(N) ownerOf loop.
+  if (chunkFailed) {
+    dbg.warn('[chainsync-phaseA] scan incomplete (chunk failure) — returning null for O(N) fallback, cache NOT written');
+    return { ownedIds: null, lastScanBlock: null, aborted: false };
+  }
 
   // 4. Derive ownedIds from ownerMap. Burned tokens (owner === 0x0) are
   //    naturally excluded by the equality check; transferred-out tokens
