@@ -13645,43 +13645,83 @@ function _eip6963Init() {
 // (P0 fix). Resolves early when the preferred (or any, if no pref) wallet is
 // already in the registry — single-wallet stays instant.
 function _eip6963Settle(ms) {
+  // Brief #18: a legacy pref lives in window.ethereum (not the registry) — no need
+  // to wait for EIP-6963 announces; resolve immediately.
+  if (_eip6963PreferredRdns && _eip6963PreferredRdns.indexOf('_legacy:') === 0) return Promise.resolve();
   if (_eip6963PreferredRdns && _eip6963Providers.has(_eip6963PreferredRdns)) return Promise.resolve();
   if (!_eip6963PreferredRdns && _eip6963Providers.size >= 1) return Promise.resolve();
   return new Promise(r => setTimeout(r, ms));
 }
 
+// Brief #18: find MetaMask/Phantom in the LEGACY injected layer (window.ethereum /
+// window.ethereum.providers[] / window.phantom) when they did NOT announce via
+// EIP-6963 — e.g. Brave with "Brave Wallet" as default suppresses the announce.
+// `which` = 'io.metamask' | 'app.phantom'. Returns a raw EIP-1193 provider or null.
+// MetaMask disambiguation: Phantom (and others) also set isMetaMask=true for compat,
+// so exclude known impostors. Phantom's window.phantom.ethereum survives Brave's
+// window.ethereum lock and is the most reliable Phantom path. NOTE: identity flags
+// are extension-controlled / spoofable — this is a best-effort UX recovery, NOT a
+// security boundary (the real backstop is the contract's dual-sig EIP-712).
+function _findLegacyProvider(which) {
+  const inj = window.ethereum;
+  if (which === 'app.phantom') {
+    try { const p = window.phantom && window.phantom.ethereum; if (p && p.isPhantom) return p; } catch (_) {}
+    if (inj && Array.isArray(inj.providers)) { const p = inj.providers.find(x => x && x.isPhantom); if (p) return p; }
+    if (inj && inj.isPhantom) return inj;
+    return null;
+  }
+  if (which === 'io.metamask') {
+    const isMM = p => p && p.isMetaMask && !p.isPhantom && !p.isBraveWallet && !p.isCoinbaseWallet && !p.isRabby;
+    if (inj && Array.isArray(inj.providers)) { const p = inj.providers.find(isMM); if (p) return p; }
+    if (isMM(inj)) return inj;
+    return null;
+  }
+  return null;
+}
+
 // Resolve which provider to connect with. Returns {provider, needsPicker}.
-// Opción A (Le 2026-05-31): a MANUAL connect with >1 wallet ALWAYS shows the
-// picker (user re-chooses on every click). The stored pref is used ONLY by the
-// SILENT auto-reconnect, so reloading while connected stays transparent (no
-// picker) but a deliberate connect lets you switch wallets each time.
+// Opción A + Brief #18 (2026-06-05): a MANUAL connect ALWAYS shows the picker (so
+// MetaMask + Phantom are always offered, even with 0/1 detected wallets — the
+// picker itself handles legacy fallback + "not detected"). The stored pref is used
+// ONLY by the SILENT auto-reconnect, so reloading while connected stays transparent.
 function _resolveProvider(silent) {
-  // Stale-clear ONLY against a POPULATED registry (P0 fix): never drop the
-  // stored pref just because announces haven't arrived yet, nor on a partial set.
-  if (_eip6963PreferredRdns && _eip6963Providers.size > 0 && !_eip6963Providers.has(_eip6963PreferredRdns)) {
+  const pref = _eip6963PreferredRdns;
+  const isLegacyPref = !!pref && pref.indexOf('_legacy:') === 0;
+  // Stale-clear ONLY against a POPULATED registry (P0 fix); NEVER for a legacy pref
+  // (it lives in window.ethereum, never in the registry).
+  if (pref && !isLegacyPref && _eip6963Providers.size > 0 && !_eip6963Providers.has(pref)) {
     _eip6963PreferredRdns = null;
     try { localStorage.removeItem(WALLET_RDNS_LS_KEY); } catch (_) {}
   }
-  // Stored pref auto-selects ONLY on the silent reconnect (Opción A) — a manual
-  // connect ignores it and shows the picker instead (when >1 wallet).
-  if (silent && _eip6963PreferredRdns && _eip6963Providers.has(_eip6963PreferredRdns)) {
-    return { provider: _eip6963Providers.get(_eip6963PreferredRdns).provider, needsPicker: false };
-  }
-  if (_eip6963Providers.size === 1) {
-    return { provider: _eip6963Providers.values().next().value.provider, needsPicker: false };
-  }
-  if (_eip6963Providers.size > 1) {
-    return { provider: null, needsPicker: true };
-  }
-  // Registry empty (no EIP-6963 wallets) -> fall back to the legacy injected provider.
-  const inj = window.ethereum;
-  if (inj) {
-    if (Array.isArray(inj.providers) && inj.providers.length) {
-      return { provider: inj.providers.find(p => p && p.isMetaMask) || inj.providers[0], needsPicker: false };
+  if (silent) {
+    // Honor a legacy pref (re-find it in window.ethereum each reload).
+    if (isLegacyPref) {
+      const p = _findLegacyProvider(pref.slice('_legacy:'.length));
+      if (p) return { provider: p, needsPicker: false };
+      _eip6963PreferredRdns = null;                     // legacy wallet gone → drop stale pref
+      try { localStorage.removeItem(WALLET_RDNS_LS_KEY); } catch (_) {}
     }
-    return { provider: inj, needsPicker: false };
+    if (_eip6963PreferredRdns && _eip6963Providers.has(_eip6963PreferredRdns)) {
+      return { provider: _eip6963Providers.get(_eip6963PreferredRdns).provider, needsPicker: false };
+    }
+    if (_eip6963Providers.size === 1) {
+      return { provider: _eip6963Providers.values().next().value.provider, needsPicker: false };
+    }
+    if (_eip6963Providers.size > 1) {
+      return { provider: null, needsPicker: true };     // silent: caller returns null → guest
+    }
+    // Registry empty → legacy injected fallback (silent only).
+    const inj = window.ethereum;
+    if (inj) {
+      if (Array.isArray(inj.providers) && inj.providers.length) {
+        return { provider: inj.providers.find(p => p && p.isMetaMask) || inj.providers[0], needsPicker: false };
+      }
+      return { provider: inj, needsPicker: false };
+    }
+    return { provider: null, needsPicker: false };
   }
-  return { provider: null, needsPicker: false };
+  // MANUAL connect → always open the picker (Brief #18).
+  return { provider: null, needsPicker: true };
 }
 
 // Modal wallet picker. SECURITY: createElement + textContent only — never
@@ -13695,33 +13735,95 @@ function _showWalletPicker(onSelect) {
   _pickerOpen = true;
 
   let done = false;
-  const finish = (rdns) => {
+  const finish = (rdns, legacyProvider) => {
     if (done) return; done = true;
     _pickerOpen = false;
     document.removeEventListener('keydown', onKey, true);
     if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
-    onSelect(rdns || null);
+    onSelect(rdns || null, legacyProvider || null);
   };
-  const onKey = (ev) => { if (ev.key === 'Escape') finish(null); };
+  const onKey = (ev) => { if (ev.key === 'Escape') finish(null, null); };
 
   const overlay = document.createElement('div');
   overlay.id = 'wallet-picker-overlay';
   overlay.style.cssText = 'position:fixed;inset:0;z-index:10000;display:flex;align-items:center;' +
     'justify-content:center;background:rgba(0,0,0,0.45);';
-  overlay.addEventListener('click', (ev) => { if (ev.target === overlay) finish(null); });
+  overlay.addEventListener('click', (ev) => { if (ev.target === overlay) finish(null, null); });
 
   const card = document.createElement('div');
   card.style.cssText = 'background:#fff;color:#111;border-radius:10px;padding:18px;min-width:260px;' +
     'max-width:90vw;max-height:80vh;overflow:auto;box-shadow:0 8px 40px rgba(0,0,0,0.3);font-size:14px;' +
     "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;";
 
+  // Title row with a "?" help toggle (Brief #18b). The "?" sits to the side of the
+  // title; clicking it expands an inline help panel that pushes content down (no
+  // overlap; the card scrolls). createElement/textContent only — XSS-safe.
+  const titleRow = document.createElement('div');
+  titleRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px;';
   const title = document.createElement('div');
   title.textContent = 'Choose a wallet';
-  title.style.cssText = 'font-weight:600;margin-bottom:12px;';
-  card.appendChild(title);
+  title.style.cssText = 'font-weight:600;';
+  const helpBtn = document.createElement('button');
+  helpBtn.type = 'button';
+  helpBtn.textContent = '?';
+  helpBtn.setAttribute('aria-label', "Don't see your wallet?");
+  helpBtn.style.cssText = 'flex:0 0 auto;width:20px;height:20px;border-radius:50%;border:1px solid #ccc;' +
+    'background:#f4f3f1;color:#555;font-size:12px;font-weight:700;cursor:pointer;line-height:1;padding:0;';
+  titleRow.appendChild(title);
+  titleRow.appendChild(helpBtn);
+  card.appendChild(titleRow);
 
-  for (const [rdns, d] of _eip6963Providers.entries()) {
-    const info = d.info || {};
+  const help = document.createElement('div');
+  help.style.cssText = 'display:none;background:#f6f6f4;border:1px solid #e2e0db;border-radius:6px;' +
+    'padding:10px 12px;margin-bottom:12px;font-size:12px;line-height:1.5;color:#333;';
+  const _hp = (txt, bold) => {
+    const d = document.createElement('div');
+    d.textContent = txt;
+    if (bold) d.style.fontWeight = '600';
+    d.style.marginBottom = '4px';
+    help.appendChild(d);
+  };
+  _hp("Don't see MetaMask or Phantom? (e.g. on Brave)", true);
+  _hp('1. Open brave://settings/web3 (or Settings → Web3).');
+  _hp('2. In "Default crypto wallet," change from "Brave Wallet" to "Extensions (no fallback)" — or simply "Extensions."');
+  _hp('3. Close and reopen Brave (or refresh the page) for the change to take effect.');
+  _hp('4. Reconnect → MetaMask and Phantom should now appear/function.');
+  const _sep = document.createElement('div');
+  _sep.style.cssText = 'border-top:1px solid #e2e0db;margin:8px 0 6px;';
+  help.appendChild(_sep);
+  _hp('Still stuck? Open Info (top bar) → Reset tab → "Reset app data" to clear cached data and reload.');
+  card.appendChild(help);
+  helpBtn.addEventListener('click', () => { help.style.display = (help.style.display === 'none') ? 'block' : 'none'; });
+
+  // Brief #18: inline "not detected" message shown when a synthetic MetaMask/
+  // Phantom row is clicked but the wallet isn't reachable (no EIP-6963 announce AND
+  // no legacy window.ethereum provider). Picker stays open. textContent — XSS-safe.
+  const _showNotDetected = (name) => {
+    const ex = card.querySelector('.wp-err'); if (ex) ex.remove();
+    const e = document.createElement('div');
+    e.className = 'wp-err';
+    e.textContent = name + ' not detected. Install it (or enable it for this site) and reload. Brave: Settings → Web3 → Default wallet → "Extensions".';
+    e.style.cssText = 'color:#b3261e;background:#fde8e6;border-radius:6px;padding:8px 10px;margin:0 0 10px;font-size:12px;line-height:1.4;';
+    card.insertBefore(e, help.nextSibling);   // after the title row + help panel (both are card children)
+  };
+
+  // Brief #17 + #18: MetaMask + Phantom ALWAYS listed first (real row if announced
+  // via EIP-6963, else a SYNTHETIC row that tries a legacy fallback on click), then
+  // the rest in announce order. createElement/textContent only (XSS-safe).
+  const _PICKER_PRIORITY = ['io.metamask', 'app.phantom'];
+  const _PRIORITY_NAMES = { 'io.metamask': 'MetaMask', 'app.phantom': 'Phantom' };
+  const _rows = [];
+  for (const rd of _PICKER_PRIORITY) {
+    if (_eip6963Providers.has(rd)) _rows.push({ rdns: rd, info: _eip6963Providers.get(rd).info || {}, synthetic: false });
+    else _rows.push({ rdns: rd, info: { name: _PRIORITY_NAMES[rd] }, synthetic: true });
+  }
+  for (const [rd, d] of _eip6963Providers.entries()) {
+    if (_PICKER_PRIORITY.indexOf(rd) !== -1) continue;   // priority ones already added above
+    _rows.push({ rdns: rd, info: d.info || {}, synthetic: false });
+  }
+  for (const r of _rows) {
+    const info = r.info || {};
+    const rd = r.rdns;
     const row = document.createElement('button');
     row.type = 'button';
     row.style.cssText = 'display:flex;align-items:center;gap:10px;width:100%;text-align:left;' +
@@ -13729,7 +13831,7 @@ function _showWalletPicker(onSelect) {
     // Phantom (and possibly others) prefix the data URI with a leading newline —
     // trim before validating, else startsWith('data:image/') rejects a valid icon.
     const _ic = (typeof info.icon === 'string') ? info.icon.trim() : '';
-    if (_ic.startsWith('data:image/')) {
+    if (!r.synthetic && _ic.startsWith('data:image/')) {
       const img = document.createElement('img');
       img.setAttribute('src', _ic);  // trimmed data: URI only (validated) — img-src data: allowed
       img.width = 22; img.height = 22; img.alt = '';
@@ -13737,10 +13839,19 @@ function _showWalletPicker(onSelect) {
       row.appendChild(img);
     }
     const nm = document.createElement('div');
-    nm.textContent = info.name || rdns;       // textContent — XSS-safe; rdns only as fallback if name missing
+    nm.textContent = info.name || rd;         // textContent — XSS-safe
     nm.style.cssText = 'font-weight:600;font-size:14px;';
     row.appendChild(nm);
-    row.addEventListener('click', () => finish(rdns));
+    if (r.synthetic) {
+      const nName = info.name || rd;
+      row.addEventListener('click', () => {
+        const lp = _findLegacyProvider(rd);   // try legacy window.ethereum first
+        if (lp) finish(null, lp);             // connect via the raw provider object (no rdns → no picker loop)
+        else _showNotDetected(nName);         // truly absent → inline message, picker stays open
+      });
+    } else {
+      row.addEventListener('click', () => finish(rd, null));
+    }
     card.appendChild(row);
   }
 
@@ -13748,7 +13859,7 @@ function _showWalletPicker(onSelect) {
   cancel.type = 'button';
   cancel.textContent = 'Cancel';
   cancel.style.cssText = 'margin-top:4px;background:none;border:none;color:#888;cursor:pointer;font-size:13px;';
-  cancel.addEventListener('click', () => finish(null));
+  cancel.addEventListener('click', () => finish(null, null));
   card.appendChild(cancel);
 
   overlay.appendChild(card);
@@ -13756,7 +13867,7 @@ function _showWalletPicker(onSelect) {
   document.addEventListener('keydown', onKey, true);
 }
 
-async function _walletConnect({ silent = false, forcedRdns = null } = {}) {
+async function _walletConnect({ silent = false, forcedRdns = null, forcedProvider = null } = {}) {
   if (!window.ethers) {
     if (!silent) alert('Wallet library not loaded.');
     return null;
@@ -13767,7 +13878,10 @@ async function _walletConnect({ silent = false, forcedRdns = null } = {}) {
   // wallet, skipping the picker. Required under Opción A (a manual connect always
   // shows the picker) to avoid an infinite picker loop on the re-entry.
   let provider, needsPicker;
-  if (forcedRdns && _eip6963Providers.has(forcedRdns)) {
+  if (forcedProvider) {                                   // Brief #18: raw legacy provider object from a synthetic picker row
+    provider = forcedProvider;
+    needsPicker = false;
+  } else if (forcedRdns && _eip6963Providers.has(forcedRdns)) {
     provider = _eip6963Providers.get(forcedRdns).provider;
     needsPicker = false;
   } else {
@@ -13776,12 +13890,20 @@ async function _walletConnect({ silent = false, forcedRdns = null } = {}) {
   if (needsPicker) {
     if (silent) return null;        // silent bootstrap: no picker UI, fall through to guest
     if (_pickerOpen) return null;   // no stacked modals
-    _showWalletPicker((rdns) => {
+    _showWalletPicker((rdns, legacyProvider) => {
       if (rdns) {
         _eip6963PreferredRdns = rdns;
         try { localStorage.setItem(WALLET_RDNS_LS_KEY, rdns); } catch (_) {}
         _walletConnect({ silent, forcedRdns: rdns }); // connect directly to the chosen wallet (no re-picker)
+      } else if (legacyProvider) {
+        // Brief #18: synthetic MetaMask/Phantom connected via legacy window.ethereum.
+        // Store a _legacy: pref so the silent reconnect re-finds it next reload.
+        const legRdns = legacyProvider.isPhantom ? '_legacy:app.phantom' : '_legacy:io.metamask';
+        _eip6963PreferredRdns = legRdns;
+        try { localStorage.setItem(WALLET_RDNS_LS_KEY, legRdns); } catch (_) {}
+        _walletConnect({ silent, forcedProvider: legacyProvider });
       }
+      // (null, null) = cancel / ESC / backdrop → do nothing
     });
     return null;
   }
