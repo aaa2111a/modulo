@@ -1707,6 +1707,11 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
 #badge-sidebar{grid-column:1;grid-row:2;display:flex;flex-direction:column;border-right:1px solid var(--border,rgba(0,0,0,.15));min-height:0;}
 #badge-search{margin:10px;padding:8px 10px;font:13px/1 system-ui,sans-serif;color:var(--text,#23242a);background:var(--bg-alt,#c9c6c0);border:1px solid var(--text-sub,#8b8b8b);border-radius:7px;outline:none;}
 #badge-search::placeholder{color:var(--text-sub,#8b8b8b);}
+#badge-sizes{display:flex;gap:6px;margin:10px 10px 0;}
+.badge-size-btn{flex:1;padding:6px 0;font:600 12px/1 system-ui,sans-serif;color:var(--text,#23242a);background:var(--bg-alt,#c9c6c0);border:1px solid var(--text-sub,#8b8b8b);border-radius:6px;cursor:pointer;}
+.badge-size-btn:hover{background:var(--text-sub,#8b8b8b);color:var(--bg,#dbd8d1);}
+.badge-size-btn.active{background:var(--text,#23242a);color:var(--bg,#dbd8d1);border-color:var(--text,#23242a);}
+@media (pointer:coarse){ .badge-size-btn{padding:11px 0;} }
 #badge-list{flex:1 1 auto;overflow-y:auto;padding:0 6px 10px;min-height:0;scrollbar-width:thin;scrollbar-color:var(--text-sub,#8b8b8b) var(--bg,#dbd8d1);}
 #badge-list::-webkit-scrollbar{width:11px;}
 #badge-list::-webkit-scrollbar-track{background:var(--bg,#dbd8d1);}
@@ -1751,6 +1756,11 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
       <button id="badge-collapse" type="button" title="collapse list — more room for the cells" aria-label="collapse list">‹‹</button>
     </div>
     <div id="badge-sidebar">
+      <div id="badge-sizes" role="group" aria-label="badge size">
+        <button class="badge-size-btn active" type="button" data-cell="26" title="large badges">L</button>
+        <button class="badge-size-btn" type="button" data-cell="18" title="medium badges">M</button>
+        <button class="badge-size-btn" type="button" data-cell="13" title="small badges">S</button>
+      </div>
       <input id="badge-search" type="text" inputmode="numeric" autocomplete="off" placeholder="# artifact…" aria-label="search artifact by number">
       <div id="badge-list"></div>
     </div>
@@ -4550,7 +4560,7 @@ const _badgeCanvasEl = document.getElementById('badge-canvas');
 const _badgeCtx = _badgeCanvasEl.getContext('2d');
 const _badgeLoadingEl = document.getElementById('badge-loading');
 const _badgeSplashEl = document.getElementById('badge-splash');
-const BADGE_CELL = 26;
+let _badgeCell = 26;   // px per cell — toggled by the L/M/S size buttons
 let _badgeCurrentId = null, _badgeEngine = null, _badgeRaf = 0, _badgeSearchTimer = 0, _badgeResizeTimer = 0;
 let _badgeSplashTimer = 0, _badgeSplashDrawn = false;
 
@@ -4621,7 +4631,7 @@ function _badgeFrame() {
     eng.step(eng.dtOps);
     eng.applyRects();
     eng.tickRects && eng.tickRects();
-    eng.paintToBadge(_badgeCanvasEl, _badgeCtx, { cell: BADGE_CELL });
+    eng.paintToBadge(_badgeCanvasEl, _badgeCtx, { cell: _badgeCell });
   } catch (_) { /* swallow a bad frame, keep the loop alive */ }
   if (_badgeLoadingEl.style.display !== 'none') _badgeLoadingEl.style.display = 'none';
   _badgeRaf = requestAnimationFrame(_badgeFrame);
@@ -4695,6 +4705,14 @@ _badgeCloseEl.addEventListener('click', _closeBadgeModal);
 _badgeFsEl.addEventListener('click', () => {
   _badgeModalEl.classList.toggle('badge-fs');
   requestAnimationFrame(() => { if (_badgeModalEl.classList.contains('active')) _resizeBadgeCanvas(); });
+});
+// Size buttons L/M/S → px per cell. Sprite cache rebuilds automatically next
+// frame (paintToBadge sig includes the cell size).
+document.getElementById('badge-sizes').addEventListener('click', e => {
+  const b = e.target.closest && e.target.closest('.badge-size-btn');
+  if (!b || !b.dataset.cell) return;
+  _badgeCell = Number(b.dataset.cell);
+  for (const el of document.querySelectorAll('.badge-size-btn')) el.classList.toggle('active', el === b);
 });
 // Collapse the list sidebar → more room for the cells (like app's side panel).
 _badgeCollapseEl.addEventListener('click', () => {
