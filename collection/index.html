@@ -1644,6 +1644,10 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
           <canvas id="hero-badge-mini-b-seal" class="hb-mini-seal" width="160" height="160"></canvas>
           <canvas id="hero-badge-mini-b-tick" class="hb-mini-tick" width="160" height="160"></canvas>
         </span>
+        <span class="hb-mini hb-mini-c">
+          <canvas id="hero-badge-mini-c-seal" class="hb-mini-seal" width="160" height="160"></canvas>
+          <canvas id="hero-badge-mini-c-tick" class="hb-mini-tick" width="160" height="160"></canvas>
+        </span>
         <canvas id="hero-badge-seal" width="264" height="264"></canvas>
         <canvas id="hero-badge-tick" width="264" height="264"></canvas>
       </span>
@@ -1753,11 +1757,16 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
 #hero-badge-seal,#hero-badge-tick{position:absolute;inset:0;width:132px;height:132px;display:block;z-index:1;}
 /* Mini badges peeking from behind the big one on hover — overlap (no gap),
    spin only the border like the big badge. */
-#hero-badge .hb-mini{position:absolute;top:26px;left:26px;width:80px;height:80px;z-index:0;transform:translate(0,0);transition:transform .4s ease;}
-#hero-badge .hb-mini canvas{position:absolute;inset:0;width:80px;height:80px;display:block;}
+#hero-badge .hb-mini{position:absolute;z-index:0;transform:translate(0,0);transition:transform .4s ease;}
+#hero-badge .hb-mini canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
 .hb-mini-seal{transform-origin:50% 50%;}
-#hero-badge:hover .hb-mini-a,#hero-badge:focus-visible .hb-mini-a{transform:translate(-53px,5px);transition:transform .4s ease .12s;}
-#hero-badge:hover .hb-mini-b,#hero-badge:focus-visible .hb-mini-b{transform:translate(5px,-53px);transition:transform .4s ease .22s;}
+/* Per-mini size — each centered in the 132px icon at rest (hidden behind big). */
+#hero-badge .hb-mini-a{width:80px;height:80px;top:26px;left:26px;}
+#hero-badge .hb-mini-b{width:64px;height:64px;top:34px;left:34px;}
+#hero-badge .hb-mini-c{width:52px;height:52px;top:40px;left:40px;}
+#hero-badge:hover .hb-mini-a,#hero-badge:focus-visible .hb-mini-a{transform:translate(-60px,16px);transition:transform .4s ease .12s;}
+#hero-badge:hover .hb-mini-b,#hero-badge:focus-visible .hb-mini-b{transform:translate(-42px,-46px);transition:transform .4s ease .20s;}
+#hero-badge:hover .hb-mini-c,#hero-badge:focus-visible .hb-mini-c{transform:translate(16px,-54px);transition:transform .4s ease .28s;}
 #hero-badge:hover .hb-mini-seal,#hero-badge:focus-visible .hb-mini-seal{animation:badgeSpin 1.3s linear infinite;}
 #hero-badge-seal{transform-origin:50% 50%;}
 #hero-badge:hover #hero-badge-seal,#hero-badge:focus-visible #hero-badge-seal{animation:badgeSpin 1.3s linear infinite;}
@@ -4625,6 +4634,7 @@ function _drawHeroBadge() {
     ['hero-badge-seal', 'hero-badge-tick'],
     ['hero-badge-mini-a-seal', 'hero-badge-mini-a-tick'],
     ['hero-badge-mini-b-seal', 'hero-badge-mini-b-tick'],
+    ['hero-badge-mini-c-seal', 'hero-badge-mini-c-tick'],
   ];
   for (const [sid, tid] of pairs) {
     const sc = document.getElementById(sid), tc = document.getElementById(tid);
