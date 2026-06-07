@@ -1786,7 +1786,7 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
    path. Tap-only (handle tap / search focus / select). Desktop untouched. */
 @media (max-width:640px){
   #badge-modal{padding:0;}
-  #badge-window{--sheet-peek:142px;grid-template-columns:1fr;grid-template-rows:40px 1fr;width:100vw;height:100vh;height:100dvh;max-width:none;border:none;border-radius:0;}
+  #badge-window{--sheet-peek:30px;grid-template-columns:1fr;grid-template-rows:40px 1fr;width:100vw;height:100vh;height:100dvh;max-width:none;border:none;border-radius:0;overflow:clip;}
   #badge-tbar{grid-column:1;}
   #badge-body{grid-column:1;grid-row:2;}
   #badge-sidebar{position:absolute;left:0;right:0;bottom:0;grid-column:auto;grid-row:auto;z-index:5;border-right:none;border-top:1px solid var(--border,rgba(0,0,0,.15));border-radius:16px 16px 0 0;background:var(--bg-alt,#c9c6c0);box-shadow:0 -10px 30px rgba(0,0,0,.28);height:min(72dvh,520px);transform:translateY(calc(100% - var(--sheet-peek)));transition:transform .32s cubic-bezier(.22,.61,.36,1);padding-bottom:env(safe-area-inset-bottom);will-change:transform;}
@@ -1800,7 +1800,6 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
   .badge-dot::after{content:"";position:absolute;inset:-16px;}
   #hero-badge{top:-22px;left:-14px;transform-origin:46px 46px;}
   #hero-badge .hb-icon,#hero-badge-seal,#hero-badge-tick{width:92px;height:92px;}
-  #hero-badge .hb-bar{max-width:300px;opacity:1;padding:0 20px 0 50px;transition:none;}
   #hero-badge .hb-mini{display:none;}
 }
 </style>
@@ -4842,9 +4841,10 @@ _badgeSearchEl.addEventListener('input', () => {
 });
 // Mobile bottom sheet (tap-only): handle toggles; focusing search expands.
 document.getElementById('badge-sheet-handle').addEventListener('click', () => {
+  _badgeWindowEl.scrollTop = 0;   // belt-and-suspenders for browsers w/o overflow:clip
   _badgeWindowEl.classList.toggle('sheet-open');
 });
-_badgeSearchEl.addEventListener('focus', () => { _badgeWindowEl.classList.add('sheet-open'); });
+_badgeSearchEl.addEventListener('focus', () => { _badgeWindowEl.scrollTop = 0; _badgeWindowEl.classList.add('sheet-open'); });
 _badgeListEl.addEventListener('click', e => {
   const item = e.target.closest && e.target.closest('.badge-list-item');
   if (!item || !item.dataset.id) return;
