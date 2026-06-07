@@ -124,7 +124,7 @@
   }
   const link = document.getElementById('favicon');
   if (!link) return;
-  let step = 0;
+  let step = 0, mark = null;
   setInterval(() => {
     const inCycle = step % ANGLES.length;
     const cycleNum = Math.floor(step / ANGLES.length);
@@ -133,10 +133,10 @@
     const pair = PAIRS[cycleNum % PAIRS.length];
     const uri = genSVG(angle, pair[0], pair[1]);
     link.href = uri;
-    // Mirror the favicon into the header brand mark. Lazy lookup: this IIFE runs
-    // in <head> before <body> parses, so #header-mark isn't available at start —
-    // the 50ms interval picks it up once the header renders.
-    const mark = document.getElementById('header-mark');
+    // Mirror the favicon into the header brand mark. Lazy lookup cached ONCE:
+    // this IIFE runs in <head> before <body> parses, so #header-mark isn't
+    // available at start — grab it the first tick it exists (no DOM walk 20×/sec).
+    if (!mark) mark = document.getElementById('header-mark');
     if (mark) mark.src = uri;
     step++;
   }, 50);
@@ -247,6 +247,12 @@ body.night #cta-join {
   border-color:rgba(255,255,255,0.18);
 }
 body.night #cta-join:hover { background:rgba(255,255,255,0.12); color:#fff; }
+/* Touch devices: enlarge the new nav tap targets to the 44px minimum (desktop
+   keeps the slim pill / text links). */
+@media (pointer:coarse) {
+  #cta-join { min-height:44px; }
+  .side-nav a { padding:12px 6px; }
+}
 
 /* ── Featured artifact hero (borderless, rotating) ── */
 #hero-section {
@@ -356,9 +362,11 @@ body.night #cta-join:hover { background:rgba(255,255,255,0.12); color:#fff; }
 }
 /* Header brand mark — mirrors the animated favicon (2026-06-06, replaces the blue dot) */
 .id-mark {
+  display:inline-block;
+  vertical-align:baseline;
   width:30px; height:30px;
+  margin-left:14px;
   border-radius:5px;
-  flex-shrink:0;
 }
 body.night .id-action-btn { background:var(--bg); }
 .display-title {
@@ -1514,7 +1522,6 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
 @media (max-width:768px) {
   .page-header { padding-left:24px; padding-right:24px; }
   .collection-inner { padding:80px 24px 0; }
-  .header-inner { grid-template-columns:1fr; }
   .stats-box { width:100%; overflow-x:auto; }
   .stats-box .meta-rows { flex-wrap:nowrap; }
 }
@@ -1573,9 +1580,8 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
       <!-- Title + verified badge inline (no avatar per spec).
            Title text updates reactively with the active tab — see tab handler. -->
       <div class="id-title-row">
-        <h1 class="display-title" id="display-title">Modulo Artifacts</h1>
-        <img id="header-mark" class="id-mark" alt="modulo"
-             src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23d8d4c9'/%3E%3Crect x='4' y='4' width='8' height='8' fill='%23222'/%3E%3C/svg%3E">
+        <h1 class="display-title" id="display-title">Modulo Artifacts<img id="header-mark" class="id-mark" alt=""
+             src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23d8d4c9'/%3E%3Crect x='4' y='4' width='8' height='8' fill='%23222'/%3E%3C/svg%3E"></h1>
       </div>
       <!-- Identity meta strip: collection author · chain · supply · launch · category -->
       <div class="id-meta">
@@ -2819,6 +2825,7 @@ async function _buildCards() {
 //  • back slot cleared before mount + faded slot cleared on transitionend → max 2 live iframes
 //  • sandbox='allow-scripts' + referrerpolicy='no-referrer' set EXPLICITLY (no same-origin downgrade)
 //  • hidden if 0 alive, fixed (no timer) if exactly 1
+let _heroVcBound = false;
 function _initHero(ids) {
   const section = document.getElementById('hero-section');
   const slotA = document.getElementById('hero-a');
@@ -2856,10 +2863,16 @@ function _initHero(ids) {
       iframe.setAttribute('sandbox', 'allow-scripts');        // SECURITY: NO allow-same-origin (byte-match card mount)
       iframe.setAttribute('referrerpolicy', 'no-referrer');
       iframe.setAttribute('aria-label', 'featured artifact #' + id);
-      let done = false;
-      const finish = () => { if (!done) { done = true; resolve(true); } };
+      let done = false, fbTimer = null;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        iframe.removeEventListener('load', finish);
+        if (fbTimer) clearTimeout(fbTimer);
+        resolve(true);
+      };
       iframe.addEventListener('load', finish);
-      setTimeout(finish, 6000);   // fallback: don't hang the rotator if load never fires
+      fbTimer = setTimeout(finish, 6000);   // fallback: don't hang the rotator if load never fires
       iframe.srcdoc = _prepareSrcdoc(html);
       slot.appendChild(iframe);
     }).catch(() => resolve(false));
@@ -2902,6 +2915,10 @@ function _initHero(ids) {
 
   if (ids.length < 2) return;   // single artifact → fixed, no rotation, no listener
 
+  // Guard against double-binding if _initHero ever runs more than once (latent —
+  // _buildCards runs once today). Prevents visibilitychange listener accumulation.
+  if (_heroVcBound) return;
+  _heroVcBound = true;
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) { _stop(); _clearSlot(back); }   // pause + force-clean staging slot
     else _schedule();
