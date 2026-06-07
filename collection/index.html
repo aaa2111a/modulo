@@ -264,8 +264,10 @@ body.night #cta-join:hover { background:rgba(255,255,255,0.12); color:#fff; }
   max-width:1500px; margin:0 auto;
   aspect-ratio:9 / 5;      /* matches engine GRID_COLS/ROWS = 450/250 = 1.8 */
   overflow:hidden;
-  border-radius:14px;
-  background:#000;
+  /* No border-radius: iframes don't clip reliably to a parent's rounded
+     corners cross-browser, so the artifact's black edges showed as 4 black
+     corner wedges. Square + var(--bg) matches the (problem-free) card wraps. */
+  background:var(--bg);
 }
 .hero-slot {
   position:absolute; inset:0;
@@ -277,7 +279,7 @@ body.night #cta-join:hover { background:rgba(255,255,255,0.12); color:#fff; }
   position:absolute; inset:0;
   width:100%; height:100%;
   border:none; display:block;
-  background:#000;
+  background:var(--bg);
   pointer-events:none;     /* non-clickable in v1 */
 }
 #hero-label {
