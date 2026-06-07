@@ -1563,7 +1563,9 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
   <div class="tbar-left">
     <a class="tbar-back" href="../" title="back to home"></a>
   </div>
-  <div class="tbar-center"></div>
+  <div class="tbar-center">
+    <button id="badge-open-btn" type="button" title="Open the verified-badge artifact viewer">✓ Badge View</button>
+  </div>
   <div class="tbar-right">
     <button class="tbar-night" id="night-toggle" title="toggle night mode"></button>
   </div>
@@ -1669,6 +1671,50 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
 
   </div>
 </section>
+
+<!-- Badge View modal (2026-06-07) — search any settled artifact + render it
+     through the off-chain verified-badge filter. Parent-canvas + _createArtifactEngine
+     (no iframe, no string-replace). z:1450 (below expand z:1500). -->
+<style>
+#badge-modal{position:fixed;inset:0;z-index:1450;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.55);padding:2vh 2vw;}
+#badge-modal.active{display:flex;}
+#badge-window{width:min(96vw,1200px);height:min(94vh,760px);background:var(--bg,#dbd8d1);border:1px solid var(--text-sub,#8b8b8b);border-radius:12px;overflow:hidden;display:grid;grid-template-rows:40px 1fr;grid-template-columns:220px 1fr;box-shadow:0 24px 60px rgba(0,0,0,.4);}
+#badge-tbar{grid-column:1 / -1;display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid var(--border,rgba(0,0,0,.15));background:var(--bg-alt,#c9c6c0);}
+#badge-close{width:13px;height:13px;border-radius:50%;background:#ff5f57;border:none;cursor:pointer;flex:0 0 auto;padding:0;}
+#badge-title{font:600 13px/1 system-ui,sans-serif;color:var(--text,#23242a);letter-spacing:.02em;}
+#badge-sidebar{grid-column:1;grid-row:2;display:flex;flex-direction:column;border-right:1px solid var(--border,rgba(0,0,0,.15));min-height:0;}
+#badge-search{margin:10px;padding:8px 10px;font:13px/1 system-ui,sans-serif;color:var(--text,#23242a);background:var(--bg-alt,#c9c6c0);border:1px solid var(--text-sub,#8b8b8b);border-radius:7px;outline:none;}
+#badge-search::placeholder{color:var(--text-sub,#8b8b8b);}
+#badge-list{flex:1 1 auto;overflow-y:auto;padding:0 6px 10px;min-height:0;}
+.badge-list-item{padding:7px 10px;margin:1px 0;font:13px/1 ui-monospace,monospace;color:var(--text,#23242a);border-radius:6px;cursor:pointer;user-select:none;}
+.badge-list-item:hover{background:var(--bg-alt,#c9c6c0);}
+.badge-list-item.badge-selected{background:var(--text,#23242a);color:var(--bg,#dbd8d1);}
+#badge-body{grid-column:2;grid-row:2;position:relative;display:flex;align-items:center;justify-content:center;background:#dbd8d1;min-width:0;min-height:0;overflow:hidden;}
+#badge-canvas{display:block;width:100%;height:100%;image-rendering:auto;}
+#badge-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:13px/1 system-ui,sans-serif;color:var(--text-sub,#8b8b8b);pointer-events:none;text-align:center;padding:20px;}
+#badge-open-btn{font:600 12px/1 system-ui,sans-serif;letter-spacing:.03em;color:var(--text,#23242a);background:var(--bg-alt,#c9c6c0);border:1px solid var(--text-sub,#8b8b8b);border-radius:7px;padding:7px 14px;cursor:pointer;}
+#badge-open-btn:hover{background:var(--text,#23242a);color:var(--bg,#dbd8d1);}
+@media (max-width:640px){
+  #badge-window{grid-template-columns:140px 1fr;height:96vh;width:96vw;}
+  @media (pointer:coarse){ .badge-list-item{padding:11px 10px;} #badge-search{padding:11px 10px;} }
+}
+</style>
+<div id="badge-modal" role="dialog" aria-modal="true" aria-label="Badge artifact viewer">
+  <div id="badge-window">
+    <div id="badge-tbar">
+      <button id="badge-close" type="button" title="close" aria-label="close"></button>
+      <span id="badge-title">Artifacts — Badge View</span>
+    </div>
+    <div id="badge-sidebar">
+      <input id="badge-search" type="text" inputmode="numeric" autocomplete="off" placeholder="# artifact…" aria-label="search artifact by number">
+      <div id="badge-list"></div>
+    </div>
+    <div id="badge-body">
+      <canvas id="badge-canvas"></canvas>
+      <div id="badge-loading">select an artifact</div>
+    </div>
+  </div>
+</div>
 
 <!-- Export options modal — opens when user clicks ↓ MP4 inside expand modal.
      Lets user pick a preset (codec + bitrate) before kicking off the 20s
@@ -1951,6 +1997,8 @@ const _artifactOwners = new Map();
 // Used by the meta-count label which switches with the active tab.
 let _aliveTokenCount = 0;
 let _aliveArtifactCount = 0;
+// Alive artifact IDs (settled, burned excluded) — drives the badge-modal list.
+let _badgeAliveIds = [];
 
 // Pre-fetch ownerOf for all IDs in [1, total], filter out burned (revert),
 // cache owners for downstream lookups. Returns sorted array of alive ids.
@@ -2776,6 +2824,7 @@ async function _buildCards() {
   const aliveArtifactIds = await _filterAliveIds(_settleArtifact, _artifactOwners, artifactCount);
 
   _aliveArtifactCount = aliveArtifactIds.length;
+  _badgeAliveIds = aliveArtifactIds;
   _setMetaCount('modulo');
   if (typeof _loadOsStats === 'function') _loadOsStats('modulo'); // no-op while OS_ENABLED=false
 
@@ -3336,9 +3385,63 @@ function _createArtifactEngine(canvas, rawComposition) {
     tctx.putImageData(img, 0, 0);
   }
   function render() { paintTo(canvas, ctx); }
+
+  // ── Badge filter render (off-chain visualizer, 2026-06-07) ────────────────
+  // Downsamples the live grid to fewer/larger cells; each cell → a verified-
+  // badge glyph in that cell's color with a beige (cut-out) tick. Cells the
+  // artifact's own DX logic would dither render as ONLY a colored check (the
+  // dither color = PAL[min(1,len-1)], no badge body). Same grid/PAL/_ditherNoise
+  // → faithful animation. SAME method used by the live badge modal AND the later
+  // MP4 / hi-res screenshot export (any target incl. OffscreenCanvas at any W/H).
+  const BADGE_BG = '#dbd8d1';
+  let _badgeSprites = null, _badgeSig = '';
+  function _bScallop(x, cx, cy, rO, rI, b) { x.beginPath(); const s = b * 18; for (let k = 0; k <= s; k++) { const t = k / s * Math.PI * 2, rr = (rO + rI) / 2 + (rO - rI) / 2 * Math.cos(b * t), px = cx + Math.cos(t) * rr, py = cy + Math.sin(t) * rr; if (k === 0) x.moveTo(px, py); else x.lineTo(px, py); } x.closePath(); }
+  function _bTick(x, CELL) { const cx = CELL / 2, cy = CELL / 2; x.beginPath(); x.moveTo(cx - CELL * 0.18, cy + CELL * 0.02); x.lineTo(cx - CELL * 0.04, cy + CELL * 0.16); x.lineTo(cx + CELL * 0.20, cy - CELL * 0.14); }
+  function _bNewCanvas(w, h) { if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(w, h); const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+  function _bBadgeSprite(CELL, col, shape) { const cv = _bNewCanvas(CELL, CELL), x = cv.getContext('2d'), cx = CELL / 2, cy = CELL / 2, R = (CELL - 2) / 2; if (shape === 'circle') { x.beginPath(); x.arc(cx, cy, R, 0, Math.PI * 2); x.closePath(); } else { _bScallop(x, cx, cy, R, R * 0.82, 8); } x.fillStyle = col; x.fill(); x.strokeStyle = BADGE_BG; x.lineWidth = Math.max(1.5, CELL * 0.10); x.lineCap = 'round'; x.lineJoin = 'round'; _bTick(x, CELL); x.stroke(); return cv; }
+  function _bDitherSprite(CELL, col) { const cv = _bNewCanvas(CELL, CELL), x = cv.getContext('2d'); x.strokeStyle = col; x.lineWidth = Math.max(1.5, CELL * 0.13); x.lineCap = 'round'; x.lineJoin = 'round'; _bTick(x, CELL); x.stroke(); return cv; }
+  function _bBuildSprites(CELL, shape) { const normal = []; for (let i = 0; i < PAL.length; i++) normal.push(_bBadgeSprite(CELL, 'rgb(' + PAL[i][0] + ',' + PAL[i][1] + ',' + PAL[i][2] + ')', shape)); if (!PAL.length) normal.push(_bBadgeSprite(CELL, '#000', shape)); const ci = PAL.length > 1 ? 1 : 0, dc = PAL[ci] ? 'rgb(' + PAL[ci][0] + ',' + PAL[ci][1] + ',' + PAL[ci][2] + ')' : '#000'; return { normal, dither: _bDitherSprite(CELL, dc) }; }
+  // Faithful to _applyDither's cell-selection conditions (P1-B reviewer 2026-06-07):
+  // 'o' = lego overlay on ~90% of cells (no index-0 gate); 'num'/'numi' require
+  // the full 2×2 index-0 block; all others = single index-0 cell + density gate.
+  function _bIsDither(gi, dxp, offR, offC, gr, gc) {
+    if (!dxp) return false;
+    if (dxp === 'o') return _ditherNoise[gi] <= 0.90;
+    if (dxp === 'num' || dxp === 'numi') {
+      if (_ditherNoise[gi] > DITHER_DENSITY * 1.95) return false;
+      if (grid[gi] !== 0) return false;
+      if (grid[(offR + gr) * 450 + (offC + gc + 1)] !== 0) return false;
+      if (grid[(offR + gr + 1) * 450 + (offC + gc)] !== 0) return false;
+      if (grid[(offR + gr + 1) * 450 + (offC + gc + 1)] !== 0) return false;
+      return true;
+    }
+    return grid[gi] === 0 && _ditherNoise[gi] <= DITHER_DENSITY;
+  }
+  function paintToBadge(target, tctx, opts) {
+    const CELL = (opts && opts.cell) || 26;
+    const shape = (opts && opts.shape) || 'scallop';
+    const W = target.width, H = target.height;
+    const stride = Math.max(1, Math.round(CELL / 6));
+    const maxC = Math.floor(450 / stride), maxR = Math.floor(250 / stride);
+    const visCols = Math.min(Math.floor(W / CELL), maxC), visRows = Math.min(Math.floor(H / CELL), maxR);
+    const offC = Math.floor((450 - visCols * stride) / 2), offR = Math.floor((250 - visRows * stride) / 2);
+    tctx.fillStyle = BADGE_BG; tctx.fillRect(0, 0, W, H);
+    if (visCols <= 0 || visRows <= 0) return;
+    const sig = CELL + '|' + shape + '|' + PAL.map(p => p[0] + ',' + p[1] + ',' + p[2]).join(';');
+    if (_badgeSig !== sig) { _badgeSprites = _bBuildSprites(CELL, shape); _badgeSig = sig; }
+    const SP = _badgeSprites, dxp = _activeDxPattern;
+    const gW = visCols * CELL, gH = visRows * CELL, px0 = Math.floor((W - gW) / 2), py0 = Math.floor((H - gH) / 2);
+    for (let r = 0; r < visRows; r++) for (let c = 0; c < visCols; c++) {
+      const gr = r * stride, gc = c * stride, gi = (offR + gr) * 450 + (offC + gc);
+      const dx = px0 + c * CELL, dy = py0 + r * CELL;
+      if (_bIsDither(gi, dxp, offR, offC, gr, gc)) { tctx.drawImage(SP.dither, dx, dy); continue; }
+      const s = SP.normal[grid[gi]] || SP.normal[0];
+      if (s) tctx.drawImage(s, dx, dy);
+    }
+  }
   // ===== ENGINE END =====
 
-  return {step, render, paintTo, paintToNative, applyRects: applyRectShifts, tickRects, dtOps: _sumTokenOps};
+  return {step, render, paintTo, paintToNative, paintToBadge, applyRects: applyRectShifts, tickRects, dtOps: _sumTokenOps};
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4359,6 +4462,149 @@ _expandOverlay.addEventListener('click', e => {
 });
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && _expandOpenId !== null && !document.fullscreenElement) _closeExpand();
+});
+
+// ── Badge View modal (2026-06-07) ───────────────────────────────────────────
+// Renders any settled artifact through the off-chain verified-badge filter using
+// a PARENT canvas + _createArtifactEngine (no iframe / no string-replace). One
+// engine + one rAF loop at a time; both torn down on close/switch (GC). Reviewer
+// GO-WITH-CHANGES folded: DPR-safe sizing after layout, rAF race guard
+// (_badgeCurrentId + cancel-before-await), faithful _isDither (in paintToBadge),
+// visibilitychange pause, z:1450 + expand mutual-exclusion.
+const _badgeModalEl = document.getElementById('badge-modal');
+const _badgeCloseEl = document.getElementById('badge-close');
+const _badgeSearchEl = document.getElementById('badge-search');
+const _badgeListEl = document.getElementById('badge-list');
+const _badgeCanvasEl = document.getElementById('badge-canvas');
+const _badgeCtx = _badgeCanvasEl.getContext('2d');
+const _badgeLoadingEl = document.getElementById('badge-loading');
+const BADGE_CELL = 26;
+let _badgeCurrentId = null, _badgeEngine = null, _badgeRaf = 0, _badgeSearchTimer = 0, _badgeResizeTimer = 0;
+
+function _resizeBadgeCanvas() {
+  // Backing store = displayed CSS px (dpr=1, matches the approved mockup look;
+  // keeps the grid-sampling stride independent of device pixel ratio). Must run
+  // AFTER the modal is display:flex or getBoundingClientRect returns 0 (P1-A).
+  const rect = _badgeCanvasEl.getBoundingClientRect();
+  const w = Math.max(1, Math.round(rect.width)), h = Math.max(1, Math.round(rect.height));
+  if (_badgeCanvasEl.width !== w || _badgeCanvasEl.height !== h) { _badgeCanvasEl.width = w; _badgeCanvasEl.height = h; }
+}
+
+function _buildBadgeList(filter) {
+  _badgeListEl.innerHTML = '';
+  if (!_badgeAliveIds.length) {
+    const d = document.createElement('div');
+    d.className = 'badge-list-item';
+    d.textContent = 'loading… reopen in a moment';
+    _badgeListEl.appendChild(d);
+    return;
+  }
+  const f = (filter || '').trim();
+  const frag = document.createDocumentFragment();
+  for (let i = 0; i < _badgeAliveIds.length; i++) {
+    const id = _badgeAliveIds[i];
+    if (f && String(id).indexOf(f) === -1) continue;
+    const d = document.createElement('div');
+    d.className = 'badge-list-item' + (id === _badgeCurrentId ? ' badge-selected' : '');
+    d.dataset.id = id;
+    d.textContent = '#' + id;
+    frag.appendChild(d);
+  }
+  _badgeListEl.appendChild(frag);
+}
+
+function _badgeFrame() {
+  _badgeRaf = 0;
+  const eng = _badgeEngine;
+  if (!eng || document.hidden || !_badgeModalEl.classList.contains('active')) return;
+  try {
+    eng.step(eng.dtOps);
+    eng.applyRects();
+    eng.tickRects && eng.tickRects();
+    eng.paintToBadge(_badgeCanvasEl, _badgeCtx, { cell: BADGE_CELL });
+  } catch (_) { /* swallow a bad frame, keep the loop alive */ }
+  if (_badgeLoadingEl.style.display !== 'none') _badgeLoadingEl.style.display = 'none';
+  _badgeRaf = requestAnimationFrame(_badgeFrame);
+}
+function _badgeArm() {
+  if (!_badgeRaf && _badgeEngine && !document.hidden && _badgeModalEl.classList.contains('active')) {
+    _badgeRaf = requestAnimationFrame(_badgeFrame);
+  }
+}
+
+async function _selectBadgeArtifact(id) {
+  // Mark + cancel BEFORE the await so a stale resolve can't start an old loop (P1-C).
+  _badgeCurrentId = id;
+  if (_badgeRaf) { cancelAnimationFrame(_badgeRaf); _badgeRaf = 0; }
+  _badgeEngine = null;
+  _badgeLoadingEl.textContent = 'loading…';
+  _badgeLoadingEl.style.display = 'flex';
+  let data = null;
+  try { data = await _fetchArtifactData(id); } catch (_) { data = null; }
+  if (_badgeCurrentId !== id) return;            // user picked another → stale
+  if (!data) { _badgeLoadingEl.textContent = 'unavailable'; return; }
+  const html = _decodeTokenURI(data.tokenURI);
+  const comp = html && _extractComposition(html);
+  if (!comp) { _badgeLoadingEl.textContent = 'could not load'; return; }
+  _resizeBadgeCanvas();
+  let eng = null;
+  try { eng = _createArtifactEngine(_badgeCanvasEl, comp); } catch (_) { eng = null; }
+  if (_badgeCurrentId !== id) return;            // re-check after sync engine build
+  if (!eng) { _badgeLoadingEl.textContent = 'engine failed'; return; }
+  _badgeEngine = eng;
+  _badgeArm();
+}
+
+function _openBadgeModal() {
+  if (_expandOpenId !== null) { try { _closeExpand(); } catch (_) {} }  // mutual exclusion w/ expand
+  _badgeModalEl.classList.add('active');
+  _badgeSearchEl.value = '';
+  _buildBadgeList('');
+  _badgeLoadingEl.textContent = 'select an artifact';
+  _badgeLoadingEl.style.display = 'flex';
+  // Size after the modal is laid out (display:flex), else rect is 0 (P1-A/P2-D).
+  requestAnimationFrame(() => { if (_badgeModalEl.classList.contains('active')) _resizeBadgeCanvas(); });
+  try { _badgeSearchEl.focus(); } catch (_) {}
+}
+
+function _closeBadgeModal() {
+  _badgeModalEl.classList.remove('active');
+  if (_badgeRaf) { cancelAnimationFrame(_badgeRaf); _badgeRaf = 0; }
+  _badgeEngine = null;       // drop engine (grid/PAL/noise ~450KB) → GC
+  _badgeCurrentId = null;
+}
+
+document.getElementById('badge-open-btn').addEventListener('click', _openBadgeModal);
+_badgeCloseEl.addEventListener('click', _closeBadgeModal);
+_badgeModalEl.addEventListener('click', e => { if (e.target === _badgeModalEl) _closeBadgeModal(); });
+_badgeSearchEl.addEventListener('input', () => {
+  clearTimeout(_badgeSearchTimer);
+  _badgeSearchTimer = setTimeout(() => _buildBadgeList(_badgeSearchEl.value), 150);
+});
+_badgeListEl.addEventListener('click', e => {
+  const item = e.target.closest && e.target.closest('.badge-list-item');
+  if (!item || !item.dataset.id) return;
+  const sel = _badgeListEl.querySelector('.badge-selected');
+  if (sel) sel.classList.remove('badge-selected');
+  item.classList.add('badge-selected');
+  _selectBadgeArtifact(Number(item.dataset.id));
+});
+// Esc closes the badge modal first (registered after expand handler, but expand
+// is never open while badge is — mutual exclusion — so this wins cleanly).
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && _badgeModalEl.classList.contains('active')) {
+    _closeBadgeModal();
+    e.stopImmediatePropagation();
+  }
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { if (_badgeRaf) { cancelAnimationFrame(_badgeRaf); _badgeRaf = 0; } }
+  else { _badgeArm(); }
+});
+window.addEventListener('resize', () => {
+  if (!_badgeModalEl.classList.contains('active')) return;
+  clearTimeout(_badgeResizeTimer);
+  _badgeResizeTimer = setTimeout(_resizeBadgeCanvas, 120);
 });
 </script>
 
