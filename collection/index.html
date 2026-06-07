@@ -1765,9 +1765,9 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
 #hero-badge .hb-mini canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
 .hb-mini-seal{transform-origin:50% 50%;}
 /* Per-mini size — each centered in the 132px icon at rest (hidden behind big). */
-#hero-badge .hb-mini-a{width:80px;height:80px;top:26px;left:26px;}
-#hero-badge .hb-mini-b{width:64px;height:64px;top:34px;left:34px;}
-#hero-badge .hb-mini-c{width:52px;height:52px;top:40px;left:40px;}
+#hero-badge .hb-mini-a{width:56px;height:56px;top:38px;left:38px;}
+#hero-badge .hb-mini-b{width:45px;height:45px;top:43.5px;left:43.5px;}
+#hero-badge .hb-mini-c{width:36px;height:36px;top:48px;left:48px;}
 #hero-badge:hover .hb-mini-a,#hero-badge:focus-visible .hb-mini-a{transform:translate(-60px,16px);transition:transform .4s ease .12s;}
 #hero-badge:hover .hb-mini-b,#hero-badge:focus-visible .hb-mini-b{transform:translate(-42px,-46px);transition:transform .4s ease .20s;}
 #hero-badge:hover .hb-mini-c,#hero-badge:focus-visible .hb-mini-c{transform:translate(16px,-54px);transition:transform .4s ease .28s;}
@@ -2991,7 +2991,7 @@ function _initHero(ids) {
 
   // Badge entrance: after the hero is shown + a small delay (hero render takes
   // a few ms), pop the corner badge in with a scale-bounce (overshoot to 110%).
-  setTimeout(() => { const hb = document.getElementById('hero-badge'); if (hb) hb.classList.add('hb-in'); }, 550);
+  setTimeout(() => { const hb = document.getElementById('hero-badge'); if (hb) hb.classList.add('hb-in'); }, 1000);
 
   let front = slotA, back = slotB, lastId = null, timer = null, busy = false;
   const labelEl = document.getElementById('hero-label');
