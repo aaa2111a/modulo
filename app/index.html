@@ -2854,6 +2854,32 @@ html.dark .settle-modal .settle-modal-warn {
 <body>
 <div id="splash" style="position:fixed;inset:0;background:#BCB8B0;z-index:99999;pointer-events:none;transition:opacity 1.2s ease;"></div>
 
+<!-- [BOOT-RESILIENCE Brief #23] Splash watchdog + global error boundary.
+     OWN early inline script so it survives a parse error in the main script
+     below — a SyntaxError there (e.g. the 2026-05-11 duplicate-const incident)
+     would otherwise leave the beige splash frozen on screen forever. -->
+<script>
+  (function () {
+    // Hard ceiling: force-remove the splash no matter what the main script does.
+    setTimeout(function () {
+      var s = document.getElementById('splash');
+      if (s && s.parentNode) {
+        s.style.transition = 'none';
+        s.style.opacity = '0';
+        s.parentNode.removeChild(s);
+      }
+    }, 12000);
+    // Global error boundary — surface silent boot crashes in the console (and any
+    // future Cloud Logging). Does NOT change app behavior.
+    window.addEventListener('error', function (e) {
+      try { console.error('[GLOBAL] error:', e && (e.message || e.error)); } catch (_) {}
+    });
+    window.addEventListener('unhandledrejection', function (e) {
+      try { console.error('[GLOBAL] unhandledrejection:', e && e.reason && (e.reason.message || e.reason)); } catch (_) {}
+    });
+  })();
+</script>
+
 <!-- Page transition overlay — used for outgoing fade to homepage. Mirrors about/index.html. -->
 <div id="page-transition" style="position:fixed;inset:0;z-index:2000;background:#c9c6c0;opacity:0;display:none;pointer-events:none;transition:opacity 0.55s ease;"></div>
 <div class="root" id="root">
@@ -12006,18 +12032,30 @@ async function _sweepStaleGuests() {
 // on-chain via TokenAgent; no pool claim, no inventory rebuild on session
 // start (TOKEN_DATA owners are placeholders until _chainSync runs).
 async function _startSession({ sessionId, basePath, label }) {
-  if (!window.FB) return false;
-  const { db, ref, set } = window.FB;
-  const now = Date.now();
-  try {
-    await set(ref(db, `${basePath}/${sessionId}`), {
-      connectedAt:  now,
-      lastActivity: now,
-    });
-  } catch (err) {
-    console.error(`[${label}] presence write failed:`, err);
-  }
+  if (!sessionId) return false;   // [Brief #23] never set SESSION_USER to a falsy id
+  // [Brief #23] Establish the local identity FIRST. The presence write below can
+  // HANG (App Check token never arrives on a corrupt IndexedDB) — and a try/catch
+  // does NOT stop a hang (only catches rejections). The old code put
+  // `SESSION_USER = sessionId` AFTER the await, so a hung write left the identity
+  // unset and starved the _chainSync that runs right after this in the boot
+  // chain. Setting it first + timeout-bounding the write means on-chain inventory
+  // loads even when Firebase is degraded.
   SESSION_USER = sessionId;
+  if (window.FB) {
+    const { db, ref, set } = window.FB;
+    const now = Date.now();
+    try {
+      await _withTimeout(
+        set(ref(db, `${basePath}/${sessionId}`), { connectedAt: now, lastActivity: now }),
+        FB_BOOT_OP_MS, 'presence-write'
+      );
+    } catch (err) {
+      console.error(`[${label}] presence write failed/timeout:`, err && err.message);
+      // Timeout = Firebase is degraded (token-gated write hung). Flag it so the
+      // boot watchdog surfaces the degraded banner (on-chain still works).
+      if (err && err.code === 'WALLET_TIMEOUT') window._BOOT_FB_FAILED = true;
+    }
+  }
   // No tokens to update — Phase 2 ownership is on-chain via TokenAgent.
   return true;
 }
@@ -12093,13 +12131,19 @@ async function _initWalletSession(address) {
   if (SESSION_USER !== address && _sessionBasePath(SESSION_USER)) {
     await _endSession();
   }
-  // Sweep stale sessions before starting the new one
-  await _sweepStaleGuests();
+  // Sweep stale sessions before starting the new one.
+  // [Brief #23] timeout-bound it — these RTDB reads can hang on a corrupt App
+  // Check IDB and would starve the _chainSync below (best-effort, non-fatal).
+  await _withTimeout(_sweepStaleGuests(), FB_BOOT_OP_MS, 'sweep').catch(() => {});
   await _startSession({
     sessionId:  address,
     basePath:   'wallets',
     label:      'wallet',
   });
+  // [Brief #23] Session identity is established → signal the boot watchdog NOW,
+  // before the (possibly slow) on-chain hydration, so a slow _chainSync can't
+  // trigger a false recovery reload.
+  try { window.dispatchEvent(new Event('boot-complete')); } catch (_) {}
   // Auto-sync on-chain ownership (Phase 2). Replaces manual `_chainSync()`
   // call from devtools console. Wired 2026-05-05 — Le's request: "podemos
   // pasar al sepolia async automatico pls". Failure is non-fatal — wallet
@@ -12138,6 +12182,9 @@ async function _walletDeferredFallback() {
   if (_walletAddress) return;
   if (_sessionBasePath(SESSION_USER) === 'guests') return;
   await _initGuestSession();
+  // [Brief #23] guest identity established → signal the boot watchdog before the
+  // on-chain hydration (a slow _chainSync must not trigger a false reload).
+  try { window.dispatchEvent(new Event('boot-complete')); } catch (_) {}
   // Hydrate TOKEN_DATA from on-chain even without wallet — guests need it for
   // locks held by other users to render with real rank + color (bug 2026-05-06).
   // _chainSync now uses _getReadonlyProvider() so this works without ethereum.
@@ -13640,7 +13687,17 @@ async function _walletEnsureChain(provider) {
 // existing guard covers it — agentId a50d503db0443793b GO-WITH-CHANGES).
 function _withTimeout(promise, ms, label) {
   let tid;
-  const race = Promise.race([
+  // [Brief #23] RETURN the .finally chain (don't leave it dangling). The old code
+  // did `race.finally(...)` as a bare statement + `return race`, so on rejection
+  // the discarded .finally chain produced an UNHANDLED rejection (in addition to
+  // the caller's catch). Returning the chain means the caller awaits it → handled,
+  // and the timer still clears. Behaviour for callers is otherwise identical.
+  // Belt-and-suspenders: when the timeout wins the race, the input `promise` is
+  // still live and may reject LATER (e.g. a hung Firebase write that eventually
+  // errors). Attach a no-op catch so that late rejection is never unhandled — the
+  // caller already received the timeout rejection via the race below.
+  Promise.resolve(promise).catch(function () {});
+  return Promise.race([
     promise,
     new Promise((_, reject) => {
       tid = setTimeout(() => reject(Object.assign(
@@ -13648,13 +13705,12 @@ function _withTimeout(promise, ms, label) {
         { code: 'WALLET_TIMEOUT' }
       )), ms);
     }),
-  ]);
-  race.finally(() => clearTimeout(tid)); // avoid a dangling timer after the real promise wins
-  return race;
+  ]).finally(() => clearTimeout(tid));
 }
 const WALLET_TIMEOUT_MANUAL_MS = 40000; // eth_requestAccounts — waits for human approval in the wallet
 const WALLET_TIMEOUT_SILENT_MS = 15000; // eth_accounts — no human; 15s covers MetaMask MV3 SW cold start
 const CHAIN_TIMEOUT_MS         = 20000; // wallet_switchEthereumChain
+const FB_BOOT_OP_MS            = 7000;  // Brief #23: cap on each Firebase op in the boot chain (presence write, stale-guest sweep) so a hung App Check IDB can't starve the on-chain _chainSync that runs right after them
 const HYDRATE_TIMEOUT_MS       = 45000; // Brief #16: outer cap on _chainSync hydration batches + the Transfer scan. Covers the unbounded `|| _walletProvider` fallback (no FetchRequest timeout); per-batch reads on the readonly provider are already bounded by its 20s FetchRequest timeout.
 
 // Transient bottom-center toast (NOT alert, NOT modal) for wallet status.
@@ -15633,6 +15689,116 @@ const _LOCK_BTN_SVG =
 
 </script>
 
+<!-- [BOOT-RESILIENCE Brief #23] Early recovery + boot watchdog + degraded banner.
+     Classic inline script — runs BEFORE the deferred Firebase module below, so
+     Phase A can delete corrupt Firebase IndexedDBs while NO connection is open
+     yet (a clean delete; sidesteps the "JS can't force-close connections"
+     limitation that makes the in-app Reset button unreliable). -->
+<script>
+  (function () {
+    var RECOVERY_KEY = 'tc-boot-recovery-attempt';
+    var MAX_ATTEMPTS = 1;       // one auto-reload only — never loop
+    // No boot-complete by here (and online) → genuine wedge → recover. Set ABOVE
+    // the 15s silent-connect timeout (WALLET_TIMEOUT_SILENT_MS) + margin so a
+    // slow-but-healthy MV3 cold-start reconnect never triggers a false reload —
+    // PIECE 1/2 already bound every boot op, so the chain can't hang past this.
+    var WATCHDOG_MS  = 20000;
+    var FB_IDB = ['firebase-app-check-database',
+                  'firebase-installations-database',
+                  'firebase-heartbeat-database'];
+
+    var attempt = 0;
+    try { attempt = parseInt(sessionStorage.getItem(RECOVERY_KEY) || '0', 10) || 0; } catch (_) {}
+
+    // [Brief #23 verify-P1] sessionStorage availability probe. In private mode
+    // setItem throws → the attempt counter can't persist → a naive watchdog
+    // would reload forever. If storage is unavailable we never auto-reload.
+    var ssWorks = true;
+    try { sessionStorage.setItem('tc-ss-probe', '1'); sessionStorage.removeItem('tc-ss-probe'); }
+    catch (_) { ssWorks = false; }
+
+    function _clearRecoveryFlag() { try { sessionStorage.removeItem(RECOVERY_KEY); } catch (_) {} }
+
+    // Phase A — this load is a recovery reload: delete the Firebase IDBs NOW.
+    // deleteDatabase is REQUESTED here (pre-module) so it is processed before the
+    // module's open per IndexedDB request ordering → a clean delete, no open
+    // handles. Runs once: the flag clears on every terminal outcome below, so a
+    // later load sees attempt=0 and skips this.
+    if (attempt > 0) {
+      FB_IDB.forEach(function (name) {
+        try { indexedDB.deleteDatabase(name); } catch (_) {}
+      });
+    }
+
+    var settled = false;
+    var wd = setTimeout(function () {
+      if (settled) return;
+      // Offline: a reload won't help (not an IDB issue) — clear the flag + inform.
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        _clearRecoveryFlag();
+        window.dispatchEvent(new CustomEvent('boot-degraded', { detail: { reason: 'offline' } }));
+        return;
+      }
+      // [verify-P0/P1] Can't persist the counter (private mode) OR already tried
+      // once → do NOT reload (would loop). Clear the flag so Phase A won't re-run
+      // on a later load, then show the degraded banner.
+      if (!ssWorks || attempt >= MAX_ATTEMPTS) {
+        _clearRecoveryFlag();
+        window.dispatchEvent(new CustomEvent('boot-degraded', { detail: { reason: 'irrecoverable' } }));
+        return;
+      }
+      // First wedge → mark + cache-bust reload (Phase A cleans the IDBs next load).
+      try { sessionStorage.setItem(RECOVERY_KEY, String(attempt + 1)); } catch (_) {}
+      // [verify-P1] preserve existing query params (?fbtest, deep-links) — only
+      // add/replace the cache-bust key.
+      var p = new URLSearchParams(location.search);
+      p.set('cb', String(Date.now()));
+      location.replace(location.pathname + '?' + p.toString());
+    }, WATCHDOG_MS);
+
+    // Success signal: the boot chain established a session identity (fired in
+    // _initWalletSession / _walletDeferredFallback, BEFORE the slow on-chain
+    // hydration, so a slow _chainSync can't cause a false reload). Clears the
+    // recovery flag on EITHER a healthy boot or a confirmed recovery.
+    window.addEventListener('boot-complete', function () {
+      settled = true;
+      clearTimeout(wd);
+      _clearRecoveryFlag();
+      // On-chain works but Firebase is degraded (presence write timed out, or
+      // init failed) → tell the user locks/activity are offline.
+      if (window._BOOT_FB_FAILED) {
+        window.dispatchEvent(new CustomEvent('boot-degraded', { detail: { reason: 'fb-failed' } }));
+      }
+    }, { once: true });
+
+    // Degraded banner — idempotent. On-chain features keep working; this only
+    // signals that Firebase-backed features (locks/activity) are unavailable.
+    window.addEventListener('boot-degraded', function (e) {
+      if (document.getElementById('boot-degraded-banner')) return;   // idempotent
+      var reason = (e && e.detail && e.detail.reason) || 'fb-failed';
+      var msg = reason === 'offline'
+        ? 'No internet connection — some features are unavailable.'
+        : reason === 'irrecoverable'
+        ? 'App data error. Open the menu → Reset app data to fix.'
+        : 'Live sync unavailable — your tokens still load. Locks & activity are offline.';
+      function show() {
+        if (document.getElementById('boot-degraded-banner') || !document.body) return;
+        var b = document.createElement('div');
+        b.id = 'boot-degraded-banner';
+        b.style.cssText = 'position:fixed;left:50%;bottom:calc(8px + env(safe-area-inset-bottom));' +
+          'transform:translateX(-50%);max-width:92vw;z-index:9998;background:#8a1f1f;color:#fff;' +
+          'font:12px/1.4 monospace;padding:7px 12px;border-radius:6px;cursor:pointer;' +
+          'box-shadow:0 2px 12px rgba(0,0,0,.3);';
+        b.textContent = msg + '  (tap to dismiss)';
+        b.addEventListener('click', function () { b.remove(); }, { once: true });
+        document.body.appendChild(b);
+      }
+      if (document.body) show();
+      else window.addEventListener('DOMContentLoaded', show, { once: true });
+    });
+  })();
+</script>
+
 <!-- ═══ Firebase Realtime DB — shared session state ═══
      Separate <script type="module"> because Firebase SDK v12 ships as ES modules.
      Exposes window.FB once initialized; dispatches 'fb-ready' event so any
@@ -15667,32 +15833,62 @@ const _LOCK_BTN_SVG =
     appId:             "1:66336453017:web:89bf52c9c9da5e2baaa308"
   };
 
-  const app = initializeApp(firebaseConfig);
+  // [BOOT-RESILIENCE Brief #23] Hardened init — a corrupt / blocked Firebase
+  // IndexedDB (App Check / Installations / Heartbeat), common on iOS + in-app
+  // webviews (firebase-js-sdk #9056, WebKit #226547/#9802), must NEVER wedge the
+  // boot. Wrap init in try/catch + a timeout; App Check fails soft; and ALWAYS
+  // dispatch fb-ready so the 5 fb-ready-gated subsystems run (they self-guard on
+  // window.FB, so a null FB makes them no-op cleanly instead of waiting forever).
+  (async function _fbInit() {
+    let ok = false, app = null, db = null, functions = null;
+    try {
+      const result = await Promise.race([
+        (async () => {
+          const _app = initializeApp(firebaseConfig);
+          // App Check (reCAPTCHA v3): fail-soft. A reCAPTCHA/IDB stall here must
+          // not block getDatabase below. If it throws, RTDB reads still work;
+          // only App-Check-gated writes (lock/settle, presence) degrade — the FE
+          // already handles `app-check-failed` for those.
+          try {
+            initializeAppCheck(_app, {
+              provider: new ReCaptchaV3Provider('6LfLhNEsAAAAAG6aMsrG_d9UxuhjYWcWjpf4ZEG1'),
+              isTokenAutoRefreshEnabled: true,
+            });
+          } catch (acErr) {
+            console.error('[FB] App Check init failed (fail-soft):', acErr && acErr.message);
+          }
+          const _db = getDatabase(_app);
+          const _fn = getFunctions(_app, 'us-central1');
+          return { app: _app, db: _db, functions: _fn };
+        })(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('fb-init-timeout')), 7000)),
+      ]);
+      app = result.app; db = result.db; functions = result.functions; ok = true;
+    } catch (err) {
+      console.error('[FB] init failed:', err && err.message);
+      window._BOOT_FB_FAILED = true;
+    }
 
-  // App Check (reCAPTCHA v3) — binds Firebase requests to the registered
-  // origin (ubk.art / modulo.ubk.art). Without a valid token, Cloud Functions
-  // and DB reads/writes are rejected. Token auto-refreshes on TTL (1h default).
-  // Site key is public by design; the secret key lives in Firebase Console.
-  initializeAppCheck(app, {
-    provider: new ReCaptchaV3Provider('6LfLhNEsAAAAAG6aMsrG_d9UxuhjYWcWjpf4ZEG1'),
-    isTokenAutoRefreshEnabled: true,
-  });
+    if (ok) {
+      // Minimal API surface exposed to the non-module script above.
+      window.FB = {
+        app, db, functions, httpsCallable, deleteApp,
+        ref, get, set, onValue, update, remove, serverTimestamp, onDisconnect,
+        push, query, limitToLast, onChildAdded, runTransaction, orderByChild, endAt, goOffline
+      };
+    } else {
+      window.FB = null;   // explicit: tried but failed (vs undefined = not yet)
+    }
 
-  const db  = getDatabase(app);
-  const functions = getFunctions(app, 'us-central1');
+    // ALWAYS dispatch — the 5 fb-ready listeners must run regardless. _bootstrap
+    // then establishes the session identity and fires 'boot-complete'; if it
+    // can't (window.FB null and the wallet path bails), the boot watchdog will
+    // recover or surface the degraded banner.
+    window.dispatchEvent(new CustomEvent('fb-ready', { detail: { ok: ok } }));
 
-  // Minimal API surface exposed to the non-module script above.
-  window.FB = {
-    app, db, functions, httpsCallable, deleteApp,
-    ref, get, set, onValue, update, remove, serverTimestamp, onDisconnect,
-    push, query, limitToLast, onChildAdded, runTransaction, orderByChild, endAt, goOffline
-  };
-  window.dispatchEvent(new CustomEvent('fb-ready'));
-
-  // Smoke test — gated behind ?fbtest=1 query param so production loads don't
-  // spam writes to /connection-test/ on every page hit. (audits.md P2 #15)
-  if (new URLSearchParams(location.search).has('fbtest')) {
-    (async () => {
+    // Smoke test — gated behind ?fbtest=1 so production loads don't spam writes
+    // to /connection-test/ on every page hit. (audits.md P2 #15)
+    if (ok && new URLSearchParams(location.search).has('fbtest')) {
       try {
         const testRef = ref(db, 'connection-test');
         await set(testRef, { ts: Date.now(), msg: 'hello from app/index.html' });
@@ -15701,8 +15897,8 @@ const _LOCK_BTN_SVG =
       } catch (err) {
         console.error('[FB] connection failed:', err);
       }
-    })();
-  }
+    }
+  })();
 </script>
 
 </body>
