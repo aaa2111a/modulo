@@ -1776,9 +1776,32 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
 #hero-badge:hover #hero-badge-seal,#hero-badge:focus-visible #hero-badge-seal{animation:badgeSpin 1.3s linear infinite;}
 #hero-badge .hb-bar{box-sizing:border-box;position:relative;z-index:1;display:flex;align-items:center;height:56px;margin-left:-46px;padding:0 0 0 58px;max-width:0;opacity:0;overflow:hidden;white-space:nowrap;background:#6363ff;color:#dbd8d1;font:600 20px/1 system-ui,sans-serif;letter-spacing:.04em;border-radius:0 28px 28px 0;transition:max-width .4s ease,opacity .3s ease,padding-right .4s ease;}
 #hero-badge:hover .hb-bar,#hero-badge:focus-visible .hb-bar{max-width:340px;opacity:1;padding-right:28px;}
+/* Coarse-pointer tap targets — hoisted to top level (was nested in the 640
+   query) so touch tablets (768, desktop layout) also get ≥44px rows. */
+@media (pointer:coarse){ .badge-list-item{padding:11px 10px;} #badge-search{padding:11px 10px;} }
+#badge-sheet-handle{display:none;}
+/* ── Mobile (≤640px): full-bleed canvas; the sidebar becomes a bottom sheet ──
+   The sheet FLOATS over the canvas (position:absolute), so toggling it never
+   resizes the canvas → _resizeBadgeCanvas/rAF/sprite-cache stay out of the hot
+   path. Tap-only (handle tap / search focus / select). Desktop untouched. */
 @media (max-width:640px){
-  #badge-window{grid-template-columns:140px 1fr;height:96vh;width:96vw;}
-  @media (pointer:coarse){ .badge-list-item{padding:11px 10px;} #badge-search{padding:11px 10px;} }
+  #badge-modal{padding:0;}
+  #badge-window{--sheet-peek:142px;grid-template-columns:1fr;grid-template-rows:40px 1fr;width:100vw;height:100vh;height:100dvh;max-width:none;border:none;border-radius:0;}
+  #badge-tbar{grid-column:1;}
+  #badge-body{grid-column:1;grid-row:2;}
+  #badge-sidebar{position:absolute;left:0;right:0;bottom:0;grid-column:auto;grid-row:auto;z-index:5;border-right:none;border-top:1px solid var(--border,rgba(0,0,0,.15));border-radius:16px 16px 0 0;background:var(--bg-alt,#c9c6c0);box-shadow:0 -10px 30px rgba(0,0,0,.28);height:min(72dvh,520px);transform:translateY(calc(100% - var(--sheet-peek)));transition:transform .32s cubic-bezier(.22,.61,.36,1);padding-bottom:env(safe-area-inset-bottom);will-change:transform;}
+  #badge-window.sheet-open #badge-sidebar{transform:translateY(0);}
+  #badge-sheet-handle{display:block;position:relative;width:40px;height:5px;border-radius:3px;background:var(--text-sub,#8b8b8b);margin:9px auto 6px;cursor:pointer;}
+  #badge-sheet-handle::after{content:"";position:absolute;inset:-14px -130px;}
+  #badge-list{max-height:calc(min(72dvh,520px) - var(--sheet-peek) - 10px);}
+  #badge-loading{bottom:var(--sheet-peek,142px);}
+  #badge-fs,#badge-collapse{display:none;}
+  .badge-dot{position:relative;}
+  .badge-dot::after{content:"";position:absolute;inset:-16px;}
+  #hero-badge{top:-22px;left:-14px;transform-origin:46px 46px;}
+  #hero-badge .hb-icon,#hero-badge-seal,#hero-badge-tick{width:92px;height:92px;}
+  #hero-badge .hb-bar{max-width:300px;opacity:1;padding:0 20px 0 50px;transition:none;}
+  #hero-badge .hb-mini{display:none;}
 }
 </style>
 <div id="badge-modal" role="dialog" aria-modal="true" aria-label="Badge artifact viewer">
@@ -1790,6 +1813,7 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
       <button id="badge-collapse" type="button" title="collapse list — more room for the cells" aria-label="collapse list">‹‹</button>
     </div>
     <div id="badge-sidebar">
+      <div id="badge-sheet-handle" title="toggle list" aria-hidden="true"></div>
       <div id="badge-sizes" role="group" aria-label="badge size">
         <button class="badge-size-btn active" type="button" data-cell="26" title="large badges">L</button>
         <button class="badge-size-btn" type="button" data-cell="18" title="medium badges">M</button>
@@ -4740,7 +4764,8 @@ function _openBadgeModal() {
   clearTimeout(_badgeSplashTimer);
   _badgeSplashTimer = setTimeout(() => {
     _badgeSplashEl.classList.add('hide');
-    try { _badgeSearchEl.focus(); } catch (_) {}
+    // Don't auto-focus on touch — the soft keyboard would shove the bottom sheet.
+    if (!window.matchMedia('(pointer:coarse)').matches) { try { _badgeSearchEl.focus(); } catch (_) {} }
   }, 2200);
   // Size after the modal is laid out (display:flex), else rect is 0 (P1-A/P2-D).
   requestAnimationFrame(() => { if (_badgeModalEl.classList.contains('active')) _resizeBadgeCanvas(); });
@@ -4753,6 +4778,7 @@ function _closeBadgeModal() {
   _badgeSplashEl.classList.remove('hide');  // reset so the splash shows again next open
   _badgeModalEl.classList.remove('badge-fs');        // reset fullscreen for next open
   _badgeWindowEl.classList.remove('sidebar-collapsed'); // reset collapse for next open
+  _badgeWindowEl.classList.remove('sheet-open');        // reset mobile bottom sheet to peek
   _badgeCollapseEl.textContent = '‹‹';
   _badgeEngine = null;       // drop engine (grid/PAL/noise ~450KB) → GC
   _badgeCurrentId = null;
@@ -4814,12 +4840,18 @@ _badgeSearchEl.addEventListener('input', () => {
   clearTimeout(_badgeSearchTimer);
   _badgeSearchTimer = setTimeout(() => _buildBadgeList(_badgeSearchEl.value), 150);
 });
+// Mobile bottom sheet (tap-only): handle toggles; focusing search expands.
+document.getElementById('badge-sheet-handle').addEventListener('click', () => {
+  _badgeWindowEl.classList.toggle('sheet-open');
+});
+_badgeSearchEl.addEventListener('focus', () => { _badgeWindowEl.classList.add('sheet-open'); });
 _badgeListEl.addEventListener('click', e => {
   const item = e.target.closest && e.target.closest('.badge-list-item');
   if (!item || !item.dataset.id) return;
   const sel = _badgeListEl.querySelector('.badge-selected');
   if (sel) sel.classList.remove('badge-selected');
   item.classList.add('badge-selected');
+  _badgeWindowEl.classList.remove('sheet-open');  // collapse sheet → reveal canvas (sync, before the async load)
   _selectBadgeArtifact(Number(item.dataset.id));
 });
 // Esc closes the badge modal first (registered after expand handler, but expand
