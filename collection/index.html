@@ -1729,6 +1729,12 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
 #badge-export-row button:hover:not(:disabled){background:var(--text,#23242a);color:var(--bg,#dbd8d1);}
 #badge-export-row button:disabled{opacity:.45;cursor:default;}
 @media (pointer:coarse){ #badge-export-row button{padding:11px 0;} }
+#badge-bg-row{display:flex;flex-wrap:wrap;gap:5px;margin:8px 10px 0;}
+.badge-bg-sw{width:22px;height:22px;flex:0 0 auto;border:1px solid var(--text-sub,#8b8b8b);border-radius:5px;padding:0;cursor:pointer;position:relative;}
+.badge-bg-sw.active{outline:2px solid var(--text,#23242a);outline-offset:1px;}
+.badge-bg-sw[data-bg="theme"]{background:var(--bg,#dbd8d1);}
+.badge-bg-sw[data-bg="theme"]::after{content:"A";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:700 10px/1 system-ui,sans-serif;color:var(--text-sub,#8b8b8b);}
+@media (pointer:coarse){ .badge-bg-sw{width:30px;height:30px;} }
 #badge-list{flex:1 1 auto;overflow-y:auto;padding:0 6px 10px;min-height:0;scrollbar-width:thin;scrollbar-color:var(--text-sub,#8b8b8b) var(--bg,#dbd8d1);}
 #badge-list::-webkit-scrollbar{width:11px;}
 #badge-list::-webkit-scrollbar-track{background:var(--bg,#dbd8d1);}
@@ -1737,7 +1743,7 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
 .badge-list-item{padding:7px 10px;margin:1px 0;font:13px/1 ui-monospace,monospace;color:var(--text,#23242a);border-radius:6px;cursor:pointer;user-select:none;}
 .badge-list-item:hover{background:var(--bg-alt,#c9c6c0);}
 .badge-list-item.badge-selected{background:var(--text,#23242a);color:var(--bg,#dbd8d1);}
-#badge-body{grid-column:2;grid-row:2;position:relative;display:flex;align-items:center;justify-content:center;background:#dbd8d1;min-width:0;min-height:0;overflow:hidden;}
+#badge-body{grid-column:2;grid-row:2;position:relative;display:flex;align-items:center;justify-content:center;background:var(--bg,#dbd8d1);min-width:0;min-height:0;overflow:hidden;}
 #badge-canvas{display:block;width:100%;height:100%;image-rendering:auto;}
 /* Centered to the WHOLE window (below the 40px tbar, full width incl. sidebar
    column) so the placeholder reads centered to the modal, not just the body. */
@@ -1822,6 +1828,7 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
         <button id="badge-mp4" type="button" title="export a 20s MP4 of this badge view (same settings as the page MP4)">↓ MP4</button>
         <button id="badge-png" type="button" title="save a hi-res PNG of the current frame">↓ PNG</button>
       </div>
+      <div id="badge-bg-row" role="group" aria-label="animation background color"></div>
       <input id="badge-search" type="text" inputmode="numeric" autocomplete="off" placeholder="# artifact…" aria-label="search artifact by number">
       <div id="badge-list"></div>
     </div>
@@ -3541,10 +3548,10 @@ function _createArtifactEngine(canvas, rawComposition) {
   let _badgeSprites = null, _badgeSig = '';
   function _bNewCanvas(w, h) { if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(w, h); const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
   // Normal cell: seal in the cell color + beige check on top (1:1 SVG badge).
-  function _bBadgeSprite(CELL, col) { const cv = _bNewCanvas(CELL, CELL), x = cv.getContext('2d'); _badgeFillSeal(x, CELL, col); _badgeFillCheck(x, CELL, BADGE_BG); return cv; }
+  function _bBadgeSprite(CELL, col, bg) { const cv = _bNewCanvas(CELL, CELL), x = cv.getContext('2d'); _badgeFillSeal(x, CELL, col); _badgeFillCheck(x, CELL, bg); return cv; }
   // Dither cell: ONLY the check, in the dither color (no seal body).
   function _bDitherSprite(CELL, col) { const cv = _bNewCanvas(CELL, CELL), x = cv.getContext('2d'); _badgeFillCheck(x, CELL, col); return cv; }
-  function _bBuildSprites(CELL) { const normal = []; for (let i = 0; i < PAL.length; i++) normal.push(_bBadgeSprite(CELL, 'rgb(' + PAL[i][0] + ',' + PAL[i][1] + ',' + PAL[i][2] + ')')); if (!PAL.length) normal.push(_bBadgeSprite(CELL, '#000')); const ci = PAL.length > 1 ? 1 : 0, dc = PAL[ci] ? 'rgb(' + PAL[ci][0] + ',' + PAL[ci][1] + ',' + PAL[ci][2] + ')' : '#000'; return { normal, dither: _bDitherSprite(CELL, dc) }; }
+  function _bBuildSprites(CELL, bg) { const normal = []; for (let i = 0; i < PAL.length; i++) normal.push(_bBadgeSprite(CELL, 'rgb(' + PAL[i][0] + ',' + PAL[i][1] + ',' + PAL[i][2] + ')', bg)); if (!PAL.length) normal.push(_bBadgeSprite(CELL, '#000', bg)); const ci = PAL.length > 1 ? 1 : 0, dc = PAL[ci] ? 'rgb(' + PAL[ci][0] + ',' + PAL[ci][1] + ',' + PAL[ci][2] + ')' : '#000'; return { normal, dither: _bDitherSprite(CELL, dc) }; }
   // Faithful to _applyDither's cell-selection conditions (P1-B reviewer 2026-06-07):
   // 'o' = lego overlay on ~90% of cells (no index-0 gate); 'num'/'numi' require
   // the full 2×2 index-0 block; all others = single index-0 cell + density gate.
@@ -3563,15 +3570,16 @@ function _createArtifactEngine(canvas, rawComposition) {
   }
   function paintToBadge(target, tctx, opts) {
     const CELL = (opts && opts.cell) || 26;
+    const BG = (opts && opts.bg) || BADGE_BG;
     const W = target.width, H = target.height;
     const stride = Math.max(1, Math.round(CELL / 6));
     const maxC = Math.floor(450 / stride), maxR = Math.floor(250 / stride);
     const visCols = Math.min(Math.floor(W / CELL), maxC), visRows = Math.min(Math.floor(H / CELL), maxR);
     const offC = Math.floor((450 - visCols * stride) / 2), offR = Math.floor((250 - visRows * stride) / 2);
-    tctx.fillStyle = BADGE_BG; tctx.fillRect(0, 0, W, H);
+    tctx.fillStyle = BG; tctx.fillRect(0, 0, W, H);
     if (visCols <= 0 || visRows <= 0) return;
-    const sig = CELL + '|' + PAL.map(p => p[0] + ',' + p[1] + ',' + p[2]).join(';');
-    if (_badgeSig !== sig) { _badgeSprites = _bBuildSprites(CELL); _badgeSig = sig; }
+    const sig = CELL + '|' + BG + '|' + PAL.map(p => p[0] + ',' + p[1] + ',' + p[2]).join(';');
+    if (_badgeSig !== sig) { _badgeSprites = _bBuildSprites(CELL, BG); _badgeSig = sig; }
     const SP = _badgeSprites, dxp = _activeDxPattern;
     const gW = visCols * CELL, gH = visRows * CELL, px0 = Math.floor((W - gW) / 2), py0 = Math.floor((H - gH) / 2);
     for (let r = 0; r < visRows; r++) for (let c = 0; c < visCols; c++) {
@@ -3867,7 +3875,7 @@ async function _exportMP4(modId, presetId, cropMode, badge, badgeCell) {
     encoder.configure(cfg);
 
     const paintFn = badge
-      ? (off, octx) => engine.paintToBadge(off, octx, { cell: badgeCell })
+      ? (off, octx) => engine.paintToBadge(off, octx, { cell: badgeCell, bg: _badgeBg })
       : (preset.isNative ? engine.paintToNative : engine.paintTo);
     for (let f = 0; f < TOTAL_FRAMES; f++) {
       engine.step(engine.dtOps);
@@ -4640,6 +4648,12 @@ const _badgeCtx = _badgeCanvasEl.getContext('2d');
 const _badgeLoadingEl = document.getElementById('badge-loading');
 const _badgeSplashEl = document.getElementById('badge-splash');
 let _badgeCell = 26;   // px per cell — toggled by the L/M/S size buttons
+// Canvas background: follows the site theme (--bg, beige day / dark night) by
+// default; a palette swatch overrides it (sticky across night toggle). The
+// badge check (cut-out) follows this bg. Palette = the app's color palette.
+const BADGE_BG_PALETTE = ['#6363ff','#a040ff','#ff003a','#ff8c00','#ffbd2e','#28c840','#ff4080','#ff63ff','#1100ff','#63ff63','#57686e','#2a0b18','#23242a','#ab0a5f','#0f1021','#000000','#bfbcce','#8b8b8b'];
+let _badgeBg = '#dbd8d1', _badgeBgPicked = false;
+function _themeBg() { const v = getComputedStyle(document.body).getPropertyValue('--bg').trim(); return v || '#dbd8d1'; }
 let _badgeCurrentId = null, _badgeEngine = null, _badgeRaf = 0, _badgeSearchTimer = 0, _badgeResizeTimer = 0;
 let _badgeSplashTimer = 0, _badgeSplashDrawn = false;
 
@@ -4715,7 +4729,7 @@ function _badgeFrame() {
     eng.step(eng.dtOps);
     eng.applyRects();
     eng.tickRects && eng.tickRects();
-    eng.paintToBadge(_badgeCanvasEl, _badgeCtx, { cell: _badgeCell });
+    eng.paintToBadge(_badgeCanvasEl, _badgeCtx, { cell: _badgeCell, bg: _badgeBg });
   } catch (_) { /* swallow a bad frame, keep the loop alive */ }
   if (_badgeLoadingEl.style.display !== 'none') _badgeLoadingEl.style.display = 'none';
   _badgeRaf = requestAnimationFrame(_badgeFrame);
@@ -4753,6 +4767,8 @@ async function _selectBadgeArtifact(id) {
 function _openBadgeModal() {
   if (_expandOpenId !== null) { try { _closeExpand(); } catch (_) {} }  // mutual exclusion w/ expand
   _badgeModalEl.classList.add('active');
+  if (!_badgeBgPicked) _badgeBg = _themeBg();   // follow the site theme until a swatch overrides
+  _syncBgActive();
   _badgeSearchEl.value = '';
   _buildBadgeList('');
   _badgeLoadingEl.textContent = 'select an artifact';
@@ -4786,6 +4802,35 @@ function _closeBadgeModal() {
 _drawHeroBadge();
 const _heroBadgeBtn = document.getElementById('hero-badge');
 if (_heroBadgeBtn) _heroBadgeBtn.addEventListener('click', _openBadgeModal);
+
+// Background-color swatches: "theme" (follows day/night) + the app palette.
+function _buildBgSwatches() {
+  const row = document.getElementById('badge-bg-row');
+  if (!row || row.childElementCount) return;
+  const frag = document.createDocumentFragment();
+  const theme = document.createElement('button');
+  theme.type = 'button'; theme.className = 'badge-bg-sw'; theme.dataset.bg = 'theme';
+  theme.title = 'theme background (follows day/night)';
+  frag.appendChild(theme);
+  BADGE_BG_PALETTE.forEach(c => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'badge-bg-sw'; b.dataset.bg = c; b.style.background = c; b.title = c;
+    frag.appendChild(b);
+  });
+  row.appendChild(frag);
+  row.addEventListener('click', e => {
+    const b = e.target.closest && e.target.closest('.badge-bg-sw');
+    if (!b || !b.dataset.bg) return;
+    if (b.dataset.bg === 'theme') { _badgeBgPicked = false; _badgeBg = _themeBg(); }
+    else { _badgeBgPicked = true; _badgeBg = b.dataset.bg; }
+    _syncBgActive();
+  });
+}
+function _syncBgActive() {
+  const want = _badgeBgPicked ? _badgeBg : 'theme';
+  document.querySelectorAll('#badge-bg-row .badge-bg-sw').forEach(b => b.classList.toggle('active', b.dataset.bg === want));
+}
+_buildBgSwatches();
 _badgeCloseEl.addEventListener('click', _closeBadgeModal);
 // Green dot → fullscreen the modal window (like the expand window).
 _badgeFsEl.addEventListener('click', () => {
@@ -4812,7 +4857,7 @@ async function _exportBadgePNG() {
     const cell = Math.max(4, Math.round(_badgeCell * W / Math.max(1, _badgeCanvasEl.width)));
     const off = (typeof OffscreenCanvas !== 'undefined') ? new OffscreenCanvas(W, H) : Object.assign(document.createElement('canvas'), { width: W, height: H });
     const octx = off.getContext('2d');
-    _badgeEngine.paintToBadge(off, octx, { cell });
+    _badgeEngine.paintToBadge(off, octx, { cell, bg: _badgeBg });
     const blob = off.convertToBlob ? await off.convertToBlob({ type: 'image/png' }) : await new Promise(r => off.toBlob(r, 'image/png'));
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
