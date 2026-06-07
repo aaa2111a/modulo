@@ -1570,9 +1570,7 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
   <div class="tbar-left">
     <a class="tbar-back" href="../" title="back to home"></a>
   </div>
-  <div class="tbar-center">
-    <button id="badge-open-btn" type="button" title="Open the verified-badge artifact viewer">✓ Badge View</button>
-  </div>
+  <div class="tbar-center"></div>
   <div class="tbar-right">
     <button class="tbar-night" id="night-toggle" title="toggle night mode"></button>
   </div>
@@ -1711,14 +1709,16 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
 .badge-list-item.badge-selected{background:var(--text,#23242a);color:var(--bg,#dbd8d1);}
 #badge-body{grid-column:2;grid-row:2;position:relative;display:flex;align-items:center;justify-content:center;background:#dbd8d1;min-width:0;min-height:0;overflow:hidden;}
 #badge-canvas{display:block;width:100%;height:100%;image-rendering:auto;}
-#badge-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:13px/1 system-ui,sans-serif;color:var(--text-sub,#8b8b8b);pointer-events:none;text-align:center;padding:20px;}
+/* Centered to the WHOLE window (below the 40px tbar, full width incl. sidebar
+   column) so the placeholder reads centered to the modal, not just the body. */
+#badge-loading{position:absolute;left:0;right:0;top:40px;bottom:0;display:flex;align-items:center;justify-content:center;font:13px/1 system-ui,sans-serif;color:var(--text-sub,#8b8b8b);pointer-events:none;text-align:center;padding:20px;}
 #badge-splash{position:absolute;inset:0;z-index:6;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;background:var(--bg,#dbd8d1);transition:opacity .45s ease;}
 #badge-splash.hide{opacity:0;pointer-events:none;}
-#badge-splash-badge{width:78px;height:78px;transform-origin:50% 50%;animation:badgeSpin 1.3s linear infinite;}
+#badge-splash-icon{position:relative;width:132px;height:132px;display:block;}
+#badge-splash-seal,#badge-splash-tick{position:absolute;inset:0;width:132px;height:132px;display:block;}
+#badge-splash-seal{transform-origin:50% 50%;animation:badgeSpin 1.3s linear infinite;}
 #badge-splash-text{font:500 13px/1.55 system-ui,sans-serif;color:var(--text-sub,#8b8b8b);text-align:center;max-width:280px;letter-spacing:.02em;padding:0 16px;}
 @keyframes badgeSpin{from{transform:rotate(0);}to{transform:rotate(360deg);}}
-#badge-open-btn{font:600 12px/1 system-ui,sans-serif;letter-spacing:.03em;color:var(--text,#23242a);background:var(--bg-alt,#c9c6c0);border:1px solid var(--text-sub,#8b8b8b);border-radius:7px;padding:7px 14px;cursor:pointer;}
-#badge-open-btn:hover{background:var(--text,#23242a);color:var(--bg,#dbd8d1);}
 /* Hero featured-artifact badge → opens the "check it" viewer. On hover the
    seal (border) spins while the beige tick stays static; a blue "check it"
    bar slides out from the right. */
@@ -1746,10 +1746,13 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
     </div>
     <div id="badge-body">
       <canvas id="badge-canvas"></canvas>
-      <div id="badge-loading">select an artifact</div>
     </div>
+    <div id="badge-loading">select an artifact</div>
     <div id="badge-splash">
-      <canvas id="badge-splash-badge" width="120" height="120"></canvas>
+      <span id="badge-splash-icon">
+        <canvas id="badge-splash-seal" width="264" height="264"></canvas>
+        <canvas id="badge-splash-tick" width="264" height="264"></canvas>
+      </span>
       <div id="badge-splash-text">For the best experience, please use the desktop version</div>
     </div>
   </div>
@@ -4534,7 +4537,6 @@ const _badgeCanvasEl = document.getElementById('badge-canvas');
 const _badgeCtx = _badgeCanvasEl.getContext('2d');
 const _badgeLoadingEl = document.getElementById('badge-loading');
 const _badgeSplashEl = document.getElementById('badge-splash');
-const _badgeSplashCanvas = document.getElementById('badge-splash-badge');
 const BADGE_CELL = 26;
 let _badgeCurrentId = null, _badgeEngine = null, _badgeRaf = 0, _badgeSearchTimer = 0, _badgeResizeTimer = 0;
 let _badgeSplashTimer = 0, _badgeSplashDrawn = false;
@@ -4542,10 +4544,14 @@ let _badgeSplashTimer = 0, _badgeSplashDrawn = false;
 // Single spinning verified-badge for the splash (CSS rotates the canvas element).
 function _drawSplashBadge() {
   if (_badgeSplashDrawn) return;
-  const cv = _badgeSplashCanvas, S = cv.width, x = cv.getContext('2d');
+  const sc = document.getElementById('badge-splash-seal'), tc = document.getElementById('badge-splash-tick');
+  if (!sc || !tc) return;
+  const S = sc.width, x = sc.getContext('2d');
   x.clearRect(0, 0, S, S);
-  _badgeFillSeal(x, S, '#6363ff');
-  _badgeFillCheck(x, S, '#dbd8d1');
+  _badgeFillSeal(x, S, '#6363ff');        // seal — CSS-spins (border only)
+  const T = tc.width, y = tc.getContext('2d');
+  y.clearRect(0, 0, T, T);
+  _badgeFillCheck(y, T, '#dbd8d1');        // check — static
   _badgeSplashDrawn = true;
 }
 
@@ -4665,7 +4671,6 @@ function _closeBadgeModal() {
   _badgeCurrentId = null;
 }
 
-document.getElementById('badge-open-btn').addEventListener('click', _openBadgeModal);
 _drawHeroBadge();
 const _heroBadgeBtn = document.getElementById('hero-badge');
 if (_heroBadgeBtn) _heroBadgeBtn.addEventListener('click', _openBadgeModal);
