@@ -1712,6 +1712,11 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
 .badge-size-btn:hover{background:var(--text-sub,#8b8b8b);color:var(--bg,#dbd8d1);}
 .badge-size-btn.active{background:var(--text,#23242a);color:var(--bg,#dbd8d1);border-color:var(--text,#23242a);}
 @media (pointer:coarse){ .badge-size-btn{padding:11px 0;} }
+#badge-export-row{display:flex;gap:6px;margin:6px 10px 0;}
+#badge-export-row button{flex:1;padding:6px 0;font:600 12px/1 system-ui,sans-serif;color:var(--text,#23242a);background:var(--bg-alt,#c9c6c0);border:1px solid var(--text-sub,#8b8b8b);border-radius:6px;cursor:pointer;}
+#badge-export-row button:hover:not(:disabled){background:var(--text,#23242a);color:var(--bg,#dbd8d1);}
+#badge-export-row button:disabled{opacity:.45;cursor:default;}
+@media (pointer:coarse){ #badge-export-row button{padding:11px 0;} }
 #badge-list{flex:1 1 auto;overflow-y:auto;padding:0 6px 10px;min-height:0;scrollbar-width:thin;scrollbar-color:var(--text-sub,#8b8b8b) var(--bg,#dbd8d1);}
 #badge-list::-webkit-scrollbar{width:11px;}
 #badge-list::-webkit-scrollbar-track{background:var(--bg,#dbd8d1);}
@@ -1760,6 +1765,10 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
         <button class="badge-size-btn active" type="button" data-cell="26" title="large badges">L</button>
         <button class="badge-size-btn" type="button" data-cell="18" title="medium badges">M</button>
         <button class="badge-size-btn" type="button" data-cell="13" title="small badges">S</button>
+      </div>
+      <div id="badge-export-row">
+        <button id="badge-mp4" type="button" title="export a 20s MP4 of this badge view (same settings as the page MP4)">↓ MP4</button>
+        <button id="badge-png" type="button" title="save a hi-res PNG of the current frame">↓ PNG</button>
       </div>
       <input id="badge-search" type="text" inputmode="numeric" autocomplete="off" placeholder="# artifact…" aria-label="search artifact by number">
       <div id="badge-list"></div>
@@ -3578,6 +3587,9 @@ const EXPORT_PRESETS = [
 let _exportInFlight = false;
 let _exportPresetSelected = 'default';
 let _exportCropMode = false;
+// Badge-export mode: when set, the export modal's Go runs the SAME pipeline but
+// paints badges (paintToBadge) for the badge-modal's current artifact.
+let _exportBadgeMode = false, _exportBadgeId = null;
 
 // Compute the actual crop dimensions (clamped to multiples of PIXEL=6 for
 // integer cell count, and capped at the full grid 2700×1500). Source is
@@ -3623,7 +3635,9 @@ async function _probeExportPresets() {
   return out;
 }
 
-async function _openExportModal(modId) {
+async function _openExportModal(modId, badge) {
+  _exportBadgeMode = !!badge;
+  _exportBadgeId = badge ? modId : null;
   if (_exportInFlight) return;
   if (!window.VideoEncoder || !window.Mp4Muxer) {
     alert(!window.VideoEncoder ? 'WebCodecs not supported (try Chrome 94+).' : 'mp4-muxer not loaded.');
@@ -3673,13 +3687,16 @@ async function _openExportModal(modId) {
   if (dimsEl) dimsEl.textContent = dims.W + ' × ' + dims.H;
   const cropInput = document.getElementById('export-modal-crop-input');
   if (cropInput) cropInput.checked = _exportCropMode;
+  // Crop reads #expand-body (closed in badge mode → garbage dims); hide it.
+  const cropLabel = document.getElementById('export-modal-crop');
+  if (cropLabel) cropLabel.style.display = badge ? 'none' : '';
 }
 
 function _closeExportModal() {
   _exportModal.classList.remove('active');
 }
 
-async function _exportMP4(modId, presetId, cropMode) {
+async function _exportMP4(modId, presetId, cropMode, badge, badgeCell) {
   if (_exportInFlight) return;
   _exportInFlight = true;
   const preset = EXPORT_PRESETS.find(p => p.id === presetId) || EXPORT_PRESETS[0];
@@ -3698,7 +3715,7 @@ async function _exportMP4(modId, presetId, cropMode) {
   } else {
     W = W_EXPORT; H = H_EXPORT;
   }
-  const btn = document.getElementById('export-btn');
+  const btn = badge ? document.getElementById('badge-mp4') : document.getElementById('export-btn');
   const origText = btn ? btn.textContent : '↓ MP4';
   if (btn) btn.disabled = true;
 
@@ -3766,7 +3783,7 @@ async function _exportMP4(modId, presetId, cropMode) {
       let fileHandle;
       try {
         fileHandle = await window.showSaveFilePicker({
-          suggestedName: 'modulo-' + modId + '-' + preset.id + (cropMode ? '-crop' : '') + '.mp4',
+          suggestedName: 'modulo-' + modId + '-' + preset.id + (badge ? '-badge' : '') + (cropMode ? '-crop' : '') + '.mp4',
           types: [{ description: 'MP4 video', accept: { 'video/mp4': ['.mp4'] } }],
         });
       } catch (e) {
@@ -3793,7 +3810,9 @@ async function _exportMP4(modId, presetId, cropMode) {
     });
     encoder.configure(cfg);
 
-    const paintFn = preset.isNative ? engine.paintToNative : engine.paintTo;
+    const paintFn = badge
+      ? (off, octx) => engine.paintToBadge(off, octx, { cell: badgeCell })
+      : (preset.isNative ? engine.paintToNative : engine.paintTo);
     for (let f = 0; f < TOTAL_FRAMES; f++) {
       engine.step(engine.dtOps);
       engine.applyRects();
@@ -3838,7 +3857,7 @@ async function _exportMP4(modId, presetId, cropMode) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'modulo-' + modId + '-' + preset.id + (cropMode ? '-crop' : '') + '.mp4';
+      a.download = 'modulo-' + modId + '-' + preset.id + (badge ? '-badge' : '') + (cropMode ? '-crop' : '') + '.mp4';
       a.click();
       URL.revokeObjectURL(url);
     }
@@ -3875,11 +3894,15 @@ document.getElementById('export-modal-crop-input').addEventListener('change', e 
   _exportCropMode = e.target.checked;
 });
 document.getElementById('export-modal-go').addEventListener('click', () => {
-  if (_expandOpenId === null) return;
-  const modId = _expandOpenId;
-  const cropMode = _exportCropMode;
+  const badge = _exportBadgeMode;
+  const modId = badge ? _exportBadgeId : _expandOpenId;
+  if (modId == null) return;
+  // Badge mode: no crop (crop dims read #expand-body which is closed) — full
+  // 2700×1500; scale the cell so the export matches the on-screen badge density.
+  const cropMode = badge ? false : _exportCropMode;
+  const badgeCell = badge ? Math.max(4, Math.round(_badgeCell * W_EXPORT / Math.max(1, _badgeCanvasEl.width))) : 0;
   _closeExportModal();
-  _exportMP4(modId, _exportPresetSelected, cropMode);
+  _exportMP4(modId, _exportPresetSelected, cropMode, badge, badgeCell);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4714,6 +4737,34 @@ document.getElementById('badge-sizes').addEventListener('click', e => {
   _badgeCell = Number(b.dataset.cell);
   for (const el of document.querySelectorAll('.badge-size-btn')) el.classList.toggle('active', el === b);
 });
+// Hi-res PNG of the CURRENT frame: render the LIVE engine to a 2700×1500
+// OffscreenCanvas via paintToBadge (cell scaled so density matches the view).
+async function _exportBadgePNG() {
+  if (_exportInFlight) return;   // don't overlap a heavy MP4 encode
+  if (_badgeCurrentId == null || !_badgeEngine) { alert('Select an artifact first.'); return; }
+  const btn = document.getElementById('badge-png'), orig = btn.textContent;
+  btn.disabled = true; btn.textContent = '…';
+  try {
+    const W = W_EXPORT, H = H_EXPORT;
+    const cell = Math.max(4, Math.round(_badgeCell * W / Math.max(1, _badgeCanvasEl.width)));
+    const off = (typeof OffscreenCanvas !== 'undefined') ? new OffscreenCanvas(W, H) : Object.assign(document.createElement('canvas'), { width: W, height: H });
+    const octx = off.getContext('2d');
+    _badgeEngine.paintToBadge(off, octx, { cell });
+    const blob = off.convertToBlob ? await off.convertToBlob({ type: 'image/png' }) : await new Promise(r => off.toBlob(r, 'image/png'));
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'modulo-' + _badgeCurrentId + '-badge.png';
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (e) { console.error('[badge-png]', e); alert('PNG export failed. See console.'); }
+  finally { btn.disabled = false; btn.textContent = orig; }
+}
+// MP4 of the badge view — reuses the page's export modal + pipeline + settings.
+document.getElementById('badge-mp4').addEventListener('click', () => {
+  if (_badgeCurrentId == null) { alert('Select an artifact first.'); return; }
+  _openExportModal(_badgeCurrentId, true);
+});
+document.getElementById('badge-png').addEventListener('click', _exportBadgePNG);
 // Collapse the list sidebar → more room for the cells (like app's side panel).
 _badgeCollapseEl.addEventListener('click', () => {
   const collapsed = _badgeWindowEl.classList.toggle('sidebar-collapsed');
