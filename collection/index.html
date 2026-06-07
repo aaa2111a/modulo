@@ -1678,14 +1678,18 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
 <style>
 #badge-modal{position:fixed;inset:0;z-index:1450;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.55);padding:2vh 2vw;}
 #badge-modal.active{display:flex;}
-#badge-window{width:min(96vw,1200px);height:min(94vh,760px);background:var(--bg,#dbd8d1);border:1px solid var(--text-sub,#8b8b8b);border-radius:12px;overflow:hidden;display:grid;grid-template-rows:40px 1fr;grid-template-columns:220px 1fr;box-shadow:0 24px 60px rgba(0,0,0,.4);}
-#badge-tbar{grid-column:1 / -1;display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid var(--border,rgba(0,0,0,.15));background:var(--bg-alt,#c9c6c0);}
+#badge-window{width:min(96vw, calc(220px + (90vh - 40px) * 1.8));height:90vh;background:var(--bg,#dbd8d1);border:1px solid var(--text-sub,#8b8b8b);border-radius:10px;overflow:hidden;display:grid;grid-template-rows:40px 1fr;grid-template-columns:220px 1fr;box-shadow:0 24px 60px rgba(0,0,0,.5);}
+#badge-tbar{grid-column:1 / -1;position:relative;display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid var(--border,rgba(0,0,0,.15));background:var(--bg-alt,#c9c6c0);}
 #badge-close{width:13px;height:13px;border-radius:50%;background:#ff5f57;border:none;cursor:pointer;flex:0 0 auto;padding:0;}
-#badge-title{font:600 13px/1 system-ui,sans-serif;color:var(--text,#23242a);letter-spacing:.02em;}
+#badge-title{position:absolute;left:50%;transform:translateX(-50%);font:600 13px/1 system-ui,sans-serif;color:var(--text,#23242a);letter-spacing:.02em;pointer-events:none;}
 #badge-sidebar{grid-column:1;grid-row:2;display:flex;flex-direction:column;border-right:1px solid var(--border,rgba(0,0,0,.15));min-height:0;}
 #badge-search{margin:10px;padding:8px 10px;font:13px/1 system-ui,sans-serif;color:var(--text,#23242a);background:var(--bg-alt,#c9c6c0);border:1px solid var(--text-sub,#8b8b8b);border-radius:7px;outline:none;}
 #badge-search::placeholder{color:var(--text-sub,#8b8b8b);}
-#badge-list{flex:1 1 auto;overflow-y:auto;padding:0 6px 10px;min-height:0;}
+#badge-list{flex:1 1 auto;overflow-y:auto;padding:0 6px 10px;min-height:0;scrollbar-width:thin;scrollbar-color:var(--text-sub,#8b8b8b) var(--bg,#dbd8d1);}
+#badge-list::-webkit-scrollbar{width:11px;}
+#badge-list::-webkit-scrollbar-track{background:var(--bg,#dbd8d1);}
+#badge-list::-webkit-scrollbar-thumb{background:var(--text-sub,#8b8b8b);border-radius:6px;border:3px solid var(--bg,#dbd8d1);}
+#badge-list::-webkit-scrollbar-thumb:hover{background:var(--text,#23242a);}
 .badge-list-item{padding:7px 10px;margin:1px 0;font:13px/1 ui-monospace,monospace;color:var(--text,#23242a);border-radius:6px;cursor:pointer;user-select:none;}
 .badge-list-item:hover{background:var(--bg-alt,#c9c6c0);}
 .badge-list-item.badge-selected{background:var(--text,#23242a);color:var(--bg,#dbd8d1);}
@@ -1703,7 +1707,7 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
   <div id="badge-window">
     <div id="badge-tbar">
       <button id="badge-close" type="button" title="close" aria-label="close"></button>
-      <span id="badge-title">Artifacts — Badge View</span>
+      <span id="badge-title">check it</span>
     </div>
     <div id="badge-sidebar">
       <input id="badge-search" type="text" inputmode="numeric" autocomplete="off" placeholder="# artifact…" aria-label="search artifact by number">
@@ -4552,6 +4556,7 @@ async function _selectBadgeArtifact(id) {
   if (_badgeCurrentId !== id) return;            // re-check after sync engine build
   if (!eng) { _badgeLoadingEl.textContent = 'engine failed'; return; }
   _badgeEngine = eng;
+  _badgeLoadingEl.style.display = 'none';   // hide overlay the moment engine is ready
   _badgeArm();
 }
 
