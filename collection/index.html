@@ -3435,10 +3435,10 @@ function _createArtifactEngine(canvas, rawComposition) {
   const BADGE_BG = '#dbd8d1';
   let _badgeSprites = null, _badgeSig = '';
   function _bScallop(x, cx, cy, rO, rI, b) { x.beginPath(); const s = b * 18; for (let k = 0; k <= s; k++) { const t = k / s * Math.PI * 2, rr = (rO + rI) / 2 + (rO - rI) / 2 * Math.cos(b * t), px = cx + Math.cos(t) * rr, py = cy + Math.sin(t) * rr; if (k === 0) x.moveTo(px, py); else x.lineTo(px, py); } x.closePath(); }
-  function _bTick(x, CELL) { const cx = CELL / 2, cy = CELL / 2; x.beginPath(); x.moveTo(cx - CELL * 0.18, cy + CELL * 0.02); x.lineTo(cx - CELL * 0.04, cy + CELL * 0.16); x.lineTo(cx + CELL * 0.20, cy - CELL * 0.14); }
+  function _bTick(x, CELL) { const cx = CELL / 2, cy = CELL / 2; x.beginPath(); x.moveTo(cx - CELL * 0.20, cy + CELL * 0.01); x.lineTo(cx - CELL * 0.06, cy + CELL * 0.16); x.lineTo(cx + CELL * 0.22, cy - CELL * 0.16); }
   function _bNewCanvas(w, h) { if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(w, h); const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
-  function _bBadgeSprite(CELL, col, shape) { const cv = _bNewCanvas(CELL, CELL), x = cv.getContext('2d'), cx = CELL / 2, cy = CELL / 2, R = (CELL - 2) / 2; if (shape === 'circle') { x.beginPath(); x.arc(cx, cy, R, 0, Math.PI * 2); x.closePath(); } else { _bScallop(x, cx, cy, R, R * 0.82, 8); } x.fillStyle = col; x.fill(); x.strokeStyle = BADGE_BG; x.lineWidth = Math.max(1.5, CELL * 0.10); x.lineCap = 'round'; x.lineJoin = 'round'; _bTick(x, CELL); x.stroke(); return cv; }
-  function _bDitherSprite(CELL, col) { const cv = _bNewCanvas(CELL, CELL), x = cv.getContext('2d'); x.strokeStyle = col; x.lineWidth = Math.max(1.5, CELL * 0.13); x.lineCap = 'round'; x.lineJoin = 'round'; _bTick(x, CELL); x.stroke(); return cv; }
+  function _bBadgeSprite(CELL, col, shape) { const cv = _bNewCanvas(CELL, CELL), x = cv.getContext('2d'), cx = CELL / 2, cy = CELL / 2, R = (CELL - 2) / 2; if (shape === 'circle') { x.beginPath(); x.arc(cx, cy, R, 0, Math.PI * 2); x.closePath(); } else { _bScallop(x, cx, cy, R, R * 0.80, 8); } x.fillStyle = col; x.fill(); x.strokeStyle = BADGE_BG; x.lineWidth = Math.max(1.5, CELL * 0.12); x.lineCap = 'round'; x.lineJoin = 'round'; _bTick(x, CELL); x.stroke(); return cv; }
+  function _bDitherSprite(CELL, col) { const cv = _bNewCanvas(CELL, CELL), x = cv.getContext('2d'); x.strokeStyle = col; x.lineWidth = Math.max(1.5, CELL * 0.14); x.lineCap = 'round'; x.lineJoin = 'round'; _bTick(x, CELL); x.stroke(); return cv; }
   function _bBuildSprites(CELL, shape) { const normal = []; for (let i = 0; i < PAL.length; i++) normal.push(_bBadgeSprite(CELL, 'rgb(' + PAL[i][0] + ',' + PAL[i][1] + ',' + PAL[i][2] + ')', shape)); if (!PAL.length) normal.push(_bBadgeSprite(CELL, '#000', shape)); const ci = PAL.length > 1 ? 1 : 0, dc = PAL[ci] ? 'rgb(' + PAL[ci][0] + ',' + PAL[ci][1] + ',' + PAL[ci][2] + ')' : '#000'; return { normal, dither: _bDitherSprite(CELL, dc) }; }
   // Faithful to _applyDither's cell-selection conditions (P1-B reviewer 2026-06-07):
   // 'o' = lego overlay on ~90% of cells (no index-0 gate); 'num'/'numi' require
@@ -4528,12 +4528,12 @@ function _drawSplashBadge() {
   if (_badgeSplashDrawn) return;
   const cv = _badgeSplashCanvas, S = cv.width, x = cv.getContext('2d');
   x.clearRect(0, 0, S, S);
-  const cx = S / 2, cy = S / 2, rO = S * 0.46, rI = S * 0.385, bumps = 8, steps = bumps * 18;
+  const cx = S / 2, cy = S / 2, rO = S * 0.48, rI = S * 0.384, bumps = 8, steps = bumps * 18;
   x.beginPath();
   for (let k = 0; k <= steps; k++) { const t = k / steps * Math.PI * 2, rr = (rO + rI) / 2 + (rO - rI) / 2 * Math.cos(bumps * t), px = cx + Math.cos(t) * rr, py = cy + Math.sin(t) * rr; if (k === 0) x.moveTo(px, py); else x.lineTo(px, py); }
   x.closePath(); x.fillStyle = '#6363ff'; x.fill();
-  x.strokeStyle = '#dbd8d1'; x.lineWidth = S * 0.085; x.lineCap = 'round'; x.lineJoin = 'round';
-  x.beginPath(); x.moveTo(cx - S * 0.16, cy + S * 0.02); x.lineTo(cx - S * 0.03, cy + S * 0.15); x.lineTo(cx + S * 0.18, cy - S * 0.13); x.stroke();
+  x.strokeStyle = '#dbd8d1'; x.lineWidth = S * 0.13; x.lineCap = 'round'; x.lineJoin = 'round';
+  x.beginPath(); x.moveTo(cx - S * 0.20, cy + S * 0.01); x.lineTo(cx - S * 0.06, cy + S * 0.16); x.lineTo(cx + S * 0.22, cy - S * 0.16); x.stroke();
   _badgeSplashDrawn = true;
 }
 
@@ -4544,15 +4544,15 @@ function _drawHeroBadge() {
   if (!sc || !tc) return;
   const S = sc.width, x = sc.getContext('2d');
   x.clearRect(0, 0, S, S);
-  const cx = S / 2, cy = S / 2, rO = S * 0.47, rI = S * 0.39, bumps = 8, steps = bumps * 18;
+  const cx = S / 2, cy = S / 2, rO = S * 0.48, rI = S * 0.384, bumps = 8, steps = bumps * 18;
   x.beginPath();
   for (let k = 0; k <= steps; k++) { const t = k / steps * Math.PI * 2, rr = (rO + rI) / 2 + (rO - rI) / 2 * Math.cos(bumps * t), px = cx + Math.cos(t) * rr, py = cy + Math.sin(t) * rr; if (k === 0) x.moveTo(px, py); else x.lineTo(px, py); }
   x.closePath(); x.fillStyle = '#6363ff'; x.fill();
   const T = tc.width, y = tc.getContext('2d');
   y.clearRect(0, 0, T, T);
   const tx = T / 2, ty = T / 2;
-  y.strokeStyle = '#dbd8d1'; y.lineWidth = T * 0.09; y.lineCap = 'round'; y.lineJoin = 'round';
-  y.beginPath(); y.moveTo(tx - T * 0.16, ty + T * 0.02); y.lineTo(tx - T * 0.03, ty + T * 0.15); y.lineTo(tx + T * 0.18, ty - T * 0.13); y.stroke();
+  y.strokeStyle = '#dbd8d1'; y.lineWidth = T * 0.13; y.lineCap = 'round'; y.lineJoin = 'round';
+  y.beginPath(); y.moveTo(tx - T * 0.20, ty + T * 0.01); y.lineTo(tx - T * 0.06, ty + T * 0.16); y.lineTo(tx + T * 0.22, ty - T * 0.16); y.stroke();
 }
 
 function _resizeBadgeCanvas() {
