@@ -3024,6 +3024,7 @@ function _initHero(ids) {
   setTimeout(() => { const hb = document.getElementById('hero-badge'); if (hb) hb.classList.add('hb-in'); }, 1000);
 
   let front = slotA, back = slotB, lastId = null, timer = null, busy = false;
+  const _heroExcluded = new Set();   // single-token artifacts — excluded from the hero (read on-chain via compositionLen)
   const labelEl = document.getElementById('hero-label');
   const _setLabel = id => { if (labelEl) labelEl.textContent = '#' + id; };
 
@@ -3035,17 +3036,17 @@ function _initHero(ids) {
   const _pickId = () => {
     if (ids.length <= 1) return ids[0];
     let n, t = 0;
-    do { n = ids[Math.floor(Math.random() * ids.length)]; t++; } while (n === lastId && t < 12);
+    do { n = ids[Math.floor(Math.random() * ids.length)]; t++; } while ((n === lastId || _heroExcluded.has(n)) && t < 24);
     return n;
   };
 
   // Mount `id` into `slot` (cleared first). Resolves true once the iframe child
   // document has parsed (load), so the caller can crossfade with no blank flash.
-  const _mount = (slot, id) => new Promise(resolve => {
+  // Build the iframe from ALREADY-FETCHED data (no fetch here).
+  const _mountData = (slot, id, data) => new Promise(resolve => {
     _clearSlot(slot);
-    _fetchArtifactData(id).then(data => {
-      if (!data) return resolve(false);
-      const html = _decodeTokenURI(data.tokenURI);
+    {
+      const html = data && _decodeTokenURI(data.tokenURI);
       if (!html) return resolve(false);
       const iframe = document.createElement('iframe');
       iframe.className = 'hero-iframe';
@@ -3064,15 +3065,30 @@ function _initHero(ids) {
       fbTimer = setTimeout(finish, 6000);   // fallback: don't hang the rotator if load never fires
       iframe.srcdoc = _prepareSrcdoc(html);
       slot.appendChild(iframe);
-    }).catch(() => resolve(false));
+    }
   });
+
+  // Pick a NON-single-token alive artifact and mount it. Token count = compositionLen
+  // on the already-needed fetch (cached → no extra RPC); 1-token artifacts are
+  // excluded from the hero (read on-chain). Returns the mounted id, or null.
+  const _mountValid = async (slot) => {
+    for (let t = 0; t < 24; t++) {
+      const id = _pickId();
+      let data = null;
+      try { data = await _fetchArtifactData(id); } catch (_) { data = null; }
+      if (!data) continue;                                          // transient → try another id
+      if (Number(data.compositionLen) <= 1) { _heroExcluded.add(id); continue; }  // skip single-token
+      const ok = await _mountData(slot, id, data);
+      if (ok) return id;
+    }
+    return null;
+  };
 
   const _swap = () => {
     if (busy || document.hidden) return;
     busy = true;
-    const id = _pickId();
-    _mount(back, id).then(ok => {
-      if (!ok) { busy = false; return; }   // mount failed → keep current, retry next tick
+    _mountValid(back).then(id => {
+      if (id === null) { busy = false; return; }   // none valid → keep current, retry next tick
       lastId = id;
       _setLabel(id);
       back.classList.add('hero-active');
@@ -3095,10 +3111,8 @@ function _initHero(ids) {
 
   // First render — no fade, straight into the front slot. Start the rotator only
   // AFTER it resolves (so a fast first timer can't beat the first paint).
-  lastId = _pickId();
-  _mount(front, lastId).then(() => {
-    front.classList.add('hero-active');
-    _setLabel(lastId);
+  _mountValid(front).then(id => {
+    if (id !== null) { lastId = id; front.classList.add('hero-active'); _setLabel(id); }
     if (ids.length >= 2) _schedule();
   });
 
