@@ -131,7 +131,13 @@
     const baseAngle = cycleNum * 180;
     const angle = (baseAngle + ANGLES[inCycle]) % 360;
     const pair = PAIRS[cycleNum % PAIRS.length];
-    link.href = genSVG(angle, pair[0], pair[1]);
+    const uri = genSVG(angle, pair[0], pair[1]);
+    link.href = uri;
+    // Mirror the favicon into the header brand mark. Lazy lookup: this IIFE runs
+    // in <head> before <body> parses, so #header-mark isn't available at start —
+    // the 50ms interval picks it up once the header renders.
+    const mark = document.getElementById('header-mark');
+    if (mark) mark.src = uri;
     step++;
   }, 50);
 })();
@@ -182,7 +188,7 @@ html, body {
   background:var(--tbar-bg);
   border-bottom:0.5px solid var(--border-mid);
   display:grid;
-  grid-template-columns:1fr auto 1fr;
+  grid-template-columns:1fr auto minmax(0,1fr);
   align-items:center;
   padding:0 24px;
   backdrop-filter:blur(12px);
@@ -206,6 +212,77 @@ html, body {
   border:none; cursor:pointer; padding:0;
 }
 .tbar-night:hover { filter:brightness(0.75); }
+
+/* ── Header nav: About/App (top-left, under the back dot) + Join Modulo (top-right) ── */
+.side-nav {
+  position:absolute; top:18px; left:24px; z-index:5;
+  display:flex; flex-direction:column; gap:7px;
+}
+.side-nav a {
+  font-size:11px; font-family:monospace;
+  letter-spacing:.10em; text-transform:uppercase;
+  color:rgba(0,0,0,0.55); text-decoration:none;
+  transition:color 0.14s;
+}
+.side-nav a:hover { color:rgba(0,0,0,0.92); }
+body.night .side-nav a { color:rgba(255,255,255,0.50); }
+body.night .side-nav a:hover { color:#fff; }
+#cta-join {
+  position:absolute; top:14px; right:24px; z-index:5;
+  display:inline-flex; align-items:center;
+  padding:6px 14px;
+  font-size:11px; font-family:monospace;
+  letter-spacing:.08em; text-transform:uppercase;
+  color:rgba(0,0,0,0.78); text-decoration:none;
+  background:rgba(0,0,0,0.05);
+  border:0.5px solid var(--border-mid);
+  border-radius:9px;
+  white-space:nowrap;
+  transition:background 0.15s, color 0.15s, border-color 0.15s;
+}
+#cta-join:hover { background:rgba(0,0,0,0.10); color:rgba(0,0,0,0.92); }
+body.night #cta-join {
+  color:rgba(255,255,255,0.82);
+  background:rgba(255,255,255,0.06);
+  border-color:rgba(255,255,255,0.18);
+}
+body.night #cta-join:hover { background:rgba(255,255,255,0.12); color:#fff; }
+
+/* ── Featured artifact hero (borderless, rotating) ── */
+#hero-section {
+  display:none;            /* _initHero flips to block only when >=1 alive artifact */
+  padding:40px 52px 8px;
+}
+#hero-wrap {
+  position:relative;
+  max-width:1500px; margin:0 auto;
+  aspect-ratio:9 / 5;      /* matches engine GRID_COLS/ROWS = 450/250 = 1.8 */
+  overflow:hidden;
+  border-radius:14px;
+  background:#000;
+}
+.hero-slot {
+  position:absolute; inset:0;
+  opacity:0;
+  transition:opacity 0.7s ease;
+}
+.hero-slot.hero-active { opacity:1; }
+.hero-iframe {
+  position:absolute; inset:0;
+  width:100%; height:100%;
+  border:none; display:block;
+  background:#000;
+  pointer-events:none;     /* non-clickable in v1 */
+}
+#hero-label {
+  max-width:1500px; margin:12px auto 0;
+  text-align:center;
+  font-size:12px; font-family:monospace;
+  letter-spacing:.14em;
+  color:var(--text-sub);
+}
+@media (max-width:768px) { #hero-section { padding:28px 24px 6px; } }
+@media (max-width:600px) { #hero-section { padding:20px 16px 4px; } }
 
 /* ── Tab buttons (center) ── */
 .tbar-tabs {
@@ -255,14 +332,13 @@ html, body {
 }
 .header-inner {
   max-width:1500px; margin:0 auto;
-  display:grid; grid-template-columns:1fr auto;
-  align-items:end;
-  gap:40px;
+  display:flex; flex-direction:column; align-items:center;
+  text-align:center;
 }
 .collection-inner-wide { max-width:1500px !important; }
 /* OpenSea-style action icons row (info/copy/website/X/share/more) — placeholders */
 .id-actions {
-  display:flex; align-items:center; gap:6px;
+  display:flex; align-items:center; justify-content:center; gap:6px;
   margin-top:14px;
 }
 .id-action-btn {
@@ -281,11 +357,17 @@ html, body {
 }
 .id-action-btn svg { display:block; width:13px; height:13px; }
 .id-title-row {
-  display:flex; align-items:baseline; gap:14px;
+  display:flex; align-items:baseline; justify-content:center; gap:14px;
 }
 .id-verified {
   font-size:18px; color:#4f8df7;
   user-select:none;
+}
+/* Header brand mark — mirrors the animated favicon (2026-06-06, replaces the blue dot) */
+.id-mark {
+  width:30px; height:30px;
+  border-radius:5px;
+  flex-shrink:0;
 }
 body.night .id-action-btn { background:var(--bg); }
 .display-title {
@@ -341,7 +423,7 @@ body.night .id-action-btn { background:var(--bg); }
 /* OpenSea-style identity meta strip below the title */
 .id-meta {
   display:flex; flex-wrap:wrap;
-  align-items:center; gap:10px;
+  align-items:center; justify-content:center; gap:10px;
   margin-top:22px;
 }
 .id-meta-item {
@@ -401,6 +483,9 @@ body.night .id-action-btn { background:var(--bg); }
   color:rgba(0,0,0,0.78);
   letter-spacing:.04em;
 }
+/* Stats box relocated above the grid (2026-06-06) — centered, content-width
+   on desktop; the ≤900px `.stats-box{width:100%}` rule still overrides this. */
+.stats-box-top { margin:0 auto 30px; width:fit-content; max-width:100%; }
 body.night .stats-box .meta-value { color:rgba(255,255,255,0.85); }
 .meta-label {
   font-size:8px; font-family:monospace;
@@ -1474,10 +1559,7 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
   <div class="tbar-left">
     <a class="tbar-back" href="../" title="back to home"></a>
   </div>
-  <div class="tbar-tabs">
-    <button class="tab-btn active" data-tab="tokens">Tokens</button>
-    <button class="tab-btn"        data-tab="modulo">Artifacts</button>
-  </div>
+  <div class="tbar-center"></div>
   <div class="tbar-right">
     <button class="tbar-night" id="night-toggle" title="toggle night mode"></button>
   </div>
@@ -1485,13 +1567,24 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
 
 <!-- Header (OpenSea-style data, modulo's visual language) -->
 <header class="page-header grid-bg">
+  <!-- Page nav: About/App under the back dot (top-left) -->
+  <nav class="side-nav">
+    <a href="../about/">About</a>
+    <a href="../app/">App</a>
+  </nav>
+  <!-- Join CTA → OpenSea tokens collection (top-right of header) -->
+  <a id="cta-join"
+     href="https://opensea.io/collection/modulo-139579337"
+     target="_blank" rel="noopener noreferrer"
+     aria-label="Join Modulo — get tokens on OpenSea (opens in new tab)">Join Modulo</a>
   <div class="header-inner">
     <div>
       <!-- Title + verified badge inline (no avatar per spec).
            Title text updates reactively with the active tab — see tab handler. -->
       <div class="id-title-row">
-        <h1 class="display-title" id="display-title">Tokens</h1>
-        <span class="id-verified" title="verified collection">●</span>
+        <h1 class="display-title" id="display-title">Modulo Artifacts</h1>
+        <img id="header-mark" class="id-mark" alt="modulo"
+             src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23d8d4c9'/%3E%3Crect x='4' y='4' width='8' height='8' fill='%23222'/%3E%3C/svg%3E">
       </div>
       <!-- Identity meta strip: collection author · chain · supply · launch · category -->
       <div class="id-meta">
@@ -1501,7 +1594,7 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
         <span class="id-meta-sep">·</span>
         <span class="id-meta-item" id="meta-count">— ITEMS</span>
         <span class="id-meta-sep">·</span>
-        <span class="id-meta-item">LAUNCHING 2026</span>
+        <span class="id-meta-item">2026</span>
         <span class="id-meta-sep">·</span>
         <span class="id-meta-item">GENERATIVE ART</span>
       </div>
@@ -1521,8 +1614,24 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
         </button>
       </div>
     </div>
-    <!-- Stats box: OpenSea market stats (placeholders until API sync) -->
-    <div class="meta-box stats-box">
+  </div>
+</header>
+
+<!-- Featured artifact hero (rotates a random alive artifact every 5-10s) -->
+<section id="hero-section" aria-label="featured artifact">
+  <div id="hero-wrap">
+    <div id="hero-a" class="hero-slot"></div>
+    <div id="hero-b" class="hero-slot"></div>
+  </div>
+  <div id="hero-label" aria-live="polite"></div>
+</section>
+
+<!-- Collection -->
+<section class="collection-section">
+  <div class="collection-inner">
+
+    <!-- Stats box (moved here, above the grid, 2026-06-06) -->
+    <div class="meta-box stats-box stats-box-top">
       <div class="meta-tbar">
         <span class="meta-dot"></span>
       </div>
@@ -1549,20 +1658,9 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
         </div>
       </div>
     </div>
-  </div>
-</header>
 
-<!-- Collection -->
-<section class="collection-section">
-  <div class="collection-inner">
-
-    <!-- Tokens panel (default active — first/leftmost tab) -->
-    <div class="tab-panel active" id="panel-tokens">
-      <div class="tok-grid" id="tok-grid"></div>
-    </div>
-
-    <!-- Modulo panel (artifacts collection — right tab) -->
-    <div class="tab-panel" id="panel-modulo">
+    <!-- Modulo panel (artifacts collection — single section, always visible) -->
+    <div class="tab-panel active" id="panel-modulo">
       <div class="mod-grid" id="mod-grid"></div>
     </div>
 
@@ -2319,49 +2417,10 @@ function _scrambleTitle(target) {
   }
 }
 
-document.querySelectorAll('.tab-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const target = btn.dataset.tab;
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
-    document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + target));
-    if (_displayTitle && _TAB_TITLES[target]) _scrambleTitle(_TAB_TITLES[target]);
-    if (typeof _setMetaCount === 'function') _setMetaCount(target);
-    if (typeof _loadOsStats === 'function') _loadOsStats(target); // no-op while OS_ENABLED=false
-    // Mount sweep — IO observers attached to cards inside a `display:none`
-    // panel get their initial callback with isIntersecting=false and Chrome
-    // does NOT re-fire when the parent transitions to `display:block`. Cards
-    // built while their panel was hidden stay forever in placeholder. We
-    // walk the now-visible panel's cards and trigger mount manually for any
-    // that haven't been hydrated yet. Idempotent guards inside _mount*Iframe
-    // dedupe vs the IO callback potentially also firing post-layout.
-    //
-    // requestAnimationFrame defer (audit 2026-05-08): the `display:block`
-    // class toggle is synchronous in JS but layout commit is batched.
-    // Calling mount* synchronously here would attach iframes while the
-    // browser still has stale layout (cards at default position 0,0),
-    // tripping native lazy/visibility heuristics for 14 of 16 cards. rAF
-    // pushes the sweep to AFTER layout commit → iframes attach with
-    // correct geometry → all activate properly.
-    const _sweepMount = () => {
-      // Mount funcs have internal idempotent guards (skip when iframe already
-      // has srcdoc). Calling unconditionally lets them re-mount cards whose
-      // iframe was cleared by the unmount path on a previous tab switch.
-      // Without this, re-entry to a tab leaves cards visible but blank.
-      if (target === 'modulo') {
-        document.querySelectorAll('.mod-card').forEach(card => {
-          const id = Number(card.dataset.modId);
-          if (id && typeof _mountModuloIframe === 'function') _mountModuloIframe(card, id);
-        });
-      } else if (target === 'tokens') {
-        document.querySelectorAll('.tok-card').forEach(card => {
-          const id = Number(card.dataset.tokId);
-          if (id && typeof _mountTokenIframe === 'function') _mountTokenIframe(card, id);
-        });
-      }
-    };
-    requestAnimationFrame(_sweepMount);
-  });
-});
+// Tab switcher REMOVED 2026-06-06 (artifacts-only redesign). The page now has a
+// single always-visible artifacts panel (#panel-modulo carries `active` in the
+// static markup), so mod-cards are built into a visible container and their
+// IntersectionObserver fires correctly without the old tab-switch rAF sweep.
 
 // ── rAF-throttled resize dispatcher ───────────────────────────────────────────
 const _resizeFns = [];
@@ -2692,87 +2751,30 @@ const _CARD_LOADING_HTML =
 
 async function _buildCards() {
   const ok = _initOnChain();
-  const tokGrid = document.getElementById('tok-grid');
   const modGrid = document.getElementById('mod-grid');
 
   if (!ok) {
-    tokGrid.innerHTML = '<div class="card-empty">on-chain reader unavailable — refresh</div>';
     modGrid.innerHTML = '<div class="card-empty">on-chain reader unavailable — refresh</div>';
-    return;
+    return;   // hero-section stays display:none (CSS default) — _initHero never runs here
   }
 
-  // Loading placeholder while we fetch counts + filter alive ids. ~3-5s on
-  // publicnode for ~100 tokens. Counts shown stay '— ITEMS' until ready.
-  tokGrid.innerHTML = '<div class="card-empty">reading on-chain state…</div>';
+  // Loading placeholder while we fetch the count + filter alive ids.
   modGrid.innerHTML = '<div class="card-empty">reading on-chain state…</div>';
 
-  let tokenCount = 0, artifactCount = 0;
+  let artifactCount = 0;
   try {
-    [tokenCount, artifactCount] = await Promise.all([
-      _tokenAgent.totalMinted().then(n => Number(n)),
-      _settleArtifact.totalArtifacts().then(n => Number(n)),
-    ]);
+    artifactCount = await _settleArtifact.totalArtifacts().then(n => Number(n));
   } catch (err) {
     console.error('[chain] count fetch failed:', err);
   }
 
-  // Pre-fetch ownerOf for every minted id in parallel — burned tokens revert
-  // and fall out of the alive list. Caches owners for downstream lookups.
-  const [aliveTokenIds, aliveArtifactIds] = await Promise.all([
-    _filterAliveIds(_tokenAgent,     _tokenOwners,    tokenCount),
-    _filterAliveIds(_settleArtifact, _artifactOwners, artifactCount),
-  ]);
+  // Pre-fetch ownerOf for every settled id — burned artifacts revert and fall
+  // out of the alive list. Caches owners for downstream lookups.
+  const aliveArtifactIds = await _filterAliveIds(_settleArtifact, _artifactOwners, artifactCount);
 
-  _aliveTokenCount    = aliveTokenIds.length;
   _aliveArtifactCount = aliveArtifactIds.length;
-  // Active tab at boot is 'tokens' (default in the markup) — set its count
-  _setMetaCount(document.querySelector('.tab-btn.active')?.dataset.tab || 'tokens');
-  if (typeof _loadOsStats === 'function') _loadOsStats(document.querySelector('.tab-btn.active')?.dataset.tab || 'tokens'); // no-op while OS_ENABLED=false
-
-  // ── Token cards (alive only) ──────────────────────────────────────────────
-  tokGrid.innerHTML = '';
-  if (aliveTokenIds.length === 0) {
-    tokGrid.innerHTML = '<div class="card-empty">no tokens minted yet</div>';
-  } else {
-    let _tokCardIdx = 0;
-    for (const id of aliveTokenIds) {
-      const label = '#' + String(id).padStart(4, '0');
-      const card = document.createElement('div');
-      card.className = 'tok-card';
-      card.dataset.tokId = String(id);
-      card.innerHTML =
-        '<div class="tok-tbar">' +
-          '<span class="tok-dot"></span>' +
-          '<span class="tok-label">' + label + '</span>' +
-        '</div>' +
-        '<div class="tok-canvas-wrap">' +
-          _CARD_LOADING_HTML +
-        '</div>' +
-        '<div class="tok-footer">' +
-          '<span class="tok-seed">…</span>' +
-          '<span class="tok-owner">…</span>' +
-          '<span class="tok-price">— ETH</span>' +
-        '</div>';
-      // Set per-card stagger index for the pop-in animation. CSS clamps via
-      // min(idx, 20) so the first 20 cards stagger sequentially and the rest
-      // animate together (avoids 100-card cascade taking 2.5s+).
-      card.style.setProperty('--card-index', _tokCardIdx++);
-      tokGrid.appendChild(card);
-      _attachOnChainObserver(card,
-        () => _mountTokenIframe(card, id),
-        () => _unmountTokenIframe(card));
-      // Click → expand modal (2026-05-10). Same UX shape as mod-card click
-      // (~L2645 below) but routes through `_openExpand(_, _, 'token')` so the
-      // window enters token mode (hides DETAILS / MP4 / RESET, ONCHAIN modal
-      // points at TOKEN_AGENT). `data-ready !== '1'` covers burned tokens
-      // (they exit early in `_mountTokenIframe` without setting ready).
-      card.addEventListener('click', e => {
-        if (card.dataset.ready !== '1') return;
-        if (e.target.closest('.tok-footer span')) return; // don't expand on footer text
-        _openExpand(card, id, 'token');
-      });
-    }
-  }
+  _setMetaCount('modulo');
+  if (typeof _loadOsStats === 'function') _loadOsStats('modulo'); // no-op while OS_ENABLED=false
 
   // ── Modulo cards (alive only) ─────────────────────────────────────────────
   modGrid.innerHTML = '';
@@ -2798,6 +2800,7 @@ async function _buildCards() {
           '<span class="mod-owner">…</span>' +
           '<span class="mod-price">— ETH</span>' +
         '</div>';
+      // Per-card stagger index for the pop-in (CSS clamps via min(idx,20)).
       card.style.setProperty('--card-index', _modCardIdx++);
       modGrid.appendChild(card);
       _attachOnChainObserver(card,
@@ -2810,6 +2813,108 @@ async function _buildCards() {
       });
     }
   }
+
+  // ── Featured hero rotator (uses the alive ids just built) ─────────────────
+  _initHero(aliveArtifactIds);
+}
+
+// Featured artifact hero (2026-06-06 artifacts-only redesign): borderless,
+// rotates a random ALIVE artifact every 5-10s with a load-gated crossfade.
+// Reuses the card fetch→decode→prepare chain (no new RPC; _fetchArtifactData
+// promise-caches, so a hero pick warms the cache for the matching card too).
+// Hardened per design verify-at-scale:
+//  • single-timer discipline (no double-schedule on visibilitychange)
+//  • each swap gated on the incoming iframe's `load` event (no blank flash; serializes)
+//  • back slot cleared before mount + faded slot cleared on transitionend → max 2 live iframes
+//  • sandbox='allow-scripts' + referrerpolicy='no-referrer' set EXPLICITLY (no same-origin downgrade)
+//  • hidden if 0 alive, fixed (no timer) if exactly 1
+function _initHero(ids) {
+  const section = document.getElementById('hero-section');
+  const slotA = document.getElementById('hero-a');
+  const slotB = document.getElementById('hero-b');
+  if (!section || !slotA || !slotB) return;
+  if (!ids || ids.length === 0) { section.style.display = 'none'; return; }
+  section.style.display = 'block';
+
+  let front = slotA, back = slotB, lastId = null, timer = null, busy = false;
+  const labelEl = document.getElementById('hero-label');
+  const _setLabel = id => { if (labelEl) labelEl.textContent = '#' + id; };
+
+  const _clearSlot = slot => {
+    const f = slot.querySelector('iframe.hero-iframe');
+    if (f) { f.srcdoc = ''; f.remove(); }   // drop child doc + element (matches card unmount)
+  };
+
+  const _pickId = () => {
+    if (ids.length <= 1) return ids[0];
+    let n, t = 0;
+    do { n = ids[Math.floor(Math.random() * ids.length)]; t++; } while (n === lastId && t < 12);
+    return n;
+  };
+
+  // Mount `id` into `slot` (cleared first). Resolves true once the iframe child
+  // document has parsed (load), so the caller can crossfade with no blank flash.
+  const _mount = (slot, id) => new Promise(resolve => {
+    _clearSlot(slot);
+    _fetchArtifactData(id).then(data => {
+      if (!data) return resolve(false);
+      const html = _decodeTokenURI(data.tokenURI);
+      if (!html) return resolve(false);
+      const iframe = document.createElement('iframe');
+      iframe.className = 'hero-iframe';
+      iframe.setAttribute('sandbox', 'allow-scripts');        // SECURITY: NO allow-same-origin (byte-match card mount)
+      iframe.setAttribute('referrerpolicy', 'no-referrer');
+      iframe.setAttribute('aria-label', 'featured artifact #' + id);
+      let done = false;
+      const finish = () => { if (!done) { done = true; resolve(true); } };
+      iframe.addEventListener('load', finish);
+      setTimeout(finish, 6000);   // fallback: don't hang the rotator if load never fires
+      iframe.srcdoc = _prepareSrcdoc(html);
+      slot.appendChild(iframe);
+    }).catch(() => resolve(false));
+  });
+
+  const _swap = () => {
+    if (busy || document.hidden) return;
+    busy = true;
+    const id = _pickId();
+    _mount(back, id).then(ok => {
+      if (!ok) { busy = false; return; }   // mount failed → keep current, retry next tick
+      lastId = id;
+      _setLabel(id);
+      back.classList.add('hero-active');
+      front.classList.remove('hero-active');
+      const faded = front;
+      const onEnd = () => { faded.removeEventListener('transitionend', onEnd); _clearSlot(faded); };
+      faded.addEventListener('transitionend', onEnd);
+      setTimeout(() => _clearSlot(faded), 1200);   // fallback if transitionend doesn't fire
+      const tmp = front; front = back; back = tmp;  // swap roles
+      busy = false;
+    });
+  };
+
+  const _schedule = () => {
+    if (timer) return;   // single-timer discipline
+    const delay = 5000 + Math.floor(Math.random() * 5001);  // 5-10s
+    timer = setTimeout(() => { timer = null; _swap(); _schedule(); }, delay);
+  };
+  const _stop = () => { if (timer) { clearTimeout(timer); timer = null; } };
+
+  // First render — no fade, straight into the front slot. Start the rotator only
+  // AFTER it resolves (so a fast first timer can't beat the first paint).
+  lastId = _pickId();
+  _mount(front, lastId).then(() => {
+    front.classList.add('hero-active');
+    _setLabel(lastId);
+    if (ids.length >= 2) _schedule();
+  });
+
+  if (ids.length < 2) return;   // single artifact → fixed, no rotation, no listener
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { _stop(); _clearSlot(back); }   // pause + force-clean staging slot
+    else _schedule();
+  });
 }
 
 _buildCards();
@@ -2875,7 +2980,6 @@ function _setupHoverLens(grid) {
     if (!next || !grid.contains(next)) _clearNear();
   });
 }
-_setupHoverLens(document.getElementById('tok-grid'));
 _setupHoverLens(document.getElementById('mod-grid'));
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2921,7 +3025,7 @@ if (new URLSearchParams(location.search).has('debug')) window._debug = function 
   console.log('[debug] state:', {
     aliveTokenCount: typeof _aliveTokenCount !== 'undefined' ? _aliveTokenCount : '?',
     aliveArtifactCount: typeof _aliveArtifactCount !== 'undefined' ? _aliveArtifactCount : '?',
-    activeTab: document.querySelector('.tab-btn.active')?.dataset.tab,
+    activeTab: 'modulo',
     viewport: `${window.innerWidth}×${window.innerHeight}`,
     scrollY: window.scrollY,
   });
@@ -2934,8 +3038,7 @@ if (new URLSearchParams(location.search).has('debug')) window._debug = function 
 document.querySelectorAll('.id-action-btn').forEach(btn => {
   btn.addEventListener('click', async () => {
     const action = btn.dataset.action;
-    const activeTab = document.querySelector('.tab-btn.active')?.dataset.tab;
-    const contractAddr = activeTab === 'modulo' ? SETTLE_ARTIFACT_ADDRESS : TOKEN_AGENT_ADDRESS;
+    const contractAddr = SETTLE_ARTIFACT_ADDRESS;   // artifacts-only page (2026-06-06)
     if (action === 'copy') {
       try {
         await navigator.clipboard.writeText(contractAddr);
