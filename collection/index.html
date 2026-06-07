@@ -318,18 +318,9 @@ body.night #cta-join:hover { background:rgba(255,255,255,0.12); color:#fff; }
 /* ── Page header ── */
 .page-header {
   padding:80px 52px 32px;
-  border-bottom:0.5px solid var(--border-mid);
-  border-bottom-right-radius:48px;
   position:relative;
 }
-.page-header::after {
-  content:'';
-  position:absolute;
-  left:0; bottom:-0.5px;
-  width:22%; height:1px;
-  background:linear-gradient(to right, var(--bg) 0%, transparent 100%);
-  pointer-events:none;
-}
+.page-header::after { content:none; }   /* header/hero divider line removed 2026-06-06 */
 .header-inner {
   max-width:1500px; margin:0 auto;
   display:flex; flex-direction:column; align-items:center;
