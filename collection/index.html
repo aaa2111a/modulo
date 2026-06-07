@@ -1752,7 +1752,11 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
 /* Hero featured-artifact badge → opens the "check it" viewer. On hover the
    seal (border) spins while the beige tick stays static; a blue "check it"
    bar slides out from the right. */
-#hero-badge{position:absolute;top:-36px;left:-36px;z-index:6;display:flex;align-items:center;background:none;border:none;padding:0;cursor:pointer;}
+#hero-badge{position:absolute;top:-36px;left:-36px;z-index:6;display:flex;align-items:center;background:none;border:none;padding:0;cursor:pointer;opacity:0;transform-origin:66px 66px;}
+/* Entrance (JS adds .hb-in ~550ms after the hero shows): scale-bounce — pop in,
+   overshoot to 110%, settle to 100%. */
+#hero-badge.hb-in{animation:hbIn .55s ease-out both;}
+@keyframes hbIn{0%{transform:scale(.2);opacity:0;}55%{transform:scale(1.1);opacity:1;}100%{transform:scale(1);opacity:1;}}
 #hero-badge .hb-icon{position:relative;z-index:2;width:132px;height:132px;flex:0 0 auto;}
 #hero-badge-seal,#hero-badge-tick{position:absolute;inset:0;width:132px;height:132px;display:block;z-index:1;}
 /* Mini badges peeking from behind the big one on hover — overlap (no gap),
@@ -2984,6 +2988,10 @@ function _initHero(ids) {
   if (!section || !slotA || !slotB) return;
   if (!ids || ids.length === 0) { section.style.display = 'none'; return; }
   section.style.display = 'block';
+
+  // Badge entrance: after the hero is shown + a small delay (hero render takes
+  // a few ms), pop the corner badge in with a scale-bounce (overshoot to 110%).
+  setTimeout(() => { const hb = document.getElementById('hero-badge'); if (hb) hb.classList.add('hb-in'); }, 550);
 
   let front = slotA, back = slotB, lastId = null, timer = null, busy = false;
   const labelEl = document.getElementById('hero-label');
