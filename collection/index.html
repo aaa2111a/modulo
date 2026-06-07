@@ -264,9 +264,12 @@ body.night #cta-join:hover { background:rgba(255,255,255,0.12); color:#fff; }
   max-width:1500px; margin:0 auto;
   aspect-ratio:9 / 5;      /* matches engine GRID_COLS/ROWS = 450/250 = 1.8 */
   overflow:hidden;
-  /* No border-radius: iframes don't clip reliably to a parent's rounded
-     corners cross-browser, so the artifact's black edges showed as 4 black
-     corner wedges. Square + var(--bg) matches the (problem-free) card wraps. */
+  border-radius:14px;
+  /* translateZ(0) forces a compositing layer so overflow:hidden actually clips
+     the <iframe> to the rounded corners — without it iframes ignore the parent
+     border-radius and the artifact's black edges leaked as corner wedges.
+     bg var(--bg) so any sub-pixel sliver blends with the page, never black. */
+  transform:translateZ(0);
   background:var(--bg);
 }
 .hero-slot {
@@ -280,6 +283,7 @@ body.night #cta-join:hover { background:rgba(255,255,255,0.12); color:#fff; }
   width:100%; height:100%;
   border:none; display:block;
   background:var(--bg);
+  border-radius:14px;      /* belt-and-suspenders with the wrap clip */
   pointer-events:none;     /* non-clickable in v1 */
 }
 #hero-label {
