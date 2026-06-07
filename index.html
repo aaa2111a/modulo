@@ -14,8 +14,8 @@
      clamp + CT-1 CTA mobile bump):
        script L36  frame-buster sha256-cooyBZAlZu1T3HOVT2HZ2IZLls6JoUhfWkQASjIzBck=  (unchanged)
        script L67  favicon      sha256-sJrvXijSCIizqGtBssKayf/JcGhbabJZUlW+iEKkXIE=  (unchanged)
-       script L469 main         sha256-lEkUs0GyAUnjaViBAJ18QZdlCUxZXQl9HIQkngv+afQ=  (window clamp in _openWindows)
-       style  L136 main CSS     sha256-u3fXQqsZbaXlpa4y/2uMIw6tBVi9XJFUmOl0rYzxreo=  (CT-1 @media pointer:coarse for .hero-cta)
+       script L539 main         sha256-5cr24DHhdmzu/GvDIIq3ZZXKfIGDW1k7G76yFgssCsM=  (os-row opens with windows + CTA "Explore the project")
+       style  L136 main CSS     sha256-cqwSrYF8YPcZEFP7demn36BArvVHsdl4orDzawMScgQ=  (#intro-canvas 100% + #os-row OpenSea window)
 
      KNOWN LIMITATION: frame-buster fallback (~L33) builds replacement HTML
      with style="..." attrs via DOM element.style. cssText. Without 'unsafe-inline'
@@ -23,8 +23,8 @@
      iframe-bust scenario (rare; fallback text+link still readable). -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
-  script-src 'self' 'sha256-cooyBZAlZu1T3HOVT2HZ2IZLls6JoUhfWkQASjIzBck=' 'sha256-sJrvXijSCIizqGtBssKayf/JcGhbabJZUlW+iEKkXIE=' 'sha256-lEkUs0GyAUnjaViBAJ18QZdlCUxZXQl9HIQkngv+afQ=';
-  style-src 'self' 'sha256-u3fXQqsZbaXlpa4y/2uMIw6tBVi9XJFUmOl0rYzxreo=';
+  script-src 'self' 'sha256-cooyBZAlZu1T3HOVT2HZ2IZLls6JoUhfWkQASjIzBck=' 'sha256-sJrvXijSCIizqGtBssKayf/JcGhbabJZUlW+iEKkXIE=' 'sha256-5cr24DHhdmzu/GvDIIq3ZZXKfIGDW1k7G76yFgssCsM=';
+  style-src 'self' 'sha256-cqwSrYF8YPcZEFP7demn36BArvVHsdl4orDzawMScgQ=';
   font-src 'self' data:;
   img-src 'self' data: blob:;
   connect-src 'self';
@@ -327,6 +327,54 @@ html, body { width:100%; margin:0; padding:0; height:100%; overflow:hidden; back
   .hero-cta { padding:11px 22px; font-size:11px; }
 }
 
+/* ── OpenSea collection links (centered, above the option windows) ──
+   Hidden during the intro (opacity:0 + pointer-events:none so clicks reach the
+   intro-canvas to start the reveal); _revealUI fades them in + restores clicks. */
+#os-row {
+  position:fixed; top:7vh; left:50%; transform:translateX(-50%);
+  z-index:502;
+  opacity:0; pointer-events:none;
+  transition:opacity 0.5s ease;   /* shown/hidden with the option windows (CTA toggle) */
+}
+/* Window frame matching the App/About/Collection windows. */
+.os-window {
+  background:#dbd8d1; border-radius:10px;
+  box-shadow:0 24px 64px rgba(0,0,0,0.22), 0 2px 8px rgba(0,0,0,0.10);
+  overflow:hidden;
+}
+.os-titlebar {
+  height:30px; background:#c9c6c0;
+  display:flex; align-items:center; padding:0 10px; gap:7px;
+}
+.os-dot { width:12px; height:12px; border-radius:50%; background:#ff5f57; flex-shrink:0; }
+.os-content {
+  padding:16px 18px 18px;
+  display:flex; flex-direction:column; align-items:center; gap:12px;
+}
+.os-title {
+  font-family:monospace; font-size:10px;
+  letter-spacing:.12em; color:rgba(0,0,0,0.55);
+  text-align:center;
+}
+.os-boxes { display:flex; gap:8px; }
+/* Buttons stand out against the beige window (titlebar shade + border). */
+.os-box {
+  display:inline-flex; align-items:center; justify-content:center; gap:6px;
+  min-width:128px; height:40px; padding:0 16px; box-sizing:border-box;
+  background:#c9c6c0; color:rgba(0,0,0,0.72);
+  border:0.5px solid rgba(0,0,0,0.14); border-radius:6px;
+  font-family:monospace; font-size:10px; letter-spacing:.12em;
+  text-transform:uppercase; text-decoration:none; white-space:nowrap;
+  transition:background 0.15s, color 0.15s;
+}
+.os-box:hover { background:#bdbab2; color:rgba(0,0,0,0.95); }
+.os-box svg { flex-shrink:0; }
+@media (max-width:600px) {
+  #os-row { top:5vh; width:calc(100% - 32px); }
+  .os-boxes { width:100%; gap:6px; }
+  .os-box { min-width:0; flex:1 1 0; padding:0 10px; }
+}
+
 /* ── Page transition ── */
 #page-transition {
   position:fixed; inset:0; z-index:2000;
@@ -340,6 +388,12 @@ html, body { width:100%; margin:0; padding:0; height:100%; overflow:hidden; back
 /* ── Intro overlay ── */
 #intro-canvas {
   position:fixed; inset:0; z-index:500;
+  /* Explicit CSS size overrides the canvas width/height ATTRIBUTES for layout so
+     the element always covers the full fixed viewport — even when the buffer
+     (sized to innerW×innerH at load) is shorter than the hero's 100vh under iOS
+     Safari URL-bar dynamics. Without this the bottom strip leaked the hero
+     animation through the intro cover on mobile. */
+  width:100%; height:100%;
   cursor:pointer;
 }
 
@@ -459,10 +513,26 @@ html, body { width:100%; margin:0; padding:0; height:100%; overflow:hidden; back
       <h1 class="hero-title">MODULO<a class="hero-byline" href="https://x.com/unbearableKnife" target="_blank" rel="noopener noreferrer">by ubk</a></h1>
       <div class="hero-divider"></div>
       <div class="hero-sub">a modular cellular automata collection · fully on-chain · Ethereum</div>
-      <a href="app/" class="hero-cta">explore app →</a>
+      <a href="app/" class="hero-cta">Explore the project →</a>
     </div>
     <div id="mode-badge">feedback</div>
   </section>
+
+  <!-- OpenSea collection links — centered, above the option windows; revealed post-intro -->
+  <div id="os-row" aria-label="OpenSea collections">
+    <div class="os-window">
+      <div class="os-titlebar"><span class="os-dot"></span></div>
+      <div class="os-content">
+        <span class="os-title">Explore the collection on OpenSea</span>
+        <div class="os-boxes">
+          <a class="os-box" href="https://opensea.io/collection/modulo-139579337"
+             target="_blank" rel="noopener noreferrer" aria-label="Modulo tokens on OpenSea"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><circle cx="8" cy="8" r="6.8"/><circle cx="8" cy="4.6" r="0.7" fill="currentColor" stroke="none"/><path d="M5 9 L8 5.4 L11 9 Z" fill="currentColor" stroke="none"/><path d="M3.4 10.6 Q5 9.8 6.5 10.6 T9.5 10.6 T12.6 10.6" stroke-width="1.1"/></svg>Modulo ↗</a>
+          <a class="os-box" href="https://opensea.io/collection/modulo-artifact-870565944"
+             target="_blank" rel="noopener noreferrer" aria-label="Modulo Artifacts on OpenSea"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><circle cx="8" cy="8" r="6.8"/><circle cx="8" cy="4.6" r="0.7" fill="currentColor" stroke="none"/><path d="M5 9 L8 5.4 L11 9 Z" fill="currentColor" stroke="none"/><path d="M3.4 10.6 Q5 9.8 6.5 10.6 T9.5 10.6 T12.6 10.6" stroke-width="1.1"/></svg>Artifacts ↗</a>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <canvas id="intro-canvas"></canvas>
 </div>
@@ -1545,6 +1615,9 @@ _initIntro();
 window.addEventListener('resize', () => {
   if (introCanvas.style.display === 'none') return; // intro already finished
   _initIntro();
+  // Resizing the canvas clears its buffer — re-fill the beige cover if the user
+  // hasn't started the reveal yet (otherwise the hero animation shows through).
+  if (!_introActive) _drawIntroState(0, null);
 });
 
 // Hide UI until reveal
@@ -1555,6 +1628,7 @@ const _elSub   = document.querySelector('.hero-sub');
 const _elDiv   = document.querySelector('.hero-divider');
 const _elTitle = document.querySelector('.hero-title');
 const _elByline = document.querySelector('.hero-byline');
+const _elOsRow  = document.getElementById('os-row');
 _topbar.style.opacity  = '0';
 _badge.style.opacity   = '0';
 _elCta.style.opacity   = '0';
@@ -1664,6 +1738,8 @@ function _revealUI() {
   fade(_elDiv,   420,  0.6);
   fade(_elTitle, 680,  2.2);
   // Restore pointer-events on revealed clickable elements (see boot block).
+  // NOTE: #os-row (OpenSea window) is NOT revealed here — it appears with the
+  // option windows when the user clicks the CTA (see _openWindows/_closeWindows).
   _elCta.style.pointerEvents = 'auto';
   if (_elByline) _elByline.style.pointerEvents = 'auto';
 }
@@ -1813,8 +1889,8 @@ window.addEventListener('pageshow', e => {
 
 const WIN_DATA = [
   { label:'App',        href:'app/',        desc:'Be part and explore the desires\nof different consciousness', x:'19vw', y:'34vh', delay:0,   w:318, fDur:'3.8s', fDel:'0.3s' },
-  { label:'Mint',       href:'about/',      desc:'Mint a token\nKnow more about the machine',                  x:'44vw', y:'44vh', delay:160, w:272, fDur:'4.4s', fDel:'1.6s' },
-  { label:'Collection', href:'collection/', desc:'No desires settled\ncome back later',                        x:'67vw', y:'28vh', delay:310, w:312, fDur:'3.5s', fDel:'0.9s' },
+  { label:'About',      href:'about/',      desc:'Know more about\nthe machine',                              x:'44vw', y:'44vh', delay:160, w:272, fDur:'4.4s', fDel:'1.6s' },
+  { label:'Collection', href:'collection/', desc:'Explore all the artifacts\nwhere desires collide',             x:'67vw', y:'28vh', delay:310, w:312, fDur:'3.5s', fDel:'0.9s' },
 ];
 
 let _windowsOpen = false;
@@ -1842,6 +1918,7 @@ function _onDragUp() { _drag = null; }
 
 function _closeWindows() {
   _windowsOpen = false;
+  if (_elOsRow) { _elOsRow.style.opacity = '0'; _elOsRow.style.pointerEvents = 'none'; }
   document.getElementById('canvas-blur').classList.remove('active');
   canvas.classList.remove('zoomed');
   if (_winLayer) { _winLayer.remove(); _winLayer = null; }
@@ -1887,6 +1964,8 @@ function _dodgeWindow(wrap) {
 function _openWindows() {
   if (_windowsOpen) return;
   _windowsOpen = true;
+  // OpenSea window appears together with the option windows (not at intro reveal).
+  if (_elOsRow) { _elOsRow.style.opacity = '1'; _elOsRow.style.pointerEvents = 'auto'; }
 
   document.getElementById('canvas-blur').classList.add('active');
   canvas.classList.add('zoomed');
@@ -1980,7 +2059,7 @@ _ctaBtn.addEventListener('click', e => {
   e.preventDefault();
   if (_windowsOpen) {
     _closeWindows();
-    _ctaBtn.textContent = 'explore app →';
+    _ctaBtn.textContent = 'Explore the project →';
   } else {
     _openWindows();
     _ctaBtn.textContent = '← back';
