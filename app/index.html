@@ -10993,41 +10993,98 @@ document.getElementById('export-btn').addEventListener('click', () => {
   // 3 Firebase IDBs + tc-* storage and reloads. Purely additive — only runs on an
   // explicit click; nothing on-chain is touched.
   let _resetInProgress = false;
+  // Reset app data = full DevTools "Clear Site Data" parity (Brief 2026-06-07).
+  // The OLD version deleted 3 IDBs fire-and-forget then reloaded immediately —
+  // but deleteDatabase BLOCKS (onblocked, queued) while a Firebase IDB
+  // connection is open, and the reload ABORTED the queued delete → the corrupt
+  // IDB survived and the app re-hung (real user report; only F12 "Clear Site
+  // Data" fixed it). New flow: close Firebase's IDB connections via deleteApp
+  // FIRST (so deletes don't block), then AWAIT a full storage + IDB + cache
+  // wipe, then reload. Every step is timeout-bounded; a global deadline
+  // guarantees the button never sticks on "Clearing…". Nothing on-chain touched.
   async function _handleInfoReset() {
     if (_resetInProgress) return;
     const ok = window.confirm(
-      'This clears cached Firebase data and reloads the page.\n\n' +
+      'This clears all cached app data and reloads the page.\n\n' +
       'Use only if the app is stuck on load. Afterwards, tap Connect in the top bar to rejoin your wallet.'
     );
     if (!ok) return;
     _resetInProgress = true;
     const btn = document.getElementById('info-session-reset-btn');
     if (btn) { btn.disabled = true; btn.textContent = 'Clearing…'; }
-    // Release the RTDB socket so the IDB deletes aren't blocked. window.FB may be
-    // absent if Firebase init itself hung — guard it.
+
+    // Global safety net: reload within 8s no matter what (deleteApp can hang —
+    // firebase-js-sdk #7816 — and a blocked delete may never resolve). Every
+    // step below is individually timeout-bounded so the worst-case serial path
+    // (~7s: 2s deleteApp + 1s SW + 1s caches + 1s db-enum + 2s idb) stays under
+    // this; the deadline is the last-resort backstop, never the normal exit.
+    const _deadline = setTimeout(() => location.reload(), 8000);
+
+    // 1. Close Firebase so its App Check / Installations / Heartbeat IDB handles
+    //    drop → the deletes below won't go onblocked. window.FB may be absent if
+    //    Firebase init hung; deleteApp may hang → timeout-race, never bare-await.
     try { if (window.FB && typeof window.FB.goOffline === 'function') window.FB.goOffline(window.FB.db); } catch (_) {}
-    // Wipe tc-* from both stores. Collect-then-delete: removing during the index
-    // walk would shift indices and skip keys.
     try {
-      for (const store of [localStorage, sessionStorage]) {
-        const del = [];
-        for (let i = 0; i < store.length; i++) { const k = store.key(i); if (k && k.startsWith('tc-')) del.push(k); }
-        del.forEach(k => store.removeItem(k));
+      if (window.FB && typeof window.FB.deleteApp === 'function' && window.FB.app) {
+        await Promise.race([
+          Promise.resolve(window.FB.deleteApp(window.FB.app)).catch(() => {}),
+          new Promise(r => setTimeout(r, 2000)),
+        ]);
       }
-    } catch (_) { /* storage blocked in some privacy modes — non-fatal */ }
-    // Delete the 3 Firebase IndexedDB DBs by literal name. indexedDB.databases()
-    // enumeration is unsupported in Firefox/older Safari, so use the allowlist.
-    // deleteDatabase fires onblocked (not a throw) if a connection is open; the
-    // reload below force-closes connections so the queued delete finalizes.
-    try {
-      ['firebase-app-check-database', 'firebase-installations-database', 'firebase-heartbeat-database'].forEach(name => {
-        try { const req = indexedDB.deleteDatabase(name); req.onblocked = () => {}; req.onerror = () => {}; } catch (_) {}
-      });
     } catch (_) {}
-    // Single event-loop yield so the delete requests are queued before we
-    // navigate; the handler never awaits the deletes themselves (they can block
-    // on an open connection). reload() runs unconditionally.
-    await new Promise(r => setTimeout(r, 100));
+
+    // 2. Storage — full clear (all app state here is tc-* + Firebase; nothing to keep).
+    try { localStorage.clear(); } catch (_) {}
+    try { sessionStorage.clear(); } catch (_) {}
+
+    // 3. Service Workers + Cache API — none today (no-op) but future-proof.
+    //    Each bounded by a 1s race so a stall (e.g. extension-heavy profile, or
+    //    a SW added later) can't eat the budget before the load-bearing IDB wipe.
+    try {
+      if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+        await Promise.race([
+          navigator.serviceWorker.getRegistrations().then(regs => Promise.all(regs.map(r => r.unregister().catch(() => {})))),
+          new Promise(r => setTimeout(r, 1000)),
+        ]);
+      }
+    } catch (_) {}
+    try {
+      if (window.caches && caches.keys) {
+        await Promise.race([
+          caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k).catch(() => {})))),
+          new Promise(r => setTimeout(r, 1000)),
+        ]);
+      }
+    } catch (_) {}
+
+    // 4. IndexedDB — delete ALL DBs. Enumerate via indexedDB.databases() where
+    //    supported (Chromium 72+ incl. Brave/Edge, Safari 14+, Firefox 126+),
+    //    UNION the 3-name Firebase allowlist as the guaranteed fallback (older /
+    //    strict-privacy browsers return [] or throw). Await each delete with an
+    //    onblocked + per-delete timeout so a stuck connection can't hang.
+    const _names = new Set(['firebase-app-check-database', 'firebase-installations-database', 'firebase-heartbeat-database']);
+    try {
+      if (typeof indexedDB.databases === 'function') {
+        const dbs = await Promise.race([
+          Promise.resolve(indexedDB.databases()).catch(() => []),   // swallow a late rejection if the timeout arm wins
+          new Promise(r => setTimeout(() => r([]), 1000)),
+        ]);
+        if (Array.isArray(dbs)) dbs.forEach(d => { if (d && d.name) _names.add(d.name); });
+      }
+    } catch (_) {}
+    const _delIdb = name => new Promise(resolve => {
+      const t = setTimeout(resolve, 2000);
+      try {
+        const req = indexedDB.deleteDatabase(name);
+        req.onsuccess = () => { clearTimeout(t); resolve(); };
+        req.onerror   = () => { clearTimeout(t); resolve(); };
+        req.onblocked = () => {};   // per-delete timeout resolves it
+      } catch (_) { clearTimeout(t); resolve(); }
+    });
+    try { await Promise.all([..._names].map(_delIdb)); } catch (_) {}
+
+    // 5. Reload (parity: "Clear Site Data" does not touch the HTTP cache).
+    clearTimeout(_deadline);
     location.reload();
   }
   const _infoResetBtn = document.getElementById('info-session-reset-btn');
@@ -15581,7 +15638,7 @@ const _LOCK_BTN_SVG =
      Exposes window.FB once initialized; dispatches 'fb-ready' event so any
      async code elsewhere can await connection. -->
 <script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js";
+  import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js";
   import {
     getDatabase, ref, get, set, onValue, update, remove, serverTimestamp, onDisconnect,
     push, query, limitToLast, onChildAdded, runTransaction, orderByChild, endAt, goOffline
@@ -15626,7 +15683,7 @@ const _LOCK_BTN_SVG =
 
   // Minimal API surface exposed to the non-module script above.
   window.FB = {
-    app, db, functions, httpsCallable,
+    app, db, functions, httpsCallable, deleteApp,
     ref, get, set, onValue, update, remove, serverTimestamp, onDisconnect,
     push, query, limitToLast, onChildAdded, runTransaction, orderByChild, endAt, goOffline
   };
