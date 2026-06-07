@@ -3231,6 +3231,23 @@ function _extractComposition(decodedHtml) {
 // Everything between the `===== ENGINE START =====` and `===== ENGINE END =====`
 // markers is verbatim from the placeholder, except the COMPOSITION assignment
 // at the top and the `startAnim`/`startGlobalLoop` calls at the bottom.
+// ── Verified-badge SVG geometry (1:1 with the official seal) ─────────────────
+// Single source for every badge render (modal sprites, hero, splash). Seal
+// outline + check are SEPARATE subpaths so the hero can spin only the seal.
+// Source viewBox 600 w/ group transform translate(0,600) scale(0.1,-0.1) → raw
+// coords 0..6000; _badgeXform maps raw→canvas size S and centers the seal (its
+// 600-space center (306.5,300.3) → -6.5/-0.3 offset). EXPLORE+reviewer GO
+// 2026-06-07: fill seal then beige check on top (no evenodd cutout needed);
+// separate OK flags per path; ctx.fill (check is a filled shape, not a stroke).
+const _BADGE_SEAL_D = 'M2826 5685 c-294 -61 -554 -256 -685 -514 -25 -48 -18 -47 -126 -17 -105 29 -235 38 -343 26 -410 -49 -737 -341 -850 -758 -23 -87 -26 -115 -25 -267 0 -152 3 -180 26 -265 14 -52 22 -96 16 -98 -5 -2 -44 -26 -86 -54 -154 -100 -308 -290 -374 -463 -63 -163 -72 -215 -73 -400 0 -153 3 -180 27 -270 31 -115 99 -262 161 -349 57 -81 162 -185 239 -237 l62 -42 1 -151 c1 -128 5 -166 27 -248 65 -245 223 -471 420 -601 74 -49 205 -110 282 -130 163 -44 363 -42 509 4 34 10 67 19 73 19 7 0 22 -19 34 -42 113 -222 341 -413 579 -486 161 -49 356 -54 515 -13 256 66 505 266 624 500 25 48 18 47 126 17 145 -39 331 -40 479 -1 258 68 485 249 619 495 83 152 135 377 125 548 l-5 89 46 29 c63 40 184 156 243 234 28 36 72 110 99 165 233 476 76 1063 -359 1343 -35 22 -68 42 -74 44 -6 2 -3 27 10 68 46 149 53 352 18 516 -92 433 -431 752 -855 803 -129 16 -290 -1 -408 -43 l-41 -14 -13 30 c-22 54 -103 171 -163 235 -120 130 -301 239 -471 284 -104 27 -310 35 -409 14z';
+const _BADGE_CHECK_D = 'M3936 3994 c72 -41 108 -127 85 -204 -13 -45 -1131 -1729 -1172 -1767 -13 -12 -37 -26 -52 -32 -42 -16 -123 -13 -160 5 -45 23 -663 639 -695 694 -72 121 13 279 151 282 85 1 100 -9 352 -262 132 -132 243 -240 248 -240 4 0 228 332 498 738 270 405 500 748 512 760 60 65 149 74 233 26z';
+let _badgeSealP = null, _badgeCheckP = null, _badgeSealOK = true, _badgeCheckOK = true;
+function _badgeSeal() { if (!_badgeSealP && _badgeSealOK) { try { _badgeSealP = new Path2D(_BADGE_SEAL_D); } catch (_) { _badgeSealOK = false; } } return _badgeSealP; }
+function _badgeCheck() { if (!_badgeCheckP && _badgeCheckOK) { try { _badgeCheckP = new Path2D(_BADGE_CHECK_D); } catch (_) { _badgeCheckOK = false; } } return _badgeCheckP; }
+function _badgeXform(ctx, S) { const k = S / 6000; ctx.setTransform(k, 0, 0, -k, -6.5 * S / 600, 599.7 * S / 600); }
+function _badgeFillSeal(ctx, S, color) { const p = _badgeSeal(); ctx.save(); ctx.fillStyle = color; if (p && _badgeSealOK) { _badgeXform(ctx, S); ctx.fill(p); } else { ctx.beginPath(); ctx.arc(S / 2, S / 2, S * 0.46, 0, Math.PI * 2); ctx.fill(); } ctx.restore(); }
+function _badgeFillCheck(ctx, S, color) { const p = _badgeCheck(); if (!p || !_badgeCheckOK) return; ctx.save(); ctx.fillStyle = color; _badgeXform(ctx, S); ctx.fill(p); ctx.restore(); }
+
 function _createArtifactEngine(canvas, rawComposition) {
   // ===== ENGINE START =====
   const COMPOSITION = rawComposition;
@@ -3434,12 +3451,12 @@ function _createArtifactEngine(canvas, rawComposition) {
   // MP4 / hi-res screenshot export (any target incl. OffscreenCanvas at any W/H).
   const BADGE_BG = '#dbd8d1';
   let _badgeSprites = null, _badgeSig = '';
-  function _bScallop(x, cx, cy, rO, rI, b) { x.beginPath(); const s = b * 18; for (let k = 0; k <= s; k++) { const t = k / s * Math.PI * 2, rr = (rO + rI) / 2 + (rO - rI) / 2 * Math.cos(b * t), px = cx + Math.cos(t) * rr, py = cy + Math.sin(t) * rr; if (k === 0) x.moveTo(px, py); else x.lineTo(px, py); } x.closePath(); }
-  function _bTick(x, CELL) { const cx = CELL / 2, cy = CELL / 2; x.beginPath(); x.moveTo(cx - CELL * 0.20, cy + CELL * 0.01); x.lineTo(cx - CELL * 0.06, cy + CELL * 0.16); x.lineTo(cx + CELL * 0.22, cy - CELL * 0.16); }
   function _bNewCanvas(w, h) { if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(w, h); const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
-  function _bBadgeSprite(CELL, col, shape) { const cv = _bNewCanvas(CELL, CELL), x = cv.getContext('2d'), cx = CELL / 2, cy = CELL / 2, R = (CELL - 2) / 2; if (shape === 'circle') { x.beginPath(); x.arc(cx, cy, R, 0, Math.PI * 2); x.closePath(); } else { _bScallop(x, cx, cy, R, R * 0.80, 8); } x.fillStyle = col; x.fill(); x.strokeStyle = BADGE_BG; x.lineWidth = Math.max(1.5, CELL * 0.12); x.lineCap = 'round'; x.lineJoin = 'round'; _bTick(x, CELL); x.stroke(); return cv; }
-  function _bDitherSprite(CELL, col) { const cv = _bNewCanvas(CELL, CELL), x = cv.getContext('2d'); x.strokeStyle = col; x.lineWidth = Math.max(1.5, CELL * 0.14); x.lineCap = 'round'; x.lineJoin = 'round'; _bTick(x, CELL); x.stroke(); return cv; }
-  function _bBuildSprites(CELL, shape) { const normal = []; for (let i = 0; i < PAL.length; i++) normal.push(_bBadgeSprite(CELL, 'rgb(' + PAL[i][0] + ',' + PAL[i][1] + ',' + PAL[i][2] + ')', shape)); if (!PAL.length) normal.push(_bBadgeSprite(CELL, '#000', shape)); const ci = PAL.length > 1 ? 1 : 0, dc = PAL[ci] ? 'rgb(' + PAL[ci][0] + ',' + PAL[ci][1] + ',' + PAL[ci][2] + ')' : '#000'; return { normal, dither: _bDitherSprite(CELL, dc) }; }
+  // Normal cell: seal in the cell color + beige check on top (1:1 SVG badge).
+  function _bBadgeSprite(CELL, col) { const cv = _bNewCanvas(CELL, CELL), x = cv.getContext('2d'); _badgeFillSeal(x, CELL, col); _badgeFillCheck(x, CELL, BADGE_BG); return cv; }
+  // Dither cell: ONLY the check, in the dither color (no seal body).
+  function _bDitherSprite(CELL, col) { const cv = _bNewCanvas(CELL, CELL), x = cv.getContext('2d'); _badgeFillCheck(x, CELL, col); return cv; }
+  function _bBuildSprites(CELL) { const normal = []; for (let i = 0; i < PAL.length; i++) normal.push(_bBadgeSprite(CELL, 'rgb(' + PAL[i][0] + ',' + PAL[i][1] + ',' + PAL[i][2] + ')')); if (!PAL.length) normal.push(_bBadgeSprite(CELL, '#000')); const ci = PAL.length > 1 ? 1 : 0, dc = PAL[ci] ? 'rgb(' + PAL[ci][0] + ',' + PAL[ci][1] + ',' + PAL[ci][2] + ')' : '#000'; return { normal, dither: _bDitherSprite(CELL, dc) }; }
   // Faithful to _applyDither's cell-selection conditions (P1-B reviewer 2026-06-07):
   // 'o' = lego overlay on ~90% of cells (no index-0 gate); 'num'/'numi' require
   // the full 2×2 index-0 block; all others = single index-0 cell + density gate.
@@ -3458,7 +3475,6 @@ function _createArtifactEngine(canvas, rawComposition) {
   }
   function paintToBadge(target, tctx, opts) {
     const CELL = (opts && opts.cell) || 26;
-    const shape = (opts && opts.shape) || 'scallop';
     const W = target.width, H = target.height;
     const stride = Math.max(1, Math.round(CELL / 6));
     const maxC = Math.floor(450 / stride), maxR = Math.floor(250 / stride);
@@ -3466,8 +3482,8 @@ function _createArtifactEngine(canvas, rawComposition) {
     const offC = Math.floor((450 - visCols * stride) / 2), offR = Math.floor((250 - visRows * stride) / 2);
     tctx.fillStyle = BADGE_BG; tctx.fillRect(0, 0, W, H);
     if (visCols <= 0 || visRows <= 0) return;
-    const sig = CELL + '|' + shape + '|' + PAL.map(p => p[0] + ',' + p[1] + ',' + p[2]).join(';');
-    if (_badgeSig !== sig) { _badgeSprites = _bBuildSprites(CELL, shape); _badgeSig = sig; }
+    const sig = CELL + '|' + PAL.map(p => p[0] + ',' + p[1] + ',' + p[2]).join(';');
+    if (_badgeSig !== sig) { _badgeSprites = _bBuildSprites(CELL); _badgeSig = sig; }
     const SP = _badgeSprites, dxp = _activeDxPattern;
     const gW = visCols * CELL, gH = visRows * CELL, px0 = Math.floor((W - gW) / 2), py0 = Math.floor((H - gH) / 2);
     for (let r = 0; r < visRows; r++) for (let c = 0; c < visCols; c++) {
@@ -4528,12 +4544,8 @@ function _drawSplashBadge() {
   if (_badgeSplashDrawn) return;
   const cv = _badgeSplashCanvas, S = cv.width, x = cv.getContext('2d');
   x.clearRect(0, 0, S, S);
-  const cx = S / 2, cy = S / 2, rO = S * 0.48, rI = S * 0.384, bumps = 8, steps = bumps * 18;
-  x.beginPath();
-  for (let k = 0; k <= steps; k++) { const t = k / steps * Math.PI * 2, rr = (rO + rI) / 2 + (rO - rI) / 2 * Math.cos(bumps * t), px = cx + Math.cos(t) * rr, py = cy + Math.sin(t) * rr; if (k === 0) x.moveTo(px, py); else x.lineTo(px, py); }
-  x.closePath(); x.fillStyle = '#6363ff'; x.fill();
-  x.strokeStyle = '#dbd8d1'; x.lineWidth = S * 0.13; x.lineCap = 'round'; x.lineJoin = 'round';
-  x.beginPath(); x.moveTo(cx - S * 0.20, cy + S * 0.01); x.lineTo(cx - S * 0.06, cy + S * 0.16); x.lineTo(cx + S * 0.22, cy - S * 0.16); x.stroke();
+  _badgeFillSeal(x, S, '#6363ff');
+  _badgeFillCheck(x, S, '#dbd8d1');
   _badgeSplashDrawn = true;
 }
 
@@ -4544,15 +4556,10 @@ function _drawHeroBadge() {
   if (!sc || !tc) return;
   const S = sc.width, x = sc.getContext('2d');
   x.clearRect(0, 0, S, S);
-  const cx = S / 2, cy = S / 2, rO = S * 0.48, rI = S * 0.384, bumps = 8, steps = bumps * 18;
-  x.beginPath();
-  for (let k = 0; k <= steps; k++) { const t = k / steps * Math.PI * 2, rr = (rO + rI) / 2 + (rO - rI) / 2 * Math.cos(bumps * t), px = cx + Math.cos(t) * rr, py = cy + Math.sin(t) * rr; if (k === 0) x.moveTo(px, py); else x.lineTo(px, py); }
-  x.closePath(); x.fillStyle = '#6363ff'; x.fill();
+  _badgeFillSeal(x, S, '#6363ff');
   const T = tc.width, y = tc.getContext('2d');
   y.clearRect(0, 0, T, T);
-  const tx = T / 2, ty = T / 2;
-  y.strokeStyle = '#dbd8d1'; y.lineWidth = T * 0.13; y.lineCap = 'round'; y.lineJoin = 'round';
-  y.beginPath(); y.moveTo(tx - T * 0.20, ty + T * 0.01); y.lineTo(tx - T * 0.06, ty + T * 0.16); y.lineTo(tx + T * 0.22, ty - T * 0.16); y.stroke();
+  _badgeFillCheck(y, T, '#dbd8d1');
 }
 
 function _resizeBadgeCanvas() {
