@@ -259,9 +259,16 @@ body.night #cta-join:hover { background:rgba(255,255,255,0.12); color:#fff; }
   display:none;            /* _initHero flips to block only when >=1 alive artifact */
   padding:20px 52px 8px;
 }
-#hero-wrap {
+#hero-frame {
+  /* Positioning context for the corner badge — NOT overflow:hidden, so the
+     badge can straddle the corner (part outside the artifact). Holds the
+     max-width/centering that used to live on #hero-wrap. */
   position:relative;
   max-width:1500px; margin:0 auto;
+}
+#hero-wrap {
+  position:relative;
+  width:100%;
   aspect-ratio:9 / 5;      /* matches engine GRID_COLS/ROWS = 450/250 = 1.8 */
   overflow:hidden;
   border-radius:14px;
@@ -1624,13 +1631,15 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
 
 <!-- Featured artifact hero (rotates a random alive artifact every 5-10s) -->
 <section id="hero-section" aria-label="featured artifact">
-  <div id="hero-wrap">
-    <div id="hero-a" class="hero-slot"></div>
-    <div id="hero-b" class="hero-slot"></div>
+  <div id="hero-frame">
+    <div id="hero-wrap">
+      <div id="hero-a" class="hero-slot"></div>
+      <div id="hero-b" class="hero-slot"></div>
+    </div>
     <button id="hero-badge" type="button" aria-label="check it — open the badge viewer">
       <span class="hb-icon">
-        <canvas id="hero-badge-seal" width="88" height="88"></canvas>
-        <canvas id="hero-badge-tick" width="88" height="88"></canvas>
+        <canvas id="hero-badge-seal" width="264" height="264"></canvas>
+        <canvas id="hero-badge-tick" width="264" height="264"></canvas>
       </span>
       <span class="hb-bar">check it</span>
     </button>
@@ -1713,13 +1722,13 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
 /* Hero featured-artifact badge → opens the "check it" viewer. On hover the
    seal (border) spins while the beige tick stays static; a blue "check it"
    bar slides out from the right. */
-#hero-badge{position:absolute;top:12px;left:12px;z-index:4;display:flex;align-items:center;background:none;border:none;padding:0;cursor:pointer;}
-#hero-badge .hb-icon{position:relative;z-index:2;width:44px;height:44px;flex:0 0 auto;}
-#hero-badge-seal,#hero-badge-tick{position:absolute;inset:0;width:44px;height:44px;display:block;}
+#hero-badge{position:absolute;top:-36px;left:-36px;z-index:6;display:flex;align-items:center;background:none;border:none;padding:0;cursor:pointer;}
+#hero-badge .hb-icon{position:relative;z-index:2;width:132px;height:132px;flex:0 0 auto;}
+#hero-badge-seal,#hero-badge-tick{position:absolute;inset:0;width:132px;height:132px;display:block;}
 #hero-badge-seal{transform-origin:50% 50%;}
 #hero-badge:hover #hero-badge-seal,#hero-badge:focus-visible #hero-badge-seal{animation:badgeSpin 1.3s linear infinite;}
-#hero-badge .hb-bar{box-sizing:border-box;position:relative;z-index:1;display:flex;align-items:center;height:30px;margin-left:-15px;padding:0 0 0 21px;max-width:0;opacity:0;overflow:hidden;white-space:nowrap;background:#6363ff;color:#dbd8d1;font:600 13px/1 system-ui,sans-serif;letter-spacing:.04em;border-radius:0 15px 15px 0;transition:max-width .38s ease,opacity .28s ease,padding-right .38s ease;}
-#hero-badge:hover .hb-bar,#hero-badge:focus-visible .hb-bar{max-width:170px;opacity:1;padding-right:18px;}
+#hero-badge .hb-bar{box-sizing:border-box;position:relative;z-index:1;display:flex;align-items:center;height:56px;margin-left:-46px;padding:0 0 0 58px;max-width:0;opacity:0;overflow:hidden;white-space:nowrap;background:#6363ff;color:#dbd8d1;font:600 20px/1 system-ui,sans-serif;letter-spacing:.04em;border-radius:0 28px 28px 0;transition:max-width .4s ease,opacity .3s ease,padding-right .4s ease;}
+#hero-badge:hover .hb-bar,#hero-badge:focus-visible .hb-bar{max-width:340px;opacity:1;padding-right:28px;}
 @media (max-width:640px){
   #badge-window{grid-template-columns:140px 1fr;height:96vh;width:96vw;}
   @media (pointer:coarse){ .badge-list-item{padding:11px 10px;} #badge-search{padding:11px 10px;} }
