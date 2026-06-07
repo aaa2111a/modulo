@@ -1694,7 +1694,15 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
 #badge-modal.active{display:flex;}
 #badge-window{position:relative;width:min(96vw, calc(220px + (90vh - 40px) * 1.8));height:90vh;background:var(--bg,#dbd8d1);border:1px solid var(--text-sub,#8b8b8b);border-radius:10px;overflow:hidden;display:grid;grid-template-rows:40px 1fr;grid-template-columns:220px 1fr;box-shadow:0 24px 60px rgba(0,0,0,.5);}
 #badge-tbar{grid-column:1 / -1;position:relative;display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid var(--border,rgba(0,0,0,.15));background:var(--bg-alt,#c9c6c0);}
-#badge-close{width:13px;height:13px;border-radius:50%;background:#ff5f57;border:none;cursor:pointer;flex:0 0 auto;padding:0;}
+.badge-dot{width:13px;height:13px;border-radius:50%;border:none;cursor:pointer;flex:0 0 auto;padding:0;}
+#badge-close{background:#ff5f57;}
+#badge-fs{background:#28c840;}
+#badge-collapse{margin-left:auto;flex:0 0 auto;background:var(--bg-alt,#c9c6c0);border:1px solid var(--text-sub,#8b8b8b);border-radius:6px;color:var(--text,#23242a);font:600 12px/1 system-ui,sans-serif;padding:5px 9px;cursor:pointer;}
+#badge-collapse:hover{background:var(--text,#23242a);color:var(--bg,#dbd8d1);}
+#badge-window.sidebar-collapsed{grid-template-columns:0 1fr;}
+#badge-window.sidebar-collapsed #badge-sidebar{display:none;}
+#badge-modal.badge-fs{padding:0;}
+#badge-modal.badge-fs #badge-window{width:100vw;height:100vh;max-width:none;border-radius:0;border:none;}
 #badge-title{position:absolute;left:50%;transform:translateX(-50%);font:600 13px/1 system-ui,sans-serif;color:var(--text,#23242a);letter-spacing:.02em;pointer-events:none;}
 #badge-sidebar{grid-column:1;grid-row:2;display:flex;flex-direction:column;border-right:1px solid var(--border,rgba(0,0,0,.15));min-height:0;}
 #badge-search{margin:10px;padding:8px 10px;font:13px/1 system-ui,sans-serif;color:var(--text,#23242a);background:var(--bg-alt,#c9c6c0);border:1px solid var(--text-sub,#8b8b8b);border-radius:7px;outline:none;}
@@ -1737,8 +1745,10 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
 <div id="badge-modal" role="dialog" aria-modal="true" aria-label="Badge artifact viewer">
   <div id="badge-window">
     <div id="badge-tbar">
-      <button id="badge-close" type="button" title="close" aria-label="close"></button>
+      <button id="badge-close" class="badge-dot" type="button" title="close" aria-label="close"></button>
+      <button id="badge-fs" class="badge-dot" type="button" title="toggle fullscreen" aria-label="toggle fullscreen"></button>
       <span id="badge-title">check it</span>
+      <button id="badge-collapse" type="button" title="collapse list — more room for the cells" aria-label="collapse list">‹‹</button>
     </div>
     <div id="badge-sidebar">
       <input id="badge-search" type="text" inputmode="numeric" autocomplete="off" placeholder="# artifact…" aria-label="search artifact by number">
@@ -4530,7 +4540,10 @@ document.addEventListener('keydown', e => {
 // (_badgeCurrentId + cancel-before-await), faithful _isDither (in paintToBadge),
 // visibilitychange pause, z:1450 + expand mutual-exclusion.
 const _badgeModalEl = document.getElementById('badge-modal');
+const _badgeWindowEl = document.getElementById('badge-window');
 const _badgeCloseEl = document.getElementById('badge-close');
+const _badgeFsEl = document.getElementById('badge-fs');
+const _badgeCollapseEl = document.getElementById('badge-collapse');
 const _badgeSearchEl = document.getElementById('badge-search');
 const _badgeListEl = document.getElementById('badge-list');
 const _badgeCanvasEl = document.getElementById('badge-canvas');
@@ -4667,6 +4680,9 @@ function _closeBadgeModal() {
   if (_badgeRaf) { cancelAnimationFrame(_badgeRaf); _badgeRaf = 0; }
   clearTimeout(_badgeSplashTimer);
   _badgeSplashEl.classList.remove('hide');  // reset so the splash shows again next open
+  _badgeModalEl.classList.remove('badge-fs');        // reset fullscreen for next open
+  _badgeWindowEl.classList.remove('sidebar-collapsed'); // reset collapse for next open
+  _badgeCollapseEl.textContent = '‹‹';
   _badgeEngine = null;       // drop engine (grid/PAL/noise ~450KB) → GC
   _badgeCurrentId = null;
 }
@@ -4675,6 +4691,17 @@ _drawHeroBadge();
 const _heroBadgeBtn = document.getElementById('hero-badge');
 if (_heroBadgeBtn) _heroBadgeBtn.addEventListener('click', _openBadgeModal);
 _badgeCloseEl.addEventListener('click', _closeBadgeModal);
+// Green dot → fullscreen the modal window (like the expand window).
+_badgeFsEl.addEventListener('click', () => {
+  _badgeModalEl.classList.toggle('badge-fs');
+  requestAnimationFrame(() => { if (_badgeModalEl.classList.contains('active')) _resizeBadgeCanvas(); });
+});
+// Collapse the list sidebar → more room for the cells (like app's side panel).
+_badgeCollapseEl.addEventListener('click', () => {
+  const collapsed = _badgeWindowEl.classList.toggle('sidebar-collapsed');
+  _badgeCollapseEl.textContent = collapsed ? '››' : '‹‹';
+  requestAnimationFrame(() => { if (_badgeModalEl.classList.contains('active')) _resizeBadgeCanvas(); });
+});
 _badgeModalEl.addEventListener('click', e => { if (e.target === _badgeModalEl) _closeBadgeModal(); });
 _badgeSearchEl.addEventListener('input', () => {
   clearTimeout(_badgeSearchTimer);
