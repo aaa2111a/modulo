@@ -1627,6 +1627,13 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
   <div id="hero-wrap">
     <div id="hero-a" class="hero-slot"></div>
     <div id="hero-b" class="hero-slot"></div>
+    <button id="hero-badge" type="button" aria-label="check it — open the badge viewer">
+      <span class="hb-icon">
+        <canvas id="hero-badge-seal" width="88" height="88"></canvas>
+        <canvas id="hero-badge-tick" width="88" height="88"></canvas>
+      </span>
+      <span class="hb-bar">check it</span>
+    </button>
   </div>
   <div id="hero-label" aria-live="polite"></div>
 </section>
@@ -1678,7 +1685,7 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
 <style>
 #badge-modal{position:fixed;inset:0;z-index:1450;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.55);padding:2vh 2vw;}
 #badge-modal.active{display:flex;}
-#badge-window{width:min(96vw, calc(220px + (90vh - 40px) * 1.8));height:90vh;background:var(--bg,#dbd8d1);border:1px solid var(--text-sub,#8b8b8b);border-radius:10px;overflow:hidden;display:grid;grid-template-rows:40px 1fr;grid-template-columns:220px 1fr;box-shadow:0 24px 60px rgba(0,0,0,.5);}
+#badge-window{position:relative;width:min(96vw, calc(220px + (90vh - 40px) * 1.8));height:90vh;background:var(--bg,#dbd8d1);border:1px solid var(--text-sub,#8b8b8b);border-radius:10px;overflow:hidden;display:grid;grid-template-rows:40px 1fr;grid-template-columns:220px 1fr;box-shadow:0 24px 60px rgba(0,0,0,.5);}
 #badge-tbar{grid-column:1 / -1;position:relative;display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid var(--border,rgba(0,0,0,.15));background:var(--bg-alt,#c9c6c0);}
 #badge-close{width:13px;height:13px;border-radius:50%;background:#ff5f57;border:none;cursor:pointer;flex:0 0 auto;padding:0;}
 #badge-title{position:absolute;left:50%;transform:translateX(-50%);font:600 13px/1 system-ui,sans-serif;color:var(--text,#23242a);letter-spacing:.02em;pointer-events:none;}
@@ -1696,8 +1703,23 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
 #badge-body{grid-column:2;grid-row:2;position:relative;display:flex;align-items:center;justify-content:center;background:#dbd8d1;min-width:0;min-height:0;overflow:hidden;}
 #badge-canvas{display:block;width:100%;height:100%;image-rendering:auto;}
 #badge-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:13px/1 system-ui,sans-serif;color:var(--text-sub,#8b8b8b);pointer-events:none;text-align:center;padding:20px;}
+#badge-splash{position:absolute;inset:0;z-index:6;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;background:var(--bg,#dbd8d1);transition:opacity .45s ease;}
+#badge-splash.hide{opacity:0;pointer-events:none;}
+#badge-splash-badge{width:78px;height:78px;transform-origin:50% 50%;animation:badgeSpin 1.3s linear infinite;}
+#badge-splash-text{font:500 13px/1.55 system-ui,sans-serif;color:var(--text-sub,#8b8b8b);text-align:center;max-width:280px;letter-spacing:.02em;padding:0 16px;}
+@keyframes badgeSpin{from{transform:rotate(0);}to{transform:rotate(360deg);}}
 #badge-open-btn{font:600 12px/1 system-ui,sans-serif;letter-spacing:.03em;color:var(--text,#23242a);background:var(--bg-alt,#c9c6c0);border:1px solid var(--text-sub,#8b8b8b);border-radius:7px;padding:7px 14px;cursor:pointer;}
 #badge-open-btn:hover{background:var(--text,#23242a);color:var(--bg,#dbd8d1);}
+/* Hero featured-artifact badge → opens the "check it" viewer. On hover the
+   seal (border) spins while the beige tick stays static; a blue "check it"
+   bar slides out from the right. */
+#hero-badge{position:absolute;top:12px;left:12px;z-index:4;display:flex;align-items:center;background:none;border:none;padding:0;cursor:pointer;}
+#hero-badge .hb-icon{position:relative;z-index:2;width:44px;height:44px;flex:0 0 auto;}
+#hero-badge-seal,#hero-badge-tick{position:absolute;inset:0;width:44px;height:44px;display:block;}
+#hero-badge-seal{transform-origin:50% 50%;}
+#hero-badge:hover #hero-badge-seal,#hero-badge:focus-visible #hero-badge-seal{animation:badgeSpin 1.3s linear infinite;}
+#hero-badge .hb-bar{box-sizing:border-box;position:relative;z-index:1;display:flex;align-items:center;height:30px;margin-left:-15px;padding:0 0 0 21px;max-width:0;opacity:0;overflow:hidden;white-space:nowrap;background:#6363ff;color:#dbd8d1;font:600 13px/1 system-ui,sans-serif;letter-spacing:.04em;border-radius:0 15px 15px 0;transition:max-width .38s ease,opacity .28s ease,padding-right .38s ease;}
+#hero-badge:hover .hb-bar,#hero-badge:focus-visible .hb-bar{max-width:170px;opacity:1;padding-right:18px;}
 @media (max-width:640px){
   #badge-window{grid-template-columns:140px 1fr;height:96vh;width:96vw;}
   @media (pointer:coarse){ .badge-list-item{padding:11px 10px;} #badge-search{padding:11px 10px;} }
@@ -1716,6 +1738,10 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
     <div id="badge-body">
       <canvas id="badge-canvas"></canvas>
       <div id="badge-loading">select an artifact</div>
+    </div>
+    <div id="badge-splash">
+      <canvas id="badge-splash-badge" width="120" height="120"></canvas>
+      <div id="badge-splash-text">For the best experience, please use the desktop version</div>
     </div>
   </div>
 </div>
@@ -4482,8 +4508,43 @@ const _badgeListEl = document.getElementById('badge-list');
 const _badgeCanvasEl = document.getElementById('badge-canvas');
 const _badgeCtx = _badgeCanvasEl.getContext('2d');
 const _badgeLoadingEl = document.getElementById('badge-loading');
+const _badgeSplashEl = document.getElementById('badge-splash');
+const _badgeSplashCanvas = document.getElementById('badge-splash-badge');
 const BADGE_CELL = 26;
 let _badgeCurrentId = null, _badgeEngine = null, _badgeRaf = 0, _badgeSearchTimer = 0, _badgeResizeTimer = 0;
+let _badgeSplashTimer = 0, _badgeSplashDrawn = false;
+
+// Single spinning verified-badge for the splash (CSS rotates the canvas element).
+function _drawSplashBadge() {
+  if (_badgeSplashDrawn) return;
+  const cv = _badgeSplashCanvas, S = cv.width, x = cv.getContext('2d');
+  x.clearRect(0, 0, S, S);
+  const cx = S / 2, cy = S / 2, rO = S * 0.46, rI = S * 0.385, bumps = 8, steps = bumps * 18;
+  x.beginPath();
+  for (let k = 0; k <= steps; k++) { const t = k / steps * Math.PI * 2, rr = (rO + rI) / 2 + (rO - rI) / 2 * Math.cos(bumps * t), px = cx + Math.cos(t) * rr, py = cy + Math.sin(t) * rr; if (k === 0) x.moveTo(px, py); else x.lineTo(px, py); }
+  x.closePath(); x.fillStyle = '#6363ff'; x.fill();
+  x.strokeStyle = '#dbd8d1'; x.lineWidth = S * 0.085; x.lineCap = 'round'; x.lineJoin = 'round';
+  x.beginPath(); x.moveTo(cx - S * 0.16, cy + S * 0.02); x.lineTo(cx - S * 0.03, cy + S * 0.15); x.lineTo(cx + S * 0.18, cy - S * 0.13); x.stroke();
+  _badgeSplashDrawn = true;
+}
+
+// Hero featured-artifact badge: blue seal + beige tick drawn on SEPARATE canvases
+// so CSS can spin only the seal on hover while the tick stays static.
+function _drawHeroBadge() {
+  const sc = document.getElementById('hero-badge-seal'), tc = document.getElementById('hero-badge-tick');
+  if (!sc || !tc) return;
+  const S = sc.width, x = sc.getContext('2d');
+  x.clearRect(0, 0, S, S);
+  const cx = S / 2, cy = S / 2, rO = S * 0.47, rI = S * 0.39, bumps = 8, steps = bumps * 18;
+  x.beginPath();
+  for (let k = 0; k <= steps; k++) { const t = k / steps * Math.PI * 2, rr = (rO + rI) / 2 + (rO - rI) / 2 * Math.cos(bumps * t), px = cx + Math.cos(t) * rr, py = cy + Math.sin(t) * rr; if (k === 0) x.moveTo(px, py); else x.lineTo(px, py); }
+  x.closePath(); x.fillStyle = '#6363ff'; x.fill();
+  const T = tc.width, y = tc.getContext('2d');
+  y.clearRect(0, 0, T, T);
+  const tx = T / 2, ty = T / 2;
+  y.strokeStyle = '#dbd8d1'; y.lineWidth = T * 0.09; y.lineCap = 'round'; y.lineJoin = 'round';
+  y.beginPath(); y.moveTo(tx - T * 0.16, ty + T * 0.02); y.lineTo(tx - T * 0.03, ty + T * 0.15); y.lineTo(tx + T * 0.18, ty - T * 0.13); y.stroke();
+}
 
 function _resizeBadgeCanvas() {
   // Backing store = displayed CSS px (dpr=1, matches the approved mockup look;
@@ -4567,19 +4628,31 @@ function _openBadgeModal() {
   _buildBadgeList('');
   _badgeLoadingEl.textContent = 'select an artifact';
   _badgeLoadingEl.style.display = 'flex';
+  // Intro splash (spinning badge + desktop hint) ~2.2s, then fade to reveal.
+  _drawSplashBadge();
+  _badgeSplashEl.classList.remove('hide');
+  clearTimeout(_badgeSplashTimer);
+  _badgeSplashTimer = setTimeout(() => {
+    _badgeSplashEl.classList.add('hide');
+    try { _badgeSearchEl.focus(); } catch (_) {}
+  }, 2200);
   // Size after the modal is laid out (display:flex), else rect is 0 (P1-A/P2-D).
   requestAnimationFrame(() => { if (_badgeModalEl.classList.contains('active')) _resizeBadgeCanvas(); });
-  try { _badgeSearchEl.focus(); } catch (_) {}
 }
 
 function _closeBadgeModal() {
   _badgeModalEl.classList.remove('active');
   if (_badgeRaf) { cancelAnimationFrame(_badgeRaf); _badgeRaf = 0; }
+  clearTimeout(_badgeSplashTimer);
+  _badgeSplashEl.classList.remove('hide');  // reset so the splash shows again next open
   _badgeEngine = null;       // drop engine (grid/PAL/noise ~450KB) → GC
   _badgeCurrentId = null;
 }
 
 document.getElementById('badge-open-btn').addEventListener('click', _openBadgeModal);
+_drawHeroBadge();
+const _heroBadgeBtn = document.getElementById('hero-badge');
+if (_heroBadgeBtn) _heroBadgeBtn.addEventListener('click', _openBadgeModal);
 _badgeCloseEl.addEventListener('click', _closeBadgeModal);
 _badgeModalEl.addEventListener('click', e => { if (e.target === _badgeModalEl) _closeBadgeModal(); });
 _badgeSearchEl.addEventListener('input', () => {
