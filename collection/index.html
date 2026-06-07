@@ -1636,6 +1636,14 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
     </div>
     <button id="hero-badge" type="button" aria-label="check it — open the badge viewer">
       <span class="hb-icon">
+        <span class="hb-mini hb-mini-a">
+          <canvas id="hero-badge-mini-a-seal" class="hb-mini-seal" width="160" height="160"></canvas>
+          <canvas id="hero-badge-mini-a-tick" class="hb-mini-tick" width="160" height="160"></canvas>
+        </span>
+        <span class="hb-mini hb-mini-b">
+          <canvas id="hero-badge-mini-b-seal" class="hb-mini-seal" width="160" height="160"></canvas>
+          <canvas id="hero-badge-mini-b-tick" class="hb-mini-tick" width="160" height="160"></canvas>
+        </span>
         <canvas id="hero-badge-seal" width="264" height="264"></canvas>
         <canvas id="hero-badge-tick" width="264" height="264"></canvas>
       </span>
@@ -1742,7 +1750,15 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
    bar slides out from the right. */
 #hero-badge{position:absolute;top:-36px;left:-36px;z-index:6;display:flex;align-items:center;background:none;border:none;padding:0;cursor:pointer;}
 #hero-badge .hb-icon{position:relative;z-index:2;width:132px;height:132px;flex:0 0 auto;}
-#hero-badge-seal,#hero-badge-tick{position:absolute;inset:0;width:132px;height:132px;display:block;}
+#hero-badge-seal,#hero-badge-tick{position:absolute;inset:0;width:132px;height:132px;display:block;z-index:1;}
+/* Mini badges peeking from behind the big one on hover — overlap (no gap),
+   spin only the border like the big badge. */
+#hero-badge .hb-mini{position:absolute;top:26px;left:26px;width:80px;height:80px;z-index:0;transform:translate(0,0);transition:transform .4s ease;}
+#hero-badge .hb-mini canvas{position:absolute;inset:0;width:80px;height:80px;display:block;}
+.hb-mini-seal{transform-origin:50% 50%;}
+#hero-badge:hover .hb-mini-a,#hero-badge:focus-visible .hb-mini-a{transform:translate(48px,-12px);}
+#hero-badge:hover .hb-mini-b,#hero-badge:focus-visible .hb-mini-b{transform:translate(20px,50px);}
+#hero-badge:hover .hb-mini-seal,#hero-badge:focus-visible .hb-mini-seal{animation:badgeSpin 1.3s linear infinite;}
 #hero-badge-seal{transform-origin:50% 50%;}
 #hero-badge:hover #hero-badge-seal,#hero-badge:focus-visible #hero-badge-seal{animation:badgeSpin 1.3s linear infinite;}
 #hero-badge .hb-bar{box-sizing:border-box;position:relative;z-index:1;display:flex;align-items:center;height:56px;margin-left:-46px;padding:0 0 0 58px;max-width:0;opacity:0;overflow:hidden;white-space:nowrap;background:#6363ff;color:#dbd8d1;font:600 20px/1 system-ui,sans-serif;letter-spacing:.04em;border-radius:0 28px 28px 0;transition:max-width .4s ease,opacity .3s ease,padding-right .4s ease;}
@@ -4604,14 +4620,18 @@ function _drawSplashBadge() {
 // Hero featured-artifact badge: blue seal + beige tick drawn on SEPARATE canvases
 // so CSS can spin only the seal on hover while the tick stays static.
 function _drawHeroBadge() {
-  const sc = document.getElementById('hero-badge-seal'), tc = document.getElementById('hero-badge-tick');
-  if (!sc || !tc) return;
-  const S = sc.width, x = sc.getContext('2d');
-  x.clearRect(0, 0, S, S);
-  _badgeFillSeal(x, S, '#6363ff');
-  const T = tc.width, y = tc.getContext('2d');
-  y.clearRect(0, 0, T, T);
-  _badgeFillCheck(y, T, '#dbd8d1');
+  // Big badge + 2 mini peek badges — each = blue seal (spins) + beige check (static).
+  const pairs = [
+    ['hero-badge-seal', 'hero-badge-tick'],
+    ['hero-badge-mini-a-seal', 'hero-badge-mini-a-tick'],
+    ['hero-badge-mini-b-seal', 'hero-badge-mini-b-tick'],
+  ];
+  for (const [sid, tid] of pairs) {
+    const sc = document.getElementById(sid), tc = document.getElementById(tid);
+    if (!sc || !tc) continue;
+    const sx = sc.getContext('2d'); sx.clearRect(0, 0, sc.width, sc.height); _badgeFillSeal(sx, sc.width, '#6363ff');
+    const tx = tc.getContext('2d'); tx.clearRect(0, 0, tc.width, tc.height); _badgeFillCheck(tx, tc.width, '#dbd8d1');
+  }
 }
 
 function _resizeBadgeCanvas() {
