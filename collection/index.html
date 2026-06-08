@@ -3608,10 +3608,29 @@ function _createArtifactEngine(canvas, rawComposition) {
     const CELL = (opts && opts.cell) || 26;
     const BG = (opts && opts.bg) || BADGE_BG;
     const W = target.width, H = target.height;
-    const stride = Math.max(1, Math.round(CELL / 6));
-    const maxC = Math.floor(450 / stride), maxR = Math.floor(250 / stride);
-    const visCols = Math.min(Math.floor(W / CELL), maxC), visRows = Math.min(Math.floor(H / CELL), maxR);
-    const offC = Math.floor((450 - visCols * stride) / 2), offR = Math.floor((250 - visRows * stride) / 2);
+    // Sampling window into the 450×250 grid. Default: stride coupled to CELL
+    // (density matches the on-screen view). Card mode (opts.cols/opts.rows):
+    // sample an EXPLICIT cols×rows window with per-axis stride spanning the full
+    // grid — decoupled from CELL so large cells still show all the rows (the
+    // stride=round(CELL/6) path otherwise caps rows at ~22 once CELL is large).
+    // Back-compat: with cols/rows absent, strideC===strideR===stride → byte-identical.
+    let visCols, visRows, strideC, strideR, offC, offR;
+    if (opts && opts.cols && opts.rows) {
+      visCols = Math.max(1, opts.cols | 0);
+      visRows = Math.max(1, opts.rows | 0);
+      strideC = Math.max(1, Math.floor(450 / visCols));
+      strideR = Math.max(1, Math.floor(250 / visRows));
+      offC = Math.floor((450 - visCols * strideC) / 2);
+      offR = Math.floor((250 - visRows * strideR) / 2);
+    } else {
+      const stride = Math.max(1, Math.round(CELL / 6));
+      const maxC = Math.floor(450 / stride), maxR = Math.floor(250 / stride);
+      visCols = Math.min(Math.floor(W / CELL), maxC);
+      visRows = Math.min(Math.floor(H / CELL), maxR);
+      strideC = stride; strideR = stride;
+      offC = Math.floor((450 - visCols * stride) / 2);
+      offR = Math.floor((250 - visRows * stride) / 2);
+    }
     tctx.fillStyle = BG; tctx.fillRect(0, 0, W, H);
     if (visCols <= 0 || visRows <= 0) return;
     const sig = CELL + '|' + BG + '|' + PAL.map(p => p[0] + ',' + p[1] + ',' + p[2]).join(';');
@@ -3619,7 +3638,7 @@ function _createArtifactEngine(canvas, rawComposition) {
     const SP = _badgeSprites, dxp = _activeDxPattern;
     const gW = visCols * CELL, gH = visRows * CELL, px0 = Math.floor((W - gW) / 2), py0 = Math.floor((H - gH) / 2);
     for (let r = 0; r < visRows; r++) for (let c = 0; c < visCols; c++) {
-      const gr = r * stride, gc = c * stride, gi = (offR + gr) * 450 + (offC + gc);
+      const gr = r * strideR, gc = c * strideC, gi = (offR + gr) * 450 + (offC + gc);
       const dx = px0 + c * CELL, dy = py0 + r * CELL;
       if (_bIsDither(gi, dxp, offR, offC, gr, gc)) { tctx.drawImage(SP.dither, dx, dy); continue; }
       const s = SP.normal[grid[gi]] || SP.normal[0];
@@ -4980,13 +4999,18 @@ async function _exportBadgeCard(modId) {
   if (_exportInFlight) return;
   _exportInFlight = true;
 
-  const W_CARD = 2160, H_BADGE = 1728, H_CAPTION = 432, H_CARD = 2160;
+  const W_CARD = 2160, H_CARD = 2160;
+  // Fixed badge grid: 31 cols × 26 rows (Le 2026-06-08 — fewer, larger cells, a
+  // square card look 1:1 with the reference video). CELL sized so the grid spans
+  // ~92% of the card width; per-axis stride (paintToBadge cols/rows) keeps all 26
+  // rows despite the large cell (the stride=round(CELL/6) path would cap at ~22).
+  const CARD_COLS = 31, CARD_ROWS = 26;
+  const CELL = Math.floor(W_CARD * 0.92 / CARD_COLS);          // 64
+  const gridW = CELL * CARD_COLS, gridH = CELL * CARD_ROWS;     // 1984 × 1664
+  const gridX = Math.round((W_CARD - gridW) / 2), gridY = 80;  // centered, top margin
   const CARD_PRESET = EXPORT_PRESETS.find(p => p.id === 'max');
-  // Snapshot the live badge view state at start (immutable during the encode →
-  // no flicker if the user changes the bg swatch / size mid-export).
+  // Snapshot the live bg at start (immutable during the encode → no mid-export flicker).
   const capBg = _badgeBg;
-  const onscreenW = Math.max(1, _badgeCanvasEl.width);
-  const cardCell = Math.min(80, Math.max(4, Math.round(_badgeCell * W_CARD / onscreenW)));
 
   const btn = document.getElementById('badge-mp4');
   const origText = btn ? btn.textContent : '↓ MP4';
@@ -5016,43 +5040,40 @@ async function _exportBadgeCard(modId) {
     if (!composition) { alert('Could not parse composition from tokenURI.'); return; }
 
     // Badge band — paintToBadge fills it fully with capBg + centers the grid.
-    const offBadge = new OffscreenCanvas(W_CARD, H_BADGE);
+    const offBadge = new OffscreenCanvas(gridW, gridH);
     const offBadgeCtx = offBadge.getContext('2d');
     offBadgeCtx.imageSmoothingEnabled = false;
 
     const engine = _createArtifactEngine(offBadge, composition);
     if (!engine) { alert('Engine init failed.'); return; }
 
-    // Final card frame source.
+    // Final card frame source. Background + caption are STATIC → painted ONCE here;
+    // each frame only re-blits the animated badge over its (gridX,gridY,gridW,gridH)
+    // rect (which never overlaps the caption), so per-frame cost is one drawImage.
     const offCard = new OffscreenCanvas(W_CARD, H_CARD);
     const cardCtx = offCard.getContext('2d');
     cardCtx.imageSmoothingEnabled = false;
-
-    // Caption band — pre-rendered ONCE (static); composited under the badge each
-    // frame so per-frame cost is just two drawImage calls (no text re-layout).
-    const offCaption = new OffscreenCanvas(W_CARD, H_CAPTION);
-    const cctx = offCaption.getContext('2d');
-    cctx.fillStyle = capBg;
-    cctx.fillRect(0, 0, W_CARD, H_CAPTION);
-    const textColor = _cardTextColor(capBg);
-    cctx.textAlign = 'center';
-    cctx.textBaseline = 'alphabetic';
-    cctx.fillStyle = textColor;
-    // Line 1 — shrink-to-fit so long ids (#6666) never clip (P2-C).
+    cardCtx.fillStyle = capBg;
+    cardCtx.fillRect(0, 0, W_CARD, H_CARD);
+    // Caption (Times serif) — "Modulo artifact #N" + "Check it", auto-contrast color.
     const SERIF = "'Times New Roman', Times, serif";
+    const textColor = _cardTextColor(capBg);
+    cardCtx.textAlign = 'center';
+    cardCtx.textBaseline = 'alphabetic';
+    cardCtx.fillStyle = textColor;
     const MAXW = W_CARD * 0.86;
     const line1 = 'Modulo artifact #' + modId;
-    let sz1 = Math.round(W_CARD * 0.05);
-    cctx.font = sz1 + 'px ' + SERIF;
-    const w1 = cctx.measureText(line1).width;
-    if (w1 > MAXW) { sz1 = Math.max(40, Math.floor(sz1 * MAXW / w1)); cctx.font = sz1 + 'px ' + SERIF; }
-    cctx.fillText(line1, W_CARD / 2, Math.round(H_CAPTION * 0.42));
-    // Line 2 — "Check it", smaller + muted.
-    const sz2 = Math.max(22, Math.round(sz1 * 0.56));
-    cctx.font = sz2 + 'px ' + SERIF;
-    cctx.globalAlpha = 0.55;
-    cctx.fillText('Check it', W_CARD / 2, Math.round(H_CAPTION * 0.74));
-    cctx.globalAlpha = 1.0;
+    let sz1 = Math.round(W_CARD * 0.031);   // ~67px — matches the reference
+    cardCtx.font = sz1 + 'px ' + SERIF;
+    const w1 = cardCtx.measureText(line1).width;
+    if (w1 > MAXW) { sz1 = Math.max(34, Math.floor(sz1 * MAXW / w1)); cardCtx.font = sz1 + 'px ' + SERIF; }  // shrink-to-fit (#6666)
+    cardCtx.fillText(line1, W_CARD / 2, Math.round(H_CARD * 0.867));
+    const sz2 = Math.max(20, Math.round(sz1 * 0.55));
+    cardCtx.font = sz2 + 'px ' + SERIF;
+    cardCtx.save();
+    cardCtx.globalAlpha = 0.55;
+    cardCtx.fillText('Check it', W_CARD / 2, Math.round(H_CARD * 0.905));
+    cardCtx.restore();
 
     // Streaming-to-disk (mandatory: 200 Mbps × 20 s ≈ 500 MB). showSaveFilePicker
     // already guaranteed above; the probe also already passed.
@@ -5083,9 +5104,8 @@ async function _exportBadgeCard(modId) {
       engine.step(engine.dtOps);
       engine.applyRects();
       engine.tickRects && engine.tickRects();
-      engine.paintToBadge(offBadge, offBadgeCtx, { cell: cardCell, bg: capBg });
-      cardCtx.drawImage(offBadge, 0, 0);          // badge band (animated) on top
-      cardCtx.drawImage(offCaption, 0, H_BADGE);  // static caption below
+      engine.paintToBadge(offBadge, offBadgeCtx, { cell: CELL, bg: capBg, cols: CARD_COLS, rows: CARD_ROWS });
+      cardCtx.drawImage(offBadge, gridX, gridY);  // animated 31×26 badge over its rect (caption below untouched)
 
       // Untagged VideoFrame (no colorSpace) — matches the codebase's deliberate
       // limited-range BT.709 bitstream decision; do NOT add fullRange.
