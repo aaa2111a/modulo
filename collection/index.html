@@ -1112,6 +1112,21 @@ body.night .card-loading { background:rgba(255,255,255,0.04); }
   margin-top:3px; flex-shrink:0;
 }
 #export-modal-card.disabled { opacity:0.45; cursor:not-allowed; }
+#export-modal-compact {
+  display:none; flex-direction:column; gap:5px;
+  padding:12px; border:0.5px solid var(--border-mid); border-radius:6px;
+  background:var(--bg-alt); margin-bottom:18px;
+}
+#mobile-dl-banner {
+  position:fixed; left:50%; bottom:24px; transform:translateX(-50%);
+  z-index:3000; display:none;
+}
+#mobile-dl-link {
+  display:inline-block; padding:14px 24px; min-height:44px; box-sizing:border-box;
+  background:#23242a; color:#fff; border-radius:10px;
+  font-family:monospace; font-size:14px; text-decoration:none;
+  box-shadow:0 6px 20px rgba(0,0,0,0.32);
+}
 #export-modal-actions {
   display:flex; justify-content:flex-end; gap:8px;
   border-top:0.5px solid var(--border);
@@ -1888,6 +1903,10 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
           <span class="export-opt-sub" id="export-modal-card-sub">Square 2160×2160 with the "Modulo artifact #N · Check it" caption. Uses Max quality.</span>
         </span>
       </label>
+      <div id="export-modal-compact">
+        <span class="export-opt-title">Compact MP4 (~20 MB)</span>
+        <span class="export-opt-sub">Optimized for phones — 1080p H.264. (Desktop Chrome/Edge gets the full-quality presets.)</span>
+      </div>
       <div id="export-modal-actions">
         <button id="export-modal-cancel">Cancel</button>
         <button id="export-modal-go">Export</button>
@@ -1895,6 +1914,11 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
     </div>
   </div>
 </div>
+
+<!-- Mobile download banner — the compact MP4 export shows this after encoding so the
+     user can TAP to save (the tap is the fresh user-gesture iOS Safari + Web Share
+     require; a programmatic click after the async encode is ignored on iOS). -->
+<div id="mobile-dl-banner"><a id="mobile-dl-link" href="#" rel="noopener">Tap to save MP4</a></div>
 
 <!-- On-chain verification modal — opens when user clicks ONCHAIN inside expand
      modal. Shows two ways to fetch the artifact's HTML straight from Ethereum:
@@ -3832,6 +3856,26 @@ async function _openExportModal(modId, badge) {
     cardLabel.classList.toggle('disabled', !maxOk);
     if (cardInput) cardInput.disabled = !maxOk;
   }
+  // Mobile / no File System Access → "compact" path. The heavy presets can't
+  // stream-to-disk on phones and would OOM in-memory; hide them + the desktop
+  // probe (which tests 2700×1500/avc1.640033 — rejected on phones → would wrongly
+  // disable Go). The real codec probe runs inside _exportCompactMP4. The Card box
+  // stays usable on mobile (renders at 1080²). Desktop behaviour unchanged.
+  const compact = !window.showSaveFilePicker;
+  const compactNote = document.getElementById('export-modal-compact');
+  const hintEl = document.getElementById('export-modal-hint');
+  if (compact) {
+    optsEl.style.display = 'none';
+    if (hintEl) hintEl.style.display = 'none';
+    if (cropLabel) cropLabel.style.display = 'none';
+    if (compactNote) compactNote.style.display = 'flex';
+    if (cardLabel) { cardLabel.classList.remove('disabled'); if (cardInput) cardInput.disabled = false; }
+    goBtn.disabled = false;
+  } else {
+    optsEl.style.display = '';
+    if (hintEl) hintEl.style.display = '';
+    if (compactNote) compactNote.style.display = 'none';
+  }
 }
 
 function _closeExportModal() {
@@ -4061,6 +4105,9 @@ document.getElementById('export-modal-go').addEventListener('click', () => {
   const modId = badge ? _exportBadgeId : _expandOpenId;
   if (modId == null) return;
   _closeExportModal();
+  // Mobile (no File System Access) → compact path (1080p, ~20 MB, Blob/Share) so
+  // the encode fits in phone memory instead of OOM-reloading the tab.
+  if (!window.showSaveFilePicker) { _exportCompactMP4(modId, { badge: badge, card: badge && _exportCardMode }); return; }
   // Card export: badge-only square card + caption, locked to max → separate path.
   if (badge && _exportCardMode) { _exportBadgeCard(modId); return; }
   // Badge mode: no crop (crop dims read #expand-body which is closed) — full
@@ -5136,6 +5183,169 @@ async function _exportBadgeCard(modId) {
     if (btn) { btn.disabled = false; btn.textContent = origText; }
     if (encoder) { try { encoder.close(); } catch (_) {} }
     if (fileStream) { try { await fileStream.abort(); } catch (_) {} }
+  }
+}
+
+// Compact MP4 (2026-06-08) — the MOBILE path. Desktop streams big files to disk
+// via showSaveFilePicker; phones lack it and were OOM-reloading the tab building a
+// 100-500 MB ArrayBuffer. This renders a small 1080p ~20 MB clip that fits in phone
+// memory and hands it to _offerMobileDownload. Routed from the modal Go when
+// !showSaveFilePicker. Handles all 3 modes: artifact (paintTo), badge (paintToBadge),
+// card (31×26 badge + caption). Separate from _exportMP4/_exportBadgeCard (untouched).
+async function _exportCompactMP4(modId, opts) {
+  opts = opts || {};
+  const isCard = !!opts.card, isBadge = !!opts.badge;
+  if (modId == null) return;
+  if (!window.VideoEncoder || !window.Mp4Muxer) { alert('Video export not supported by this browser.'); return; }
+  if (_exportInFlight) return;
+  _exportInFlight = true;
+
+  const W = 1080, H = isCard ? 1080 : 600;     // square card vs 9:5 artifact/badge
+  const FPS = 60, FRAMES = FPS * 20, BITRATE = 8_000_000;   // 60fps/20s = identical animation; ~20 MB
+  const capBg = _badgeBg;
+  const btn = isBadge ? document.getElementById('badge-mp4') : document.getElementById('export-btn');
+  const origText = btn ? btn.textContent : '↓ MP4';
+  if (btn) btn.disabled = true;
+
+  let encoder = null, muxer = null;
+  try {
+    // Probe at the ACTUAL compact dims (the modal's cached probe is 2700×1500/
+    // avc1.640033 — rejected on phones). 4.2 first (spec-fits 1080²@60), then 4.0,
+    // Main 4.0, Constrained-Baseline 3.1.
+    const ladder = ['avc1.64002a', 'avc1.640028', 'avc1.4d4028', 'avc1.42e01f'];
+    let codec = null;
+    for (const c of ladder) {
+      let s = null;
+      try { s = await VideoEncoder.isConfigSupported({ codec: c, width: W, height: H, bitrate: BITRATE, framerate: FPS, bitrateMode: 'constant', latencyMode: 'quality', hardwareAcceleration: 'prefer-hardware' }); } catch (_) {}
+      if (s && s.supported) { codec = c; break; }
+    }
+    if (!codec) { alert('No supported H.264 configuration on this device.'); return; }
+
+    const data = await _fetchArtifactData(modId);
+    if (!data) { alert('Artifact data unavailable.'); return; }
+    const html = _decodeTokenURI(data.tokenURI);
+    const composition = _extractComposition(html);
+    if (!composition) { alert('Could not parse composition from tokenURI.'); return; }
+
+    // Build the per-frame painter + the canvas the encoder reads (frameSource).
+    let frameSource, paintFrame, engine;
+    if (isCard) {
+      const COLS = 31, ROWS = 26, CELL = Math.floor(W * 0.92 / COLS);   // 32
+      const gridW = CELL * COLS, gridH = CELL * ROWS;                    // 992 × 832
+      const gridX = Math.round((W - gridW) / 2);                        // 44
+      const gridY = Math.round(H * 80 / 2160);                          // 40 (proportional; no caption overlap)
+      const offBadge = new OffscreenCanvas(gridW, gridH);
+      const obx = offBadge.getContext('2d'); obx.imageSmoothingEnabled = false;
+      engine = _createArtifactEngine(offBadge, composition);
+      if (!engine) { alert('Engine init failed.'); return; }
+      const offCard = new OffscreenCanvas(W, H);
+      const cx = offCard.getContext('2d'); cx.imageSmoothingEnabled = false;
+      cx.fillStyle = capBg; cx.fillRect(0, 0, W, H);
+      const SERIF = "'Times New Roman', Times, serif";
+      cx.textAlign = 'center'; cx.textBaseline = 'alphabetic'; cx.fillStyle = _cardTextColor(capBg);
+      const MAXW = W * 0.86, line1 = 'Modulo artifact #' + modId;
+      let sz1 = Math.round(W * 0.031); cx.font = sz1 + 'px ' + SERIF;
+      const w1 = cx.measureText(line1).width;
+      if (w1 > MAXW) { sz1 = Math.max(16, Math.floor(sz1 * MAXW / w1)); cx.font = sz1 + 'px ' + SERIF; }
+      cx.fillText(line1, W / 2, Math.round(H * 0.867));
+      const sz2 = Math.max(12, Math.round(sz1 * 0.55)); cx.font = sz2 + 'px ' + SERIF;
+      cx.save(); cx.globalAlpha = 0.55; cx.fillText('Check it', W / 2, Math.round(H * 0.905)); cx.restore();
+      frameSource = offCard;
+      paintFrame = () => { engine.paintToBadge(offBadge, obx, { cell: CELL, bg: capBg, cols: COLS, rows: ROWS }); cx.drawImage(offBadge, gridX, gridY); };
+    } else if (isBadge) {
+      const off = new OffscreenCanvas(W, H);
+      const octx = off.getContext('2d'); octx.imageSmoothingEnabled = false;
+      engine = _createArtifactEngine(off, composition);
+      if (!engine) { alert('Engine init failed.'); return; }
+      frameSource = off;
+      const cell = Math.max(4, Math.round(_badgeCell * W / Math.max(1, _badgeCanvasEl.width)));
+      paintFrame = () => engine.paintToBadge(off, octx, { cell: cell, bg: capBg });
+    } else {
+      // Artifact: engine.paintTo is hard-coded to 6 px/cell, so it only frames the
+      // FULL 450×250 grid at 2700×1500 — at 1080×600 it would show a zoomed CENTER
+      // CROP. Render full-res into fullOff (reused each frame), then downscale into
+      // the 1080×600 frame so the mobile clip shows the WHOLE artifact (9:5, matches
+      // the on-screen view + the desktop export framing).
+      const fullOff = new OffscreenCanvas(2700, 1500);
+      const fctx = fullOff.getContext('2d'); fctx.imageSmoothingEnabled = false;
+      engine = _createArtifactEngine(fullOff, composition);
+      if (!engine) { alert('Engine init failed.'); return; }
+      const off = new OffscreenCanvas(W, H);
+      const octx = off.getContext('2d'); octx.imageSmoothingEnabled = true;
+      frameSource = off;
+      paintFrame = () => { engine.paintTo(fullOff, fctx); octx.drawImage(fullOff, 0, 0, W, H); };
+    }
+
+    const target = new Mp4Muxer.ArrayBufferTarget();
+    muxer = new Mp4Muxer.Muxer({ target, video: { codec: 'avc', width: W, height: H, frameRate: FPS }, fastStart: 'fragmented' });  // fragmented = no moov-rewrite doubling
+    encoder = new VideoEncoder({ output: (chunk, meta) => muxer.addVideoChunk(chunk, meta), error: e => console.error('[compact-export]', e) });
+    encoder.configure({ codec: codec, width: W, height: H, bitrate: BITRATE, framerate: FPS, bitrateMode: 'constant', latencyMode: 'quality', hardwareAcceleration: 'prefer-hardware' });
+
+    for (let f = 0; f < FRAMES; f++) {
+      engine.step(engine.dtOps);
+      engine.applyRects();
+      engine.tickRects && engine.tickRects();
+      paintFrame();
+      const frame = new VideoFrame(frameSource, { timestamp: Math.round(f * 1_000_000 / FPS), duration: Math.round(1_000_000 / FPS) });
+      encoder.encode(frame, { keyFrame: f % 120 === 0 });   // 2s GOP (f=0 is a keyframe)
+      frame.close();
+      // Backpressure: bound the encoder queue so raw frames don't pile up (mobile
+      // OOM guard) + a stall escape so a wedged HW encoder can't hang the loop.
+      let stallGuard = 0;
+      while (encoder.encodeQueueSize > 4) {
+        if (++stallGuard > 600) throw new Error('VideoEncoder stalled (queue ' + encoder.encodeQueueSize + ')');
+        await new Promise(r => setTimeout(r, 0));
+      }
+      if (f % 30 === 0 && btn) { btn.textContent = '▪ ' + Math.round(f / FRAMES * 100) + '%'; await new Promise(r => setTimeout(r, 0)); }
+    }
+
+    await encoder.flush();
+    encoder.close(); encoder = null;
+    muxer.finalize();
+    const blob = new Blob([target.buffer], { type: 'video/mp4' });
+    _offerMobileDownload(blob, 'modulo-' + modId + (isCard ? '-card' : isBadge ? '-badge' : '') + '-mobile.mp4');
+  } catch (err) {
+    console.error('[compact-export] failed:', err);
+    alert('Export failed. See console.');
+  } finally {
+    _exportInFlight = false;
+    if (btn) { btn.disabled = false; btn.textContent = origText; }
+    if (encoder) { try { encoder.close(); } catch (_) {} }
+  }
+}
+
+// Save the compact MP4 on mobile. iOS Safari IGNORES <a download> for video/mp4
+// (it opens the player inline) → prefer the Web Share API (share sheet → Save to
+// Files / share), which also works on Android. Fall back to a blob <a download>
+// for Android Chrome / desktop Safari·Firefox. The user's TAP on the banner is the
+// fresh user-gesture both APIs require (a programmatic click after the async encode
+// is dropped on iOS). NOTE: some Android in-app WebViews (WeChat/FB) don't set the
+// 'wv' UA token and may slip the guard — acceptable edge.
+function _offerMobileDownload(blob, filename) {
+  const banner = document.getElementById('mobile-dl-banner');
+  const link = document.getElementById('mobile-dl-link');
+  if (!banner || !link) { console.error('[compact-export] download banner missing'); return; }
+  // Revoke a blob URL left over from a previous export the user never tapped (no
+  // leak across re-exports) and reset the banner to a clean state.
+  if (link._dlUrl) { try { URL.revokeObjectURL(link._dlUrl); } catch (_) {} link._dlUrl = null; }
+  banner.style.display = 'none'; link.onclick = null;
+  const ua = navigator.userAgent || '';
+  if (/Android/.test(ua) && /\bwv\b/.test(ua)) { alert('Open this page in Chrome to save the video (in-app browsers block downloads).'); return; }
+  let file = null;
+  try { file = new File([blob], filename, { type: 'video/mp4' }); } catch (_) {}
+  const canShare = !!(file && navigator.share && navigator.canShare && navigator.canShare({ files: [file] }));
+  link.textContent = 'Tap to save MP4 (' + Math.round(blob.size / 1e6) + ' MB)';
+  banner.style.display = 'block';
+  if (canShare) {
+    link.href = '#'; link.removeAttribute('download');
+    link.onclick = (e) => {
+      e.preventDefault();
+      navigator.share({ files: [file] }).then(() => { banner.style.display = 'none'; }).catch(err => { if (err && err.name !== 'AbortError') console.error('[share]', err); });
+    };
+  } else {
+    const url = URL.createObjectURL(blob);
+    link._dlUrl = url; link.href = url; link.download = filename;
+    link.onclick = () => { setTimeout(() => { URL.revokeObjectURL(url); if (link._dlUrl === url) link._dlUrl = null; banner.style.display = 'none'; link.onclick = null; }, 2000); };
   }
 }
 
