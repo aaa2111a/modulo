@@ -1097,6 +1097,21 @@ body.night .card-loading { background:rgba(255,255,255,0.04); }
 #export-modal-crop input[type="checkbox"] {
   margin-top:3px; flex-shrink:0;
 }
+#export-modal-card {
+  display:flex; align-items:flex-start; gap:10px;
+  padding:10px 12px;
+  border:0.5px solid var(--border-mid);
+  border-radius:6px;
+  cursor:pointer;
+  transition:border-color 0.14s;
+  background:var(--bg-alt);
+  margin-bottom:18px;
+}
+#export-modal-card:hover { border-color:var(--border-strong); }
+#export-modal-card input[type="checkbox"] {
+  margin-top:3px; flex-shrink:0;
+}
+#export-modal-card.disabled { opacity:0.45; cursor:not-allowed; }
 #export-modal-actions {
   display:flex; justify-content:flex-end; gap:8px;
   border-top:0.5px solid var(--border);
@@ -1865,6 +1880,13 @@ body.night .footer-link:hover { color:rgba(255,255,255,0.55); }
           <span class="export-opt-sub" id="export-modal-crop-sub">Match the expand modal dimensions (smaller resolution, higher bits/pixel = better quality at smaller size).</span>
         </span>
         <span class="export-opt-size" id="export-modal-crop-dims">— × —</span>
+      </label>
+      <label id="export-modal-card" style="display:none">
+        <input type="checkbox" id="export-modal-card-input">
+        <span class="export-opt-label">
+          <span class="export-opt-title">Card format (square + caption)</span>
+          <span class="export-opt-sub" id="export-modal-card-sub">Square 2160×2160 with the "Modulo artifact #N · Check it" caption. Uses Max quality.</span>
+        </span>
       </label>
       <div id="export-modal-actions">
         <button id="export-modal-cancel">Cancel</button>
@@ -3668,6 +3690,11 @@ let _exportCropMode = false;
 // Badge-export mode: when set, the export modal's Go runs the SAME pipeline but
 // paints badges (paintToBadge) for the badge-modal's current artifact.
 let _exportBadgeMode = false, _exportBadgeId = null;
+// Card-export mode (2026-06-08): badge-only square card (2160² + serif caption),
+// locked to the max preset. The modal Go routes to _exportBadgeCard (a separate
+// function — _exportMP4's hot path is never touched). _presetBeforeCard restores
+// the user's prior preset selection when the card checkbox is unchecked.
+let _exportCardMode = false, _presetBeforeCard = null;
 
 // Compute the actual crop dimensions (clamped to multiples of PIXEL=6 for
 // integer cell count, and capped at the full grid 2700×1500). Source is
@@ -3716,6 +3743,11 @@ async function _probeExportPresets() {
 async function _openExportModal(modId, badge) {
   _exportBadgeMode = !!badge;
   _exportBadgeId = badge ? modId : null;
+  // P1-A: reset card mode UNCONDITIONALLY on every open so a previously-checked
+  // card box (then Cancelled) can never leak into a later NORMAL modulo export.
+  _exportCardMode = false; _presetBeforeCard = null;
+  const _cardInputReset = document.getElementById('export-modal-card-input');
+  if (_cardInputReset) _cardInputReset.checked = false;
   if (_exportInFlight) return;
   if (!window.VideoEncoder || !window.Mp4Muxer) {
     alert(!window.VideoEncoder ? 'WebCodecs not supported (try Chrome 94+).' : 'mp4-muxer not loaded.');
@@ -3750,8 +3782,10 @@ async function _openExportModal(modId, badge) {
         '<span class="export-opt-sub">' + p.sub + '</span>' +
       '</div>' +
       '<span class="export-opt-size">' + p.estSize + '</span>';
+    const inp = row.querySelector('input');
+    inp.dataset.supported = p.supported ? '1' : '0';  // used by the card-mode preset lock
     if (p.supported) {
-      row.querySelector('input').addEventListener('change', e => {
+      inp.addEventListener('change', e => {
         _exportPresetSelected = e.target.value;
       });
     }
@@ -3768,6 +3802,17 @@ async function _openExportModal(modId, badge) {
   // Crop reads #expand-body (closed in badge mode → garbage dims); hide it.
   const cropLabel = document.getElementById('export-modal-crop');
   if (cropLabel) cropLabel.style.display = badge ? 'none' : '';
+  // Card format — badge mode ONLY (square card + caption), locked to max. Crop is
+  // hidden in badge mode, so card + crop never show together. Disabled if the max
+  // preset isn't supported (card encodes at 2160² @ 200 Mbps, gated again at run).
+  const cardLabel = document.getElementById('export-modal-card');
+  const cardInput = document.getElementById('export-modal-card-input');
+  if (cardLabel) {
+    cardLabel.style.display = badge ? '' : 'none';
+    const maxOk = probed.some(p => p.id === 'max' && p.supported);
+    cardLabel.classList.toggle('disabled', !maxOk);
+    if (cardInput) cardInput.disabled = !maxOk;
+  }
 }
 
 function _closeExportModal() {
@@ -3971,15 +4016,38 @@ document.getElementById('export-modal').addEventListener('click', e => {
 document.getElementById('export-modal-crop-input').addEventListener('change', e => {
   _exportCropMode = e.target.checked;
 });
+// Card mode: when checked, force-select + lock the preset radios to max (the card
+// always encodes at the heaviest settings); on uncheck, restore the prior choice.
+function _applyCardLock(on) {
+  const radios = [...document.querySelectorAll('#export-modal-options input[name="export-preset"]')];
+  if (on) {
+    _presetBeforeCard = _exportPresetSelected;
+    _exportPresetSelected = 'max';
+    radios.forEach(r => { r.checked = (r.value === 'max'); r.disabled = true; });
+  } else {
+    radios.forEach(r => { r.disabled = (r.dataset.supported !== '1'); });
+    if (_presetBeforeCard) {
+      const prev = radios.find(r => r.value === _presetBeforeCard);
+      if (prev && prev.dataset.supported === '1') { prev.checked = true; _exportPresetSelected = _presetBeforeCard; }
+      _presetBeforeCard = null;
+    }
+  }
+}
+document.getElementById('export-modal-card-input').addEventListener('change', e => {
+  _exportCardMode = e.target.checked;
+  _applyCardLock(_exportCardMode);
+});
 document.getElementById('export-modal-go').addEventListener('click', () => {
   const badge = _exportBadgeMode;
   const modId = badge ? _exportBadgeId : _expandOpenId;
   if (modId == null) return;
+  _closeExportModal();
+  // Card export: badge-only square card + caption, locked to max → separate path.
+  if (badge && _exportCardMode) { _exportBadgeCard(modId); return; }
   // Badge mode: no crop (crop dims read #expand-body which is closed) — full
   // 2700×1500; scale the cell so the export matches the on-screen badge density.
   const cropMode = badge ? false : _exportCropMode;
   const badgeCell = badge ? Math.max(4, Math.round(_badgeCell * W_EXPORT / Math.max(1, _badgeCanvasEl.width))) : 0;
-  _closeExportModal();
   _exportMP4(modId, _exportPresetSelected, cropMode, badge, badgeCell);
 });
 
@@ -4881,6 +4949,176 @@ async function _exportBadgePNG() {
   } catch (e) { console.error('[badge-png]', e); alert('PNG export failed. See console.'); }
   finally { btn.disabled = false; btn.textContent = orig; }
 }
+
+// Pick the brand text color (dark vs light) with the higher WCAG contrast ratio
+// against the card background (the bg may be a near-black swatch → light text).
+function _cardTextColor(bg) {
+  const dark = '#23242a', light = '#dbd8d1';
+  if (typeof bg !== 'string' || bg[0] !== '#' || bg.length < 7) return dark;
+  const toLin = c => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+  const lum = hex => {
+    const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+    if ([r, g, b].some(Number.isNaN)) return null;
+    return 0.2126 * toLin(r) + 0.7152 * toLin(g) + 0.0722 * toLin(b);
+  };
+  const Lbg = lum(bg);
+  if (Lbg == null) return dark;
+  const ratio = (a, b) => { const hi = Math.max(a, b) + 0.05, lo = Math.min(a, b) + 0.05; return hi / lo; };
+  return ratio(Lbg, lum(dark)) >= ratio(Lbg, lum(light)) ? dark : light;
+}
+
+// Card MP4 (2026-06-08): square 2160×2160 — badge animation (upper 80%) + a static
+// serif caption "Modulo artifact #N" / "Check it" (lower 20%). Locked to the max
+// preset (200 Mbps H.264). SEPARATE from _exportMP4 (its hot path is untouched).
+// Streaming-to-disk is mandatory (~500 MB) → Chrome/Edge only.
+async function _exportBadgeCard(modId) {
+  if (modId == null) return;
+  // P1-B: guard File System Access + WebCodecs BEFORE taking the in-flight latch,
+  // so an unsupported browser never leaves the toolbar button stuck disabled.
+  if (!window.showSaveFilePicker) { alert('Card export needs a Chromium browser (Chrome/Edge) — File System Access API required for the ~500 MB file.'); return; }
+  if (!window.VideoEncoder || !window.Mp4Muxer) { alert('WebCodecs / mp4-muxer not available.'); return; }
+  if (_exportInFlight) return;
+  _exportInFlight = true;
+
+  const W_CARD = 2160, H_BADGE = 1728, H_CAPTION = 432, H_CARD = 2160;
+  const CARD_PRESET = EXPORT_PRESETS.find(p => p.id === 'max');
+  // Snapshot the live badge view state at start (immutable during the encode →
+  // no flicker if the user changes the bg swatch / size mid-export).
+  const capBg = _badgeBg;
+  const onscreenW = Math.max(1, _badgeCanvasEl.width);
+  const cardCell = Math.min(80, Math.max(4, Math.round(_badgeCell * W_CARD / onscreenW)));
+
+  const btn = document.getElementById('badge-mp4');
+  const origText = btn ? btn.textContent : '↓ MP4';
+  if (btn) btn.disabled = true;
+
+  let encoder = null, muxer = null, fileStream = null;
+  try {
+    if (!CARD_PRESET) { alert('Max preset unavailable.'); return; }
+    const cfg = {
+      codec: CARD_PRESET.codec,
+      width: W_CARD, height: H_CARD,
+      bitrate: CARD_PRESET.bitrate,
+      framerate: FPS_EXPORT,
+      bitrateMode: 'constant',
+      latencyMode: 'quality',
+      hardwareAcceleration: 'prefer-software',
+    };
+    // P1-B: probe at the CARD dims (2160²) — the modal's cached probe is 2700×1500.
+    // Do this BEFORE showSaveFilePicker so a failure never follows a save dialog.
+    const support = await VideoEncoder.isConfigSupported(cfg);
+    if (!support || !support.supported) { alert('H.264 at 2160×2160 is not supported by this browser.'); return; }
+
+    const data = await _fetchArtifactData(modId);
+    if (!data) { alert('Artifact data unavailable.'); return; }
+    const html = _decodeTokenURI(data.tokenURI);
+    const composition = _extractComposition(html);
+    if (!composition) { alert('Could not parse composition from tokenURI.'); return; }
+
+    // Badge band — paintToBadge fills it fully with capBg + centers the grid.
+    const offBadge = new OffscreenCanvas(W_CARD, H_BADGE);
+    const offBadgeCtx = offBadge.getContext('2d');
+    offBadgeCtx.imageSmoothingEnabled = false;
+
+    const engine = _createArtifactEngine(offBadge, composition);
+    if (!engine) { alert('Engine init failed.'); return; }
+
+    // Final card frame source.
+    const offCard = new OffscreenCanvas(W_CARD, H_CARD);
+    const cardCtx = offCard.getContext('2d');
+    cardCtx.imageSmoothingEnabled = false;
+
+    // Caption band — pre-rendered ONCE (static); composited under the badge each
+    // frame so per-frame cost is just two drawImage calls (no text re-layout).
+    const offCaption = new OffscreenCanvas(W_CARD, H_CAPTION);
+    const cctx = offCaption.getContext('2d');
+    cctx.fillStyle = capBg;
+    cctx.fillRect(0, 0, W_CARD, H_CAPTION);
+    const textColor = _cardTextColor(capBg);
+    cctx.textAlign = 'center';
+    cctx.textBaseline = 'alphabetic';
+    cctx.fillStyle = textColor;
+    // Line 1 — shrink-to-fit so long ids (#6666) never clip (P2-C).
+    const SERIF = "'Times New Roman', Times, serif";
+    const MAXW = W_CARD * 0.86;
+    const line1 = 'Modulo artifact #' + modId;
+    let sz1 = Math.round(W_CARD * 0.05);
+    cctx.font = sz1 + 'px ' + SERIF;
+    const w1 = cctx.measureText(line1).width;
+    if (w1 > MAXW) { sz1 = Math.max(40, Math.floor(sz1 * MAXW / w1)); cctx.font = sz1 + 'px ' + SERIF; }
+    cctx.fillText(line1, W_CARD / 2, Math.round(H_CAPTION * 0.42));
+    // Line 2 — "Check it", smaller + muted.
+    const sz2 = Math.max(22, Math.round(sz1 * 0.56));
+    cctx.font = sz2 + 'px ' + SERIF;
+    cctx.globalAlpha = 0.55;
+    cctx.fillText('Check it', W_CARD / 2, Math.round(H_CAPTION * 0.74));
+    cctx.globalAlpha = 1.0;
+
+    // Streaming-to-disk (mandatory: 200 Mbps × 20 s ≈ 500 MB). showSaveFilePicker
+    // already guaranteed above; the probe also already passed.
+    let fileHandle;
+    try {
+      fileHandle = await window.showSaveFilePicker({
+        suggestedName: 'modulo-' + modId + '-card.mp4',
+        types: [{ description: 'MP4 video', accept: { 'video/mp4': ['.mp4'] } }],
+      });
+    } catch (e) {
+      if (e && e.name === 'AbortError') return; // user cancelled before any encode work
+      throw e;
+    }
+    fileStream = await fileHandle.createWritable();
+    const target = new Mp4Muxer.FileSystemWritableFileStreamTarget(fileStream);
+    muxer = new Mp4Muxer.Muxer({
+      target,
+      video: { codec: 'avc', width: W_CARD, height: H_CARD, frameRate: FPS_EXPORT },
+      fastStart: 'fragmented',
+    });
+    encoder = new VideoEncoder({
+      output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+      error: e => console.error('[card-export]', e),
+    });
+    encoder.configure(cfg);
+
+    for (let f = 0; f < TOTAL_FRAMES; f++) {
+      engine.step(engine.dtOps);
+      engine.applyRects();
+      engine.tickRects && engine.tickRects();
+      engine.paintToBadge(offBadge, offBadgeCtx, { cell: cardCell, bg: capBg });
+      cardCtx.drawImage(offBadge, 0, 0);          // badge band (animated) on top
+      cardCtx.drawImage(offCaption, 0, H_BADGE);  // static caption below
+
+      // Untagged VideoFrame (no colorSpace) — matches the codebase's deliberate
+      // limited-range BT.709 bitstream decision; do NOT add fullRange.
+      const frame = new VideoFrame(offCard, {
+        timestamp: Math.round(f * 1_000_000 / FPS_EXPORT),
+        duration: Math.round(1_000_000 / FPS_EXPORT),
+      });
+      encoder.encode(frame, { keyFrame: true });
+      frame.close();
+
+      if (f % 30 === 0 && btn) {
+        btn.textContent = '▪ ' + Math.round(f / TOTAL_FRAMES * 100) + '%';
+        await new Promise(r => setTimeout(r, 0));
+      }
+    }
+
+    await encoder.flush();
+    encoder.close();
+    encoder = null; // signal closed so finally skips re-close
+    muxer.finalize();
+    await fileStream.close();
+    fileStream = null; // happy-path complete → finally skips abort
+  } catch (err) {
+    console.error('[card-export] failed:', err);
+    alert('Card export failed. See console.');
+  } finally {
+    _exportInFlight = false;
+    if (btn) { btn.disabled = false; btn.textContent = origText; }
+    if (encoder) { try { encoder.close(); } catch (_) {} }
+    if (fileStream) { try { await fileStream.abort(); } catch (_) {} }
+  }
+}
+
 // MP4 of the badge view — reuses the page's export modal + pipeline + settings.
 document.getElementById('badge-mp4').addEventListener('click', () => {
   if (_badgeCurrentId == null) { alert('Select an artifact first.'); return; }
