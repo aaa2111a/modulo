@@ -209,7 +209,13 @@ body.night .display-title { color:rgba(255,255,255,1.0); }
   color:var(--text); background:none; border:none; cursor:pointer; }
 .acc-head .caret { color:var(--text-sub); transition:transform 0.15s; font-size:9px; }
 .accordion.collapsed .acc-head .caret { transform:rotate(-90deg); }
-.acc-body { display:flex; flex-direction:column; padding-bottom:8px; max-height:340px; overflow-y:auto; }
+.acc-body { display:flex; flex-direction:column; padding:0 8px 8px 0; max-height:340px; overflow-y:auto; }
+/* Themed scrollbars (kill the white default); gap to the trait counts via the padding-right above */
+#filter-sidebar, .acc-body, #punk-detail { scrollbar-width:thin; scrollbar-color:var(--border-mid) transparent; }
+#filter-sidebar::-webkit-scrollbar, .acc-body::-webkit-scrollbar, #punk-detail::-webkit-scrollbar { width:8px; height:8px; }
+#filter-sidebar::-webkit-scrollbar-track, .acc-body::-webkit-scrollbar-track, #punk-detail::-webkit-scrollbar-track { background:transparent; }
+#filter-sidebar::-webkit-scrollbar-thumb, .acc-body::-webkit-scrollbar-thumb, #punk-detail::-webkit-scrollbar-thumb { background:var(--border-mid); border-radius:4px; }
+#filter-sidebar::-webkit-scrollbar-thumb:hover, .acc-body::-webkit-scrollbar-thumb:hover, #punk-detail::-webkit-scrollbar-thumb:hover { background:var(--border-strong); }
 .accordion.collapsed .acc-body { display:none; }
 .trait-row { display:flex; align-items:center; gap:9px; padding:6px 2px; cursor:pointer; font-size:12px; }
 .trait-row:hover { color:var(--text); }
@@ -418,8 +424,14 @@ body.night #pd-overlay { background:rgba(0,0,0,0.62); }
   try { if (localStorage.getItem('tc-night') === '1') _setNight(true); } catch (_) {}
 
   // ── Constants ──
-  var COLS = 8, SRC = 24, ATLAS_COLS = 100, TOTAL = 10000, STICKY = 34;
-  var PUNK_BG = '#638596';   // canonical CryptoPunks background (shown in the modal; grid stays transparent)
+  var COLS = 7, SRC = 24, ATLAS_COLS = 100, TOTAL = 10000, STICKY = 34;
+  // CryptoPunks market-status background colours (cryptopunks.app convention). Blue is the
+  // canonical default; red/purple/green are approximations — tweak to taste.
+  var PUNK_BG = '#638596';          // blue  = not for sale (default)
+  var PUNK_BG_RED = '#c0392b';      // red   = offered for sale
+  var PUNK_BG_PURPLE = '#8e7cc3';   // purple= has an active bid
+  var PUNK_BG_GREEN = '#52a360';    // green = wrapped (ERC-721 markets)
+  var _punkBg = PUNK_BG;            // current punk's live status colour (shown in the modal; grid stays transparent)
   var DPR = Math.min(window.devicePixelRatio || 1, 3);
   var ATLAS_URL = 'punks-atlas.png', TRAITS_URL = 'punks-traits.json';
   var LAYERS_URL = 'punks-layers.png', NAMES_URL = 'punks-layer-names.json';
@@ -469,7 +481,14 @@ body.night #pd-overlay { background:rgba(0,0,0,0.62); }
       sel.forEach(function (v) { var arr = IDX.get(cat + '::' + v); if (arr) for (var i = 0; i < arr.length; i++) u.add(arr[i]); });
       dims.push(u);
     });
-    if (!dims.length) { filteredIds = Int32Array.from({ length: TOTAL }, function (_, i) { return i; }); return; }
+    if (!dims.length) {
+      var all = new Int32Array(TOTAL);
+      for (var ai = 0; ai < TOTAL; ai++) all[ai] = ai;
+      // Fisher-Yates: random order when no filter is active (fresh shuffle on load / clear-all)
+      for (var aj = TOTAL - 1; aj > 0; aj--) { var ak = (Math.random() * (aj + 1)) | 0, at = all[aj]; all[aj] = all[ak]; all[ak] = at; }
+      filteredIds = all;
+      return;
+    }
     dims.sort(function (a, b) { return a.size - b.size; });
     var result = dims[0];
     for (var i = 1; i < dims.length; i++) {
@@ -529,17 +548,12 @@ body.night #pd-overlay { background:rgba(0,0,0,0.62); }
         if (id === hoverId) { hx = dx; hy = yBase; }
       }
     }
-    // Hover "pop": redraw the hovered punk scaled up, on top of its neighbours
+    // Hover "pop": redraw the hovered punk scaled up, on top of its neighbours (no shadow → no frame-like halo)
     if (hoverId >= 0 && hx !== null) {
       var hsx = (hoverId % ATLAS_COLS) * SRC, hsy = Math.floor(hoverId / ATLAS_COLS) * SRC;
       var sc = 1.12, sz = cellPx * sc, o = (cellPx - sz) / 2;
-      ctx.save();
       ctx.imageSmoothingEnabled = false;
-      ctx.shadowColor = 'rgba(0,0,0,0.28)';
-      ctx.shadowBlur = cellPx * 0.14;
-      ctx.shadowOffsetY = cellPx * 0.04;
       ctx.drawImage(atlasBmp, hsx, hsy, SRC, SRC, hx + o, hy + o, sz, sz);
-      ctx.restore();
     }
   }
   function tick() { if (!rafOn) return; if (dirty) { dirty = false; redraw(); } requestAnimationFrame(tick); }
@@ -585,10 +599,11 @@ body.night #pd-overlay { background:rgba(0,0,0,0.62); }
   function unlockScroll() { document.body.style.position = ''; document.body.style.top = ''; document.body.style.width = ''; window.scrollTo(0, _savedScrollY); }
   function openDetail(id) {
     window._activePunkId = id;
+    _punkBg = PUNK_BG;                          // instant blue; status read upgrades it async
     document.getElementById('pd-name').textContent = 'CryptoPunk #' + id;
     pdCtx.imageSmoothingEnabled = false;
     pdCtx.clearRect(0, 0, 144, 144);
-    pdCtx.fillStyle = PUNK_BG; pdCtx.fillRect(0, 0, 144, 144);
+    pdCtx.fillStyle = _punkBg; pdCtx.fillRect(0, 0, 144, 144);
     if (atlasBmp) pdCtx.drawImage(atlasBmp, (id % ATLAS_COLS) * SRC, Math.floor(id / ATLAS_COLS) * SRC, SRC, SRC, 0, 0, 144, 144);
     var links = document.getElementById('pd-links'); links.textContent = '';
     var os = document.createElement('a'); os.href = 'https://opensea.io/assets/ethereum/0xb47e3cd837ddf8e4c57f05d70ab865de6e193bbb/' + id;
@@ -598,6 +613,7 @@ body.night #pd-overlay { background:rgba(0,0,0,0.62); }
     if (!detail.classList.contains('open')) lockScroll();
     overlay.classList.add('open'); detail.classList.add('open');
     _openFusion();                                   // fuse menu is always visible (no button)
+    _loadPunkStatusBg(id);                           // live market-status background
   }
   function closeDetail() {
     if (!detail.classList.contains('open')) return;
@@ -805,10 +821,50 @@ body.night #pd-overlay { background:rgba(0,0,0,0.62); }
     if (_settleArtifact) return true;
     if (!window.ethers) return false;
     try {
-      _provider = new window.ethers.JsonRpcProvider(RPC_URL, CHAIN_ID, { batchMaxCount: 20 });
+      _provider = new window.ethers.JsonRpcProvider(RPC_URL, CHAIN_ID, { batchMaxCount: 15 });
       _settleArtifact = new window.ethers.Contract(SETTLE_ARTIFACT_ADDRESS, SETTLE_ARTIFACT_ABI, _provider);
       return true;
     } catch (e) { console.error('[fuse] chain init', e); return false; }
+  }
+
+  // ── Live CryptoPunks market-status background (read on modal open; render blue instantly, upgrade async) ──
+  var PUNKS_MARKET_ADDRESS = '0xb47e3cd837dDF8E4c57F05d70Ab865de6e193BBB';
+  var WRAPPED_PUNKS_ADDRESS = '0xb7F7F6C52F2e2fdb1963Eab30438024864c313F6';
+  var PUNKS_MARKET_ABI = [
+    'function punkIndexToAddress(uint256) view returns (address)',
+    'function punksOfferedForSale(uint256) view returns (bool, uint256, address, uint256, address)',
+    'function punkBids(uint256) view returns (bool, uint256, address, uint256)'
+  ];
+  var _punksMarket = null, _statusCache = new Map();   // id -> Promise<colorHex>
+  function _ensurePunksMarket() {
+    if (_punksMarket) return true;
+    if (!_ensureOnChain()) return false;               // ethers not ready → caller keeps blue
+    try { _punksMarket = new window.ethers.Contract(PUNKS_MARKET_ADDRESS, PUNKS_MARKET_ABI, _provider); return true; }
+    catch (e) { return false; }
+  }
+  function _loadPunkStatusBg(myId) {
+    if (!_ensurePunksMarket()) return;
+    if (!_statusCache.has(myId)) {
+      var pr = (async function () {
+        var r = await Promise.all([
+          _punksMarket.punkIndexToAddress(myId),
+          _punksMarket.punksOfferedForSale(myId),
+          _punksMarket.punkBids(myId)
+        ]);
+        var owner = r[0], offer = r[1], bid = r[2];
+        if (owner && String(owner).toLowerCase() === WRAPPED_PUNKS_ADDRESS.toLowerCase()) return PUNK_BG_GREEN;
+        if (offer && offer[0]) return PUNK_BG_RED;
+        if (bid && bid[0]) return PUNK_BG_PURPLE;
+        return PUNK_BG;
+      })();
+      _statusCache.set(myId, pr);
+      pr.catch(function () { _statusCache.delete(myId); });   // failed read not cached → retry on next open
+    }
+    _statusCache.get(myId).then(function (color) {
+      if (window._activePunkId !== myId || !detail.classList.contains('open')) return;   // stale (switched / closed)
+      _punkBg = color;
+      if (!_fz.assignments.size) _drawStaticPunk();           // static redraw; the fusion rAF reads _punkBg each frame
+    }).catch(function () {});
   }
   var _artCache = new Map();
   function _fetchArtifactComposition(id) {
@@ -1197,7 +1253,7 @@ function _extractComposition(decodedHtml) {
   function _drawStaticPunk() {
     if (_fz.punkId == null || !atlasBmp) return;
     pdCtx.clearRect(0, 0, 144, 144); pdCtx.imageSmoothingEnabled = false;
-    pdCtx.fillStyle = PUNK_BG; pdCtx.fillRect(0, 0, 144, 144);
+    pdCtx.fillStyle = _punkBg; pdCtx.fillRect(0, 0, 144, 144);
     pdCtx.drawImage(atlasBmp, (_fz.punkId % ATLAS_COLS) * 24, Math.floor(_fz.punkId / ATLAS_COLS) * 24, 24, 24, 0, 0, 144, 144);
   }
   // ── Unified animation loop: assignment engines (60fps) + picker previews (~30fps) ──
@@ -1231,7 +1287,7 @@ function _extractComposition(decodedHtml) {
           }
         }
         pdCtx.clearRect(0, 0, 144, 144); pdCtx.imageSmoothingEnabled = false;
-        pdCtx.fillStyle = PUNK_BG; pdCtx.fillRect(0, 0, 144, 144);     // punk background behind the fused layers
+        pdCtx.fillStyle = _punkBg; pdCtx.fillRect(0, 0, 144, 144);     // live status background behind the fused layers
         pdCtx.drawImage(_fz.comCv, 0, 0);                               // 1:1 into the 144 pd-canvas
       } catch (_) {}
     }
@@ -1249,7 +1305,7 @@ function _extractComposition(decodedHtml) {
     if (_fz.assignments.size || _pk.live.size) _animRaf = requestAnimationFrame(_animFrame);
   }
   function _fzTeardown() { _fz.assignments.clear(); _fz.pending.clear(); _fz.selected = null; _fz.punkId = null; _fz.caCv = null; _fz.comCv = null; _animStopIfIdle(); }
-  function _resetFusion() { _pkTeardown(); _fzTeardown(); var p = document.getElementById('fz-panel'); if (p) p.style.display = 'none'; var p2 = document.getElementById('fz-pick'); if (p2) p2.style.display = 'none'; _fzStatus(''); }
+  function _resetFusion() { _punkBg = PUNK_BG; _pkTeardown(); _fzTeardown(); var p = document.getElementById('fz-panel'); if (p) p.style.display = 'none'; var p2 = document.getElementById('fz-pick'); if (p2) p2.style.display = 'none'; _fzStatus(''); }
   function _clearAllFusion() { _fz.assignments.clear(); _fz.pending.clear(); _animStopIfIdle(); _refreshPills(); _drawStaticPunk(); _fzStatus('cleared'); }
   function _refreshPills() {
     var host = document.getElementById('fz-traits'); if (!host) return;
