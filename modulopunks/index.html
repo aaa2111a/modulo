@@ -1226,7 +1226,8 @@ function _extractComposition(decodedHtml) {
             a.engine.paintToNative(a.off450, a.off450ctx);
             _fz.caCtx.globalCompositeOperation = 'source-over';
             _fz.caCtx.clearRect(0, 0, 24, 24);
-            _fz.caCtx.drawImage(a.off450, 0, 0, 450, 250, 0, 0, 24, 24);
+            // Centered 24×24 crop of the 450×250 grid (1 punk cell = 1 modulo cell, no squish)
+            _fz.caCtx.drawImage(a.off450, 213, 113, 24, 24, 0, 0, 24, 24);
             _fz.caCtx.globalCompositeOperation = 'destination-in';
             _fz.caCtx.drawImage(layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, 24, 24);
             _fz.caCtx.globalCompositeOperation = 'source-over';
@@ -1246,7 +1247,7 @@ function _extractComposition(decodedHtml) {
           p.engine.step(p.engine.dtOps); p.engine.applyRects(); p.engine.tickRects && p.engine.tickRects();
           p.engine.paintToNative(p.off, p.offctx);
           p.ctx.clearRect(0, 0, 24, 24); p.ctx.imageSmoothingEnabled = false;
-          p.ctx.drawImage(p.off, 0, 0, 450, 250, 0, 0, 24, 24);
+          p.ctx.drawImage(p.off, 213, 113, 24, 24, 0, 0, 24, 24);   // centered 24×24 crop (no squish)
         } catch (_) {}
       });
     }
