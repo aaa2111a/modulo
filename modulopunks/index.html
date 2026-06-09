@@ -488,6 +488,11 @@ body.night #filter-btn { background:#2c2b28; }
   var _punkQuery = null;        // when a valid punk # is typed in the search → grid shows just that punk
   var atlasBmp = null;          // ImageBitmap (composite punks)
   var layerBmp = null;          // ImageBitmap (133-sprite layer atlas, for fusion masks)
+  var maskBmp = null;           // fusion-mask copy of layerBmp: overlay sprites (zero opaque px,
+                                // e.g. Shadow Beard a=77 / Eye Shadows a=153) binarized alpha>0→255
+                                // so a fused modulo renders fully opaque; mixed sprites (Cigarette
+                                // smoke, glasses lenses — have opaque cores) keep authentic alpha.
+                                // null → _composeFusionFrame falls back to layerBmp (ghosted).
   var layerNames = {};          // { "assetIdx": "Pretty Name" }
   var state = { Type: new Set(), AccCount: new Set(), Acc: new Set() };
 
@@ -835,6 +840,31 @@ body.night #filter-btn { background:#2c2b28; }
       img.src = url;
     });
   }
+  // Builds the fusion-mask atlas from the layer atlas: per 24×24 sprite, if it has
+  // NO fully-opaque pixel (pure semi-transparent overlay — authentic on-chain art),
+  // binarize alpha>0 → 255 so destination-in masks don't ghost the fused modulo.
+  // Sprites with any opaque pixel (smoke, lenses) are left untouched. Returns a
+  // canvas (valid drawImage source). Throws propagate to the caller's try/catch.
+  function _buildMaskBmp(bmp) {
+    var cv = document.createElement('canvas'); cv.width = bmp.width; cv.height = bmp.height;
+    var cx = cv.getContext('2d'); cx.imageSmoothingEnabled = false; cx.drawImage(bmp, 0, 0);
+    var img = cx.getImageData(0, 0, cv.width, cv.height), d = img.data;
+    var n = Math.floor(bmp.width / SRC);
+    for (var s = 0; s < n; s++) {
+      var hasOpaque = false, x, y, p;
+      for (y = 0; y < SRC && !hasOpaque; y++)
+        for (x = 0; x < SRC; x++)
+          if (d[((y * cv.width) + s * SRC + x) * 4 + 3] === 255) { hasOpaque = true; break; }
+      if (hasOpaque) continue;                          // mixed/opaque sprite → keep authentic alpha
+      for (y = 0; y < SRC; y++)
+        for (x = 0; x < SRC; x++) {
+          p = ((y * cv.width) + s * SRC + x) * 4 + 3;
+          if (d[p] > 0) d[p] = 255;                     // overlay sprite → fully opaque mask
+        }
+    }
+    cx.putImageData(img, 0, 0);
+    return cv;
+  }
   function init() {
     Promise.all([
       fetch(ATLAS_URL).then(function (r) { if (!r.ok) throw new Error('atlas ' + r.status); return r.blob(); }),
@@ -846,7 +876,10 @@ body.night #filter-btn { background:#2c2b28; }
       if (!Array.isArray(traits)) throw new Error('traits JSON malformed');   // P3-4 schema guard
       layerNames = res[3] || {};
       var ps = [decodeAtlas(res[0]).then(function (bmp) { atlasBmp = bmp; })];
-      if (res[2]) ps.push(decodeAtlas(res[2]).then(function (bmp) { layerBmp = bmp; }, function () { layerBmp = null; }));  // fusion data optional → never block boot
+      if (res[2]) ps.push(decodeAtlas(res[2]).then(function (bmp) {
+        layerBmp = bmp;
+        try { maskBmp = _buildMaskBmp(bmp); } catch (e) { maskBmp = null; }   // fail-soft → mask falls back to layerBmp
+      }, function () { layerBmp = null; }));  // fusion data optional → never block boot
       return Promise.all(ps);
     }).then(function () {
       buildIndex();
@@ -1265,7 +1298,7 @@ function _extractComposition(decodedHtml) {
         _fz.caCtx.clearRect(0, 0, 144, 144);
         _fz.caCtx.drawImage(a.off, 0, 0);                           // 1:1
         _fz.caCtx.globalCompositeOperation = 'destination-in';
-        _fz.caCtx.drawImage(layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, 144, 144);  // trait mask upscaled 24→144 nearest
+        _fz.caCtx.drawImage(maskBmp || layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, 144, 144);  // trait mask (overlay sprites binarized) upscaled 24→144 nearest
         _fz.caCtx.globalCompositeOperation = 'source-over';
         _fz.comCtx.drawImage(_fz.caCv, 0, 0);
       } else if (layerBmp) {
