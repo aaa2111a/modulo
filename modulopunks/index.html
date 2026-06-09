@@ -1583,7 +1583,8 @@ function _extractComposition(decodedHtml) {
         if (sup && sup.supported) { codec = ladder[ci]; break; }
       }
       if (!codec) { alert('No supported H.264 configuration on this device.'); return; }
-      var capBg = '#dbd8d1';   // beige card background (like collection's card), not the punk's status colour
+      var capBg = '#dbd8d1';   // beige card frame + caption strip (like collection's card)
+      var punkBg = _punkBg;    // punk-square bg = exactly what the modal shows (status colour, or BG modulo fills it)
       var S = 832, pX = Math.floor((W - S) / 2), pY = 40;            // square punk above the caption (no overlap)
       var card = _pkOff(W, H), cx = card.getContext('2d'); cx.imageSmoothingEnabled = false;
       cx.fillStyle = capBg; cx.fillRect(0, 0, W, H);
@@ -1615,7 +1616,7 @@ function _extractComposition(decodedHtml) {
       for (var f = 0; f < FRAMES; f++) {
         if (_fz.punkId !== myPunk || !detail.classList.contains('open')) throw new Error('modal changed mid-export');
         _composeFusionFrame();
-        cx.fillStyle = capBg; cx.fillRect(pX, pY, S, S);             // clear punk area (comCv has transparent gaps when no BG modulo)
+        cx.fillStyle = punkBg; cx.fillRect(pX, pY, S, S);            // punk-square bg = the modal's bg (status colour); BG modulo overdraws it
         cx.imageSmoothingEnabled = false;
         cx.drawImage(_fz.comCv, 0, 0, 144, 144, pX, pY, S, S);       // fused punk upscaled (nearest)
         var frame = new VideoFrame(card, { timestamp: Math.round(f * 1000000 / FPS), duration: Math.round(1000000 / FPS) });
