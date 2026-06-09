@@ -169,7 +169,7 @@ body.night #cta-collection:hover { background:rgba(255,255,255,0.12); color:#fff
 /* ── Grid dot background + page header ── */
 .grid-bg { background-image:radial-gradient(rgba(0,0,0,0.09) 1px, transparent 1px); background-size:20px 20px; }
 body.night .grid-bg { background-image:radial-gradient(rgba(255,255,255,0.06) 1px, transparent 1px); }
-.page-header { padding:64px 52px 22px; position:relative; }
+.page-header { padding:74px 52px 72px; position:relative; }
 .header-inner { max-width:1500px; margin:0 auto; display:flex; flex-direction:column; align-items:center; text-align:center; }
 .id-title-row { display:flex; align-items:baseline; justify-content:center; gap:14px; }
 .id-mark { display:inline-block; vertical-align:baseline; width:30px; height:30px; margin-left:14px; border-radius:5px; }
@@ -219,7 +219,12 @@ body.night .display-title { color:rgba(255,255,255,1.0); }
 .accordion.collapsed .acc-body { display:none; }
 .trait-row { display:flex; align-items:center; gap:9px; padding:6px 2px; cursor:pointer; font-size:12px; }
 .trait-row:hover { color:var(--text); }
-.trait-row input { width:13px; height:13px; flex-shrink:0; accent-color:#6363ff; cursor:pointer; }
+.trait-row input { width:14px; height:14px; flex-shrink:0; cursor:pointer; margin:0;
+  -webkit-appearance:none; appearance:none; background:var(--border-mid);
+  border:0.5px solid var(--border-strong); border-radius:3px; position:relative; }
+.trait-row input:checked { background:#6363ff; border-color:#6363ff; }
+.trait-row input:checked::after { content:''; position:absolute; left:4px; top:1px; width:3px; height:7px;
+  border:solid #fff; border-width:0 2px 2px 0; transform:rotate(45deg); }
 .trait-row .tlabel { flex:1; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .trait-row .tcount { color:var(--text-meta); font-size:11px; }
 .trait-row.hidden { display:none; }
@@ -353,8 +358,7 @@ body.night #pd-overlay { background:rgba(0,0,0,0.62); }
       <h1 class="display-title">Modulo Punks</h1>
       <img id="header-mark" class="id-mark" alt="">
     </div>
-    <div class="display-sub">all 10,000 cryptopunks · trait filter</div>
-    <div class="result-count" id="result-count"><b>10,000</b> / 10,000 punks</div>
+    <div class="display-sub">all 10,000 cryptopunks powered by modulo artifacts - fully on-chain</div>
   </div>
 </header>
 
@@ -688,7 +692,7 @@ body.night #pd-overlay { background:rgba(0,0,0,0.62); }
   }
   function syncResultCount() {
     var n = filteredIds ? filteredIds.length : 0;
-    var el = document.getElementById('result-count'); el.textContent = '';
+    var el = document.getElementById('result-count'); if (!el) return; el.textContent = '';
     var b = document.createElement('b'); b.textContent = n.toLocaleString(); el.appendChild(b);
     el.appendChild(document.createTextNode(' / 10,000 punks'));
   }
