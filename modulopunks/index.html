@@ -1583,7 +1583,7 @@ function _extractComposition(decodedHtml) {
         if (sup && sup.supported) { codec = ladder[ci]; break; }
       }
       if (!codec) { alert('No supported H.264 configuration on this device.'); return; }
-      var capBg = _punkBg;
+      var capBg = '#dbd8d1';   // beige card background (like collection's card), not the punk's status colour
       var S = 832, pX = Math.floor((W - S) / 2), pY = 40;            // square punk above the caption (no overlap)
       var card = _pkOff(W, H), cx = card.getContext('2d'); cx.imageSmoothingEnabled = false;
       cx.fillStyle = capBg; cx.fillRect(0, 0, W, H);
