@@ -1275,6 +1275,7 @@ function _extractComposition(decodedHtml) {
 
   // ── Fusion state + MULTI-engine compose loop (Phase 3: N traits at once) ──
   var FUSE_CAP = (window.matchMedia && window.matchMedia('(pointer:coarse)').matches) ? 2 : 6;
+  var BG_ID = -1;   // synthetic "Background" pseudo-trait id — never in _fz.L, never indexes layerBmp
   var _fz = { raf: 0, punkId: null, L: null, selected: null, tokenSeq: 0,
               assignments: new Map(),  // layerId -> { engine, off, offctx, artifactId } (off = 144×144)
               pending: new Map(),       // layerId -> token (in-flight fetch guard)
@@ -1286,7 +1287,7 @@ function _extractComposition(decodedHtml) {
     _fz.comCv = _pkOff(144, 144); _fz.comCtx = _fz.comCv.getContext('2d'); _fz.comCtx.imageSmoothingEnabled = false;
   }
   function _fzStatus(t) { var e = document.getElementById('fz-status'); if (e) e.textContent = t || ''; }
-  function _labelFor(li, i) { return i === 0 ? 'Body' : (layerNames[String(li)] || ('#' + li)); }
+  function _labelFor(li, i) { if (li === BG_ID) return 'Background'; return i === 0 ? 'Body' : (layerNames[String(li)] || ('#' + li)); }
   function _drawStaticPunk() {
     if (_fz.punkId == null || !atlasBmp) return;
     pdCtx.clearRect(0, 0, 144, 144); pdCtx.imageSmoothingEnabled = false;
@@ -1308,6 +1309,8 @@ function _extractComposition(decodedHtml) {
         _fzAlloc();
         _fz.assignments.forEach(function (a) { a.engine.step(a.engine.dtOps); a.engine.applyRects(); a.engine.tickRects && a.engine.tickRects(); });
         _fz.comCtx.clearRect(0, 0, 144, 144);
+        var bgA = _fz.assignments.get(BG_ID);
+        if (bgA) { bgA.engine.paintTo(bgA.off, bgA.offctx); _fz.comCtx.drawImage(bgA.off, 0, 0); }  // full-frame base = background
         for (var i = 0; i < _fz.L.length; i++) {
           var li = _fz.L[i], a = _fz.assignments.get(li);
           if (a && layerBmp) {
@@ -1350,6 +1353,10 @@ function _extractComposition(decodedHtml) {
     _fz.punkId = pid; _fz.L = traits[pid].L || [];
     _fz.selected = (_fz.L.length ? _fz.L[0] : null);
     var host = document.getElementById('fz-traits'); host.textContent = '';
+    var bgPill = document.createElement('button'); bgPill.type = 'button'; bgPill.className = 'fz-pill';
+    bgPill.dataset.li = BG_ID; bgPill.dataset.i = -1;          // sentinel; _labelFor short-circuits → 'Background'
+    bgPill.addEventListener('click', function () { _fz.selected = BG_ID; _refreshPills(); });
+    host.appendChild(bgPill);                                  // Background pill first; default selection stays Body
     _fz.L.forEach(function (li, i) {
       var pill = document.createElement('button'); pill.type = 'button'; pill.className = 'fz-pill';
       pill.dataset.li = li; pill.dataset.i = i;
