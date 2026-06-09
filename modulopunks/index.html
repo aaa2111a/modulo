@@ -1573,7 +1573,8 @@ function _extractComposition(decodedHtml) {
     _exportInFlight = true; _animStop();
     var btn = document.getElementById('fz-export'), origText = btn ? btn.textContent : '↓ MP4';
     if (btn) btn.disabled = true;
-    var encoder = null, muxer = null;
+    var encoder = null, muxer = null, fileStream = null;
+    var toDisk = !!window.showSaveFilePicker;   // desktop: native "Save As" + stream (like collection); else mobile share/blob banner
     try {
       var W = 1080, H = 1080, FPS = 60, FRAMES = FPS * 20, BITRATE = 8000000;
       var ladder = ['avc1.64002a', 'avc1.640028', 'avc1.4d4028', 'avc1.42e01f'], codec = null;
@@ -1596,7 +1597,17 @@ function _extractComposition(decodedHtml) {
       var sz2 = Math.max(12, Math.round(sz1 * 0.55)); cx.font = sz2 + 'px ' + SERIF;
       cx.save(); cx.globalAlpha = 0.55; cx.fillText('Modulo Punks', W / 2, Math.round(H * 0.905)); cx.restore();
 
-      var target = new Mp4Muxer.ArrayBufferTarget();
+      var filename = 'cryptopunk-' + myPunk + '-modulo.mp4';
+      var target;
+      if (toDisk) {                                                   // desktop — native "Save As" dialog + stream to disk (like collection)
+        var fh;
+        try { fh = await window.showSaveFilePicker({ suggestedName: filename, types: [{ description: 'MP4 video', accept: { 'video/mp4': ['.mp4'] } }] }); }
+        catch (e) { if (e && e.name === 'AbortError') return; throw e; }   // user cancelled the dialog → finally cleans up
+        fileStream = await fh.createWritable();
+        target = new Mp4Muxer.FileSystemWritableFileStreamTarget(fileStream);
+      } else {                                                        // mobile (no File System API) — ArrayBuffer + share/blob banner
+        target = new Mp4Muxer.ArrayBufferTarget();
+      }
       muxer = new Mp4Muxer.Muxer({ target: target, video: { codec: 'avc', width: W, height: H, frameRate: FPS }, fastStart: 'fragmented' });
       encoder = new VideoEncoder({ output: function (chunk, meta) { muxer.addVideoChunk(chunk, meta); }, error: function (e) { console.error('[card-export]', e); } });
       encoder.configure({ codec: codec, width: W, height: H, bitrate: BITRATE, framerate: FPS, bitrateMode: 'constant', latencyMode: 'quality', hardwareAcceleration: 'prefer-hardware' });
@@ -1616,8 +1627,8 @@ function _extractComposition(decodedHtml) {
       }
       await encoder.flush(); encoder.close(); encoder = null;
       muxer.finalize();
-      var blob = new Blob([target.buffer], { type: 'video/mp4' });
-      _offerMobileDownload(blob, 'cryptopunk-' + myPunk + '-modulo.mp4');
+      if (toDisk) { await fileStream.close(); fileStream = null; }      // written to the chosen file (native Save As)
+      else { var blob = new Blob([target.buffer], { type: 'video/mp4' }); _offerMobileDownload(blob, filename); }
     } catch (err) {
       console.error('[card-export] failed:', err);
       if (String((err && err.message) || '').indexOf('mid-export') === -1) alert('Export failed. See console.');
@@ -1625,6 +1636,7 @@ function _extractComposition(decodedHtml) {
       _exportInFlight = false;
       if (btn) { btn.disabled = false; btn.textContent = origText; }
       if (encoder) { try { encoder.close(); } catch (_) {} }
+      if (fileStream) { try { await fileStream.abort(); } catch (_) {} }
       _animKick();
     }
   }
