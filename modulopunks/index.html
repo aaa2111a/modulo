@@ -188,7 +188,9 @@ body.night .display-title { color:rgba(255,255,255,1.0); }
   /* Symmetric lateral gaps: the 220px filter slot on the LEFT (empty when closed, the bar
      fills it when active) is mirrored by a 220px gap on the RIGHT (.punks-main padding-right).
      Grid stays centered + same size whether filters are open or closed (no reflow). */
-  .punks-main { padding-right:220px; }
+  /* Cap the grid area on wide screens (27"): beyond ~1600px the punks stop growing and the
+     extra width becomes symmetric lateral gap. Below 1600px it's full-width (unchanged). */
+  .punks-main { padding-right:220px; max-width:1600px; margin-left:auto; margin-right:auto; }
   #filter-sidebar {
     flex:0 0 220px; width:220px; align-self:flex-start; visibility:hidden;
     position:sticky; top:34px; max-height:calc(100vh - 34px); overflow-y:auto;
@@ -376,7 +378,7 @@ body.night #filter-btn { background:#2c2b28; }
       <button id="clear-all" disabled>Clear all</button>
     </div>
     <div id="chips"></div>
-    <input id="acc-search" type="search" placeholder="Search accessories…" autocomplete="off">
+    <input id="acc-search" type="search" placeholder="Search accessories or punk #…" autocomplete="off">
     <div id="accordions"></div>
   </aside>
 
@@ -455,6 +457,7 @@ body.night #filter-btn { background:#2c2b28; }
   var COUNTS = new Map();       // 'cat::value' -> count
   var accList = [];             // [[name, count], ...] sorted by count desc
   var filteredIds = null;       // Int32Array of currently-visible ids
+  var _punkQuery = null;        // when a valid punk # is typed in the search → grid shows just that punk
   var atlasBmp = null;          // ImageBitmap (composite punks)
   var layerBmp = null;          // ImageBitmap (133-sprite layer atlas, for fusion masks)
   var layerNames = {};          // { "assetIdx": "Pretty Name" }
@@ -496,6 +499,7 @@ body.night #filter-btn { background:#2c2b28; }
 
   // ── Filter (OR within a category, AND across) ──
   function applyFilter() {
+    if (_punkQuery != null) { filteredIds = Int32Array.from([_punkQuery]); return; }   // punk-# search overrides
     var dims = [];
     [['Type', state.Type], ['AccCount', state.AccCount], ['Acc', state.Acc]].forEach(function (d) {
       var cat = d[0], sel = d[1];
@@ -686,13 +690,17 @@ body.night #filter-btn { background:#2c2b28; }
     host.appendChild(c.acc);
   }
 
-  // accessory search filters the visible rows in the Accessories accordion
+  // Search box: a valid punk number jumps the grid to that punk; otherwise it text-filters
+  // the visible rows in the Accessories accordion.
   document.getElementById('acc-search').addEventListener('input', function (e) {
-    var q = e.target.value.trim().toLowerCase();
-    allRows.forEach(function (r) {
+    var raw = e.target.value.trim(), q = raw.toLowerCase();
+    var asNum = /^\d+$/.test(raw) ? parseInt(raw, 10) : -1;
+    var newQ = (asNum >= 0 && asNum < TOTAL) ? asNum : null;
+    allRows.forEach(function (r) {                                      // accessory list filter (skip on a punk-# lookup)
       if (r._cat !== 'Acc') return;
-      r.classList.toggle('hidden', q && r._value.toLowerCase().indexOf(q) === -1);
+      r.classList.toggle('hidden', newQ == null && q && r._value.toLowerCase().indexOf(q) === -1);
     });
+    if (newQ !== _punkQuery) { _punkQuery = newQ; onFilterChange(); }   // only re-run the grid when the number changes
   });
 
   // ── Filter change → grid + chrome ──
@@ -703,7 +711,7 @@ body.night #filter-btn { background:#2c2b28; }
     sizeSpacer();
     dirty = true;
     syncResultCount(); syncChips(); syncFilterBtn();
-    document.getElementById('clear-all').disabled = activeCount() === 0;
+    document.getElementById('clear-all').disabled = (activeCount() === 0 && _punkQuery == null);
     serializeURL();
   }
   function syncResultCount() {
@@ -735,7 +743,9 @@ body.night #filter-btn { background:#2c2b28; }
   }
   function clearAll() {
     state.Type.clear(); state.AccCount.clear(); state.Acc.clear();
-    allRows.forEach(function (r) { r._cb.checked = false; });
+    allRows.forEach(function (r) { r._cb.checked = false; if (r._cat === 'Acc') r.classList.remove('hidden'); });
+    _punkQuery = null;                                                  // also clear a punk-# search
+    var inp = document.getElementById('acc-search'); if (inp) inp.value = '';
     onFilterChange();
   }
   document.getElementById('clear-all').addEventListener('click', clearAll);
