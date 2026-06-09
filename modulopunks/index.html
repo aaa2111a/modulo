@@ -503,7 +503,7 @@ body.night #filter-btn { background:#2c2b28; }
     ctx.drawImage(_cellTmp, 0, 0, SRC, SRC, dx, dy, size, size);          // scale isolated cell → no bleed
   }
   var cellPx = 48, cssW = 0, cssH = 0, gridTopDoc = 0;
-  var hoverId = -1, dirty = true, rafOn = true;
+  var hoverId = -1, dirty = true, rafOn = true, _gridRaf = 0;
 
   // ── Index build (single O(N) pass) ──
   function buildIndex() {
@@ -604,7 +604,8 @@ body.night #filter-btn { background:#2c2b28; }
       _blitPunk(hoverId, hx + o, hy + o, sz);
     }
   }
-  function tick() { if (!rafOn) return; if (dirty) { dirty = false; redraw(); } requestAnimationFrame(tick); }
+  function tick() { _gridRaf = 0; if (!rafOn) return; if (dirty) { dirty = false; redraw(); } _gridRaf = requestAnimationFrame(tick); }
+  function _gridKick() { if (rafOn && !_gridRaf) _gridRaf = requestAnimationFrame(tick); }   // single-loop guard (no double rAF across visibilitychange)
 
   // ── Hit-test ──
   function hitTest(clientX, clientY) {
@@ -809,8 +810,8 @@ body.night #filter-btn { background:#2c2b28; }
   var rzT = 0;
   window.addEventListener('resize', function () { clearTimeout(rzT); rzT = setTimeout(layout, 120); });
   document.addEventListener('visibilitychange', function () {
-    if (document.hidden) { rafOn = false; }
-    else if (!rafOn) { rafOn = true; dirty = true; requestAnimationFrame(tick); }
+    if (document.hidden) { rafOn = false; if (_gridRaf) { cancelAnimationFrame(_gridRaf); _gridRaf = 0; } }
+    else if (!rafOn) { rafOn = true; dirty = true; _gridKick(); }
   });
 
   // ── Boot ──
@@ -853,7 +854,7 @@ body.night #filter-btn { background:#2c2b28; }
       syncResultCount(); syncChips(); syncFilterBtn();
       document.getElementById('clear-all').disabled = activeCount() === 0;
       document.getElementById('boot').classList.add('hide');
-      requestAnimationFrame(tick);
+      _gridKick();
     }).catch(function (err) {
       console.error('[punks] init failed:', err);
       bootError('Could not load punk data (' + (err && err.message || 'error') + ').');
@@ -1195,7 +1196,8 @@ function _extractComposition(decodedHtml) {
   { let _sz = getSizeForMode(mod, _dtMode); _sizeScale = _sizeScaleTarget = SIZE_SCALES[_sz] || 1; _shiftBaseScale = _shiftBaseScaleTarget = SHIFT_BASE_SCALES[_sz] || 0.4; _shiftZoneScale = _shiftZoneScaleTarget = SHIFT_ZONE_SCALES[_sz] || 1; }
   let _xfadeT = 60, _xfadeFrom = _dtMode, _xfadeTo = _dtMode, _breathFrame = 0;
   function step(ops) { next.set(grid); let pFb, pSh, pNo, pMo, pWv, pOr, pGl, pBl; if (_xfadeT < 60 && _cycleModes.length > 1) { let alpha = _xfadeT / 60, fP = MODE_PROBS[_xfadeFrom] || MODE_PROBS.feedback, tP = MODE_PROBS[_xfadeTo] || MODE_PROBS.feedback; [pFb, pSh, pNo, pMo, pWv, pOr, pGl, pBl] = fP.map((p, i) => p*(1-alpha) + tP[i]*alpha); _xfadeT++; } else { [pFb, pSh, pNo, pMo, pWv, pOr, pGl, pBl] = MODE_PROBS[_dtMode] || MODE_PROBS.feedback; if (_dtMode === 'noise') { if (_breathFrame < 225) { let t = _breathFrame / 300; pNo = 0.5 * (1 - Math.sin(Math.PI * 2 * t) ** 2); pFb += 0.7 - pNo; _breathFrame++; } else if (_breathFrame < 300) { pNo = 0.3 * ((_breathFrame - 225) / 75); pFb += 0.7 - pNo; _breathFrame++; } else { _breathFrame = 0; pNo = 0.5; pFb += 0.2; } } } let cFb = pFb, cSh = pFb + pSh, cNo = cSh + pNo, cMo = cNo + pMo, cWv = cMo + pWv, cJg = cWv + pOr, cGl = cJg + pGl, cBl = cGl + pBl; for (let i = 0; i < (ops || 8); i++) { let r = _rng(); if (r < cFb) animFeedback(); else if (r < cSh) animShift(); else if (r < cNo) animNoise(); else if (r < cMo) animModulo(); else if (r < cWv) animWave(); else if (r < cJg) animJungle(); else if (r < cGl) animSector(); else if (r < cBl) animBlocks(); } grid.set(next); _sizeScale = _lerpScale(_sizeScale, _sizeScaleTarget, 60); _shiftBaseScale = _lerpScale(_shiftBaseScale, _shiftBaseScaleTarget, 60); _shiftZoneScale = _lerpScale(_shiftZoneScale, _shiftZoneScaleTarget, 60); _cycleFrames++; if (_cycleModes.length > 1 && _cycleFrames === 270 && _xfadeT >= 60) { _xfadeFrom = _dtMode; _xfadeTo = _cycleModes[(_cycleIdx + 1) % _cycleModes.length]; _xfadeT = 0; } if (_cycleFrames >= 300) _cycleFrames = 0; if (_cycleModes.length > 1 && _cycleFrames === 0) { _cycleIdx = (_cycleIdx + 1) % _cycleModes.length; _dtMode = _cycleModes[_cycleIdx]; let _sz = getSizeForMode(mod, _dtMode); _sizeScaleTarget = SIZE_SCALES[_sz] || 1; _shiftBaseScaleTarget = SHIFT_BASE_SCALES[_sz] || 0.4; _shiftZoneScaleTarget = SHIFT_ZONE_SCALES[_sz] || 1; _breathFrame = 0; } if (_rsDistinct.length > 1) { _rsCycleFrames++; if (_rsCycleFrames >= 300) { _rsCycleFrames = 0; _rsCycleIdx = (_rsCycleIdx + 1) % _rsDistinct.length; _rsSize = _rsDistinct[_rsCycleIdx]; } } if (_rdDistinct.length > 1) { _rdCycleFrames++; if (_rdCycleFrames >= 300) { _rdCycleFrames = 0; _rdCycleIdx = (_rdCycleIdx + 1) % _rdDistinct.length; _rdDensity = _rdDistinct[_rdCycleIdx]; } } if (_rvDistinct.length > 1) { _rvCycleFrames++; if (_rvCycleFrames >= 300) { _rvCycleFrames = 0; _rvCycleIdx = (_rvCycleIdx + 1) % _rvDistinct.length; _activeRectVariant = _rvDistinct[_rvCycleIdx]; } } _churnDither(); _txtFrame++; if (_txtFrame % 300 === 0) { let onIdxs = mod.tokens.map((t, i) => i).filter(i => getBiosOn(mod.id, i)); if (onIdxs.length === 1) pickText(onIdxs[0]); else if (onIdxs.length > 1) { _biosCycleIdx = (_biosCycleIdx + 1) % onIdxs.length; pickText(onIdxs[_biosCycleIdx]); } } }
-  function paintTo(target, tctx) { let W = target.width, H = target.height, visCols = Math.floor(W/6), visRows = Math.floor(H/6), offC = Math.floor((450 - visCols) / 2), offR = Math.floor((250 - visRows) / 2), img = tctx.createImageData(W, H), buf = img.data; for (let r = 0; r < visRows; r++) for (let c = 0; c < visCols; c++) { let [R, G, B] = PAL[grid[(offR + r)*450 + (offC + c)]] || PAL[0]; for (let py = 0; py < 6; py++) for (let px = 0; px < 6; px++) { let i = ((r*6 + py)*W + (c*6 + px))*4; buf[i] = R; buf[i+1] = G; buf[i+2] = B; buf[i+3] = 255; } } _applyDither(buf, W, visCols, visRows, offC, offR); tctx.putImageData(img, 0, 0); }
+  let _ptImg = null;   // per-engine reusable ImageData (avoids a 144² alloc every frame × up to 6 engines)
+  function paintTo(target, tctx) { let W = target.width, H = target.height, visCols = Math.floor(W/6), visRows = Math.floor(H/6), offC = Math.floor((450 - visCols) / 2), offR = Math.floor((250 - visRows) / 2); if (!_ptImg || _ptImg.width !== W || _ptImg.height !== H) _ptImg = tctx.createImageData(W, H); let img = _ptImg, buf = img.data; for (let r = 0; r < visRows; r++) for (let c = 0; c < visCols; c++) { let [R, G, B] = PAL[grid[(offR + r)*450 + (offC + c)]] || PAL[0]; for (let py = 0; py < 6; py++) for (let px = 0; px < 6; px++) { let i = ((r*6 + py)*W + (c*6 + px))*4; buf[i] = R; buf[i+1] = G; buf[i+2] = B; buf[i+3] = 255; } } _applyDither(buf, W, visCols, visRows, offC, offR); tctx.putImageData(img, 0, 0); }
   // Native-resolution paint: 1 pixel = 1 cell. Used by the 'native' export preset
   // for pixel-perfect output at 450×250. Skips _applyDither because DX patterns
   // are 6×6 cell-internal and have no representation at 1 px/cell. Trade-off
@@ -1213,81 +1215,9 @@ function _extractComposition(decodedHtml) {
   }
   function render() { paintTo(canvas, ctx); }
 
-  // ── Badge filter render (off-chain visualizer, 2026-06-07) ────────────────
-  // Downsamples the live grid to fewer/larger cells; each cell → a verified-
-  // badge glyph in that cell's color with a beige (cut-out) tick. Cells the
-  // artifact's own DX logic would dither render as ONLY a colored check (the
-  // dither color = PAL[min(1,len-1)], no badge body). Same grid/PAL/_ditherNoise
-  // → faithful animation. SAME method used by the live badge modal AND the later
-  // MP4 / hi-res screenshot export (any target incl. OffscreenCanvas at any W/H).
-  const BADGE_BG = '#dbd8d1';
-  let _badgeSprites = null, _badgeSig = '';
-  function _bNewCanvas(w, h) { if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(w, h); const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
-  // Normal cell: seal in the cell color + beige check on top (1:1 SVG badge).
-  function _bBadgeSprite(CELL, col, bg) { const cv = _bNewCanvas(CELL, CELL), x = cv.getContext('2d'); _badgeFillSeal(x, CELL, col); _badgeFillCheck(x, CELL, bg); return cv; }
-  // Dither cell: ONLY the check, in the dither color (no seal body).
-  function _bDitherSprite(CELL, col) { const cv = _bNewCanvas(CELL, CELL), x = cv.getContext('2d'); _badgeFillCheck(x, CELL, col); return cv; }
-  function _bBuildSprites(CELL, bg) { const normal = []; for (let i = 0; i < PAL.length; i++) normal.push(_bBadgeSprite(CELL, 'rgb(' + PAL[i][0] + ',' + PAL[i][1] + ',' + PAL[i][2] + ')', bg)); if (!PAL.length) normal.push(_bBadgeSprite(CELL, '#000', bg)); const ci = PAL.length > 1 ? 1 : 0, dc = PAL[ci] ? 'rgb(' + PAL[ci][0] + ',' + PAL[ci][1] + ',' + PAL[ci][2] + ')' : '#000'; return { normal, dither: _bDitherSprite(CELL, dc) }; }
-  // Faithful to _applyDither's cell-selection conditions (P1-B reviewer 2026-06-07):
-  // 'o' = lego overlay on ~90% of cells (no index-0 gate); 'num'/'numi' require
-  // the full 2×2 index-0 block; all others = single index-0 cell + density gate.
-  function _bIsDither(gi, dxp, offR, offC, gr, gc) {
-    if (!dxp) return false;
-    if (dxp === 'o') return _ditherNoise[gi] <= 0.90;
-    if (dxp === 'num' || dxp === 'numi') {
-      if (_ditherNoise[gi] > DITHER_DENSITY * 1.95) return false;
-      if (grid[gi] !== 0) return false;
-      if (grid[(offR + gr) * 450 + (offC + gc + 1)] !== 0) return false;
-      if (grid[(offR + gr + 1) * 450 + (offC + gc)] !== 0) return false;
-      if (grid[(offR + gr + 1) * 450 + (offC + gc + 1)] !== 0) return false;
-      return true;
-    }
-    return grid[gi] === 0 && _ditherNoise[gi] <= DITHER_DENSITY;
-  }
-  function paintToBadge(target, tctx, opts) {
-    const CELL = (opts && opts.cell) || 26;
-    const BG = (opts && opts.bg) || BADGE_BG;
-    const W = target.width, H = target.height;
-    // Sampling window into the 450×250 grid. Default: stride coupled to CELL
-    // (density matches the on-screen view). Card mode (opts.cols/opts.rows):
-    // sample an EXPLICIT cols×rows window with per-axis stride spanning the full
-    // grid — decoupled from CELL so large cells still show all the rows (the
-    // stride=round(CELL/6) path otherwise caps rows at ~22 once CELL is large).
-    // Back-compat: with cols/rows absent, strideC===strideR===stride → byte-identical.
-    let visCols, visRows, strideC, strideR, offC, offR;
-    if (opts && opts.cols && opts.rows) {
-      visCols = Math.max(1, opts.cols | 0);
-      visRows = Math.max(1, opts.rows | 0);
-      strideC = Math.max(1, Math.floor(450 / visCols));
-      strideR = Math.max(1, Math.floor(250 / visRows));
-      offC = Math.floor((450 - visCols * strideC) / 2);
-      offR = Math.floor((250 - visRows * strideR) / 2);
-    } else {
-      const stride = Math.max(1, Math.round(CELL / 6));
-      const maxC = Math.floor(450 / stride), maxR = Math.floor(250 / stride);
-      visCols = Math.min(Math.floor(W / CELL), maxC);
-      visRows = Math.min(Math.floor(H / CELL), maxR);
-      strideC = stride; strideR = stride;
-      offC = Math.floor((450 - visCols * stride) / 2);
-      offR = Math.floor((250 - visRows * stride) / 2);
-    }
-    tctx.fillStyle = BG; tctx.fillRect(0, 0, W, H);
-    if (visCols <= 0 || visRows <= 0) return;
-    const sig = CELL + '|' + BG + '|' + PAL.map(p => p[0] + ',' + p[1] + ',' + p[2]).join(';');
-    if (_badgeSig !== sig) { _badgeSprites = _bBuildSprites(CELL, BG); _badgeSig = sig; }
-    const SP = _badgeSprites, dxp = _activeDxPattern;
-    const gW = visCols * CELL, gH = visRows * CELL, px0 = Math.floor((W - gW) / 2), py0 = Math.floor((H - gH) / 2);
-    for (let r = 0; r < visRows; r++) for (let c = 0; c < visCols; c++) {
-      const gr = r * strideR, gc = c * strideC, gi = (offR + gr) * 450 + (offC + gc);
-      const dx = px0 + c * CELL, dy = py0 + r * CELL;
-      if (_bIsDither(gi, dxp, offR, offC, gr, gc)) { tctx.drawImage(SP.dither, dx, dy); continue; }
-      const s = SP.normal[grid[gi]] || SP.normal[0];
-      if (s) tctx.drawImage(s, dx, dy);
-    }
-  }
   // ===== ENGINE END =====
 
-  return {step, render, paintTo, paintToNative, paintToBadge, applyRects: applyRectShifts, tickRects, dtOps: _sumTokenOps};
+  return {step, render, paintTo, paintToNative, applyRects: applyRectShifts, tickRects, dtOps: _sumTokenOps};
 }
 
   // ── Fusion state + MULTI-engine compose loop (Phase 3: N traits at once) ──
