@@ -8,8 +8,8 @@
      JSON), NO RPC at load, NO wallet, NO Firebase, NO external scripts. CSP is
      therefore tight: only inline script/style (mirrors collection's unsafe-inline
      model but without the jsdelivr/firebase/google allowances collection needs).
-     A later step will fuse punks × Modulo artifacts off-chain via the badge engine;
-     hooks (#fuse-btn / window._activePunkId) are left reachable but inert. -->
+     Punks × Modulo fusion runs off-chain via the ported artifact engine; artifact
+     compositions are read on-chain on demand (lazy ethers, RPC proxy only). -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
   script-src 'self' 'unsafe-inline';
@@ -234,10 +234,10 @@ body.night .display-title { color:rgba(255,255,255,1.0); }
 
 /* ── Detail modal ── */
 #pd-overlay { position:fixed; inset:0; z-index:650; display:flex; align-items:center; justify-content:center;
-  padding:20px; background:rgba(0,0,0,0.5); opacity:0; pointer-events:none; transition:opacity 0.22s ease; }
+  padding:2vh 2vw; background:rgba(0,0,0,0.5); opacity:0; pointer-events:none; transition:opacity 0.22s ease; }
 #pd-overlay.open { opacity:1; pointer-events:auto; }
 body.night #pd-overlay { background:rgba(0,0,0,0.62); }
-#punk-detail { position:relative; z-index:651; width:420px; max-width:92vw; max-height:90vh; overflow-y:auto;
+#punk-detail { position:relative; z-index:651; width:min(96vw, calc(220px + (90vh - 40px) * 1.8)); max-width:96vw; height:90vh; max-height:90vh; overflow-y:auto;
   background:var(--bg); border:0.5px solid var(--border-strong); border-radius:14px;
   box-shadow:0 20px 60px rgba(0,0,0,0.35);
   transform:translateY(12px) scale(0.98); opacity:0; transition:transform 0.24s ease, opacity 0.24s ease; }
@@ -250,7 +250,7 @@ body.night #pd-overlay { background:rgba(0,0,0,0.62); }
 #pd-close:hover { filter:brightness(0.85); }
 .pd-body { padding:22px 20px 40px; }
 .pd-punk-wrap { display:flex; justify-content:center; margin-bottom:20px; }
-#pd-canvas { width:min(300px,66vw); height:min(300px,66vw); image-rendering:pixelated; border:0.5px solid var(--border-mid);
+#pd-canvas { width:min(360px,60vw); height:min(360px,60vw); image-rendering:pixelated; border:0.5px solid var(--border-mid);
   border-radius:8px; background:repeating-conic-gradient(var(--bg-alt) 0% 25%, var(--bg) 0% 50%) 0 / 18px 18px; }
 .pd-row { margin-bottom:14px; }
 .pd-k { font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--text-meta); margin-bottom:5px; }
@@ -262,13 +262,10 @@ body.night #pd-overlay { background:rgba(0,0,0,0.62); }
 .pd-links a { font-size:11px; letter-spacing:.04em; padding:8px 12px; text-decoration:none;
   background:var(--bg-alt); color:var(--text); border:0.5px solid var(--border-mid); border-radius:7px; }
 .pd-links a:hover { border-color:var(--border-strong); }
-#fuse-btn { margin-top:14px; width:100%; font-family:monospace; font-size:11px; letter-spacing:.06em;
-  text-transform:uppercase; padding:11px; border-radius:8px; cursor:pointer;
-  background:#23242a; color:#fff; border:0.5px solid var(--border-strong); transition:filter 0.14s; }
-#fuse-btn:hover { filter:brightness(1.15); }
-body.night #fuse-btn { background:#2c2b28; }
-/* Fusion sub-panel (Phase 2: one trait → one artifact) */
-#fz-panel { display:none; margin-top:16px; padding-top:14px; border-top:0.5px solid var(--border); }
+#fuse-title { margin-top:18px; padding-top:16px; border-top:0.5px solid var(--border);
+  font-family:monospace; font-size:11px; letter-spacing:.10em; text-transform:uppercase; color:var(--text-sub); }
+/* Fusion menu — always visible while a punk modal is open */
+#fz-panel { display:none; margin-top:10px; }
 #fz-panel .fz-k { font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--text-meta); margin:0 0 7px; }
 #fz-traits { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:14px; }
 .fz-pill { font-family:monospace; font-size:11px; padding:6px 10px; border-radius:16px; cursor:pointer;
@@ -277,18 +274,24 @@ body.night #fuse-btn { background:#2c2b28; }
 .fz-pill.active { box-shadow:0 0 0 2px #6363ff; }
 .fz-pill.assigned { background:#6363ff; color:#fff; border-color:#6363ff; }
 .fz-pill.assigned.active { box-shadow:0 0 0 2px var(--text); }
-.fz-row { display:flex; gap:8px; margin-bottom:10px; }
 .fz-row2 { display:flex; align-items:center; gap:12px; }
-#fz-artifact { flex:1; min-width:0; padding:9px 10px; font-family:monospace; font-size:13px;
-  background:var(--bg-alt); color:var(--text); border:0.5px solid var(--border-mid); border-radius:7px; }
-#fz-artifact:focus { outline:none; border-color:var(--border-strong); }
-#fz-apply, #fz-remove, #fz-clear { font-family:monospace; font-size:11px; letter-spacing:.04em; padding:9px 13px;
+#fz-remove, #fz-clear { font-family:monospace; font-size:11px; letter-spacing:.04em; padding:9px 13px;
   border-radius:7px; cursor:pointer; border:0.5px solid var(--border-mid); background:var(--bg-alt); color:var(--text); }
-#fz-apply { background:#6363ff; color:#fff; border-color:#6363ff; }
-#fz-apply:hover, #fz-remove:hover, #fz-clear:hover { filter:brightness(1.08); }
+#fz-remove:hover, #fz-clear:hover { filter:brightness(1.08); }
 #fz-clear { font-size:10px; padding:6px 0; background:none; border:none; color:var(--text-sub); text-transform:uppercase; }
 #fz-clear:hover { color:var(--text); filter:none; }
 #fz-status { flex:1; font-size:11px; color:var(--text-sub); min-height:14px; letter-spacing:.02em; }
+/* Modulo picker grid (Phase 4: virtualized animated previews) */
+#fz-picker { display:grid; grid-template-columns:repeat(auto-fill, minmax(52px,1fr)); gap:8px; margin:2px 0 14px; }
+.pk-cell { position:relative; display:flex; flex-direction:column; align-items:center; gap:4px; padding:6px 4px;
+  background:var(--bg-alt); color:var(--text); border:0.5px solid var(--border-mid); border-radius:8px; cursor:pointer;
+  font-family:monospace; -webkit-appearance:none; appearance:none; }
+.pk-cell:hover { border-color:var(--border-strong); }
+.pk-cell.pk-active { border-color:#6363ff; box-shadow:0 0 0 2px #6363ff; }
+.pk-slot { width:44px; height:44px; display:block; border-radius:4px; overflow:hidden;
+  background:repeating-conic-gradient(var(--bg) 0% 25%, var(--bg-alt) 0% 50%) 0 / 8px 8px; }
+.pk-cv { width:44px; height:44px; display:block; image-rendering:pixelated; }
+.pk-cap { font-size:10px; letter-spacing:.02em; color:var(--text-sub); }
 
 /* ── Mobile filter drawer ── */
 #filter-btn { display:none; }
@@ -330,7 +333,7 @@ body.night #fuse-btn { background:#2c2b28; }
 <body>
 
 <div class="topbar">
-  <div class="tbar-left">modulo · punks</div>
+  <a class="tbar-back" href="../#app" title="back to home"></a>
   <div></div>
   <div class="tbar-right"><button class="tbar-night" id="night-toggle" title="toggle night mode"></button></div>
 </div>
@@ -345,7 +348,7 @@ body.night #fuse-btn { background:#2c2b28; }
 <header class="page-header grid-bg">
   <div class="header-inner">
     <div class="id-title-row">
-      <h1 class="display-title">Punks</h1>
+      <h1 class="display-title">Modulo Punks</h1>
       <img id="header-mark" class="id-mark" alt="">
     </div>
     <div class="display-sub">all 10,000 cryptopunks · trait filter</div>
@@ -386,16 +389,13 @@ body.night #fuse-btn { background:#2c2b28; }
     <div class="pd-row"><div class="pd-k">Type</div><div class="pd-v" id="pd-type"></div></div>
     <div class="pd-row"><div class="pd-k" id="pd-acc-k">Accessories</div><div class="pd-accs" id="pd-accs"></div></div>
     <div class="pd-links" id="pd-links"></div>
-    <button id="fuse-btn">Fuse with Modulo</button>
+    <div id="fuse-title">Fuse with Modulo</div>
     <div id="fz-panel">
-      <p class="fz-k">Pick a trait, fill it with an artifact #. Repeat for more — several animate at once.</p>
+      <p class="fz-k">Pick a trait, then pick a modulo to fill it. Several animate at once.</p>
       <div id="fz-traits"></div>
-      <div class="fz-row">
-        <input id="fz-artifact" type="number" min="0" placeholder="artifact #" autocomplete="off">
-        <button id="fz-apply" type="button">Apply</button>
-        <button id="fz-remove" type="button">Remove</button>
-      </div>
+      <div id="fz-picker"></div>
       <div class="fz-row2">
+        <button id="fz-remove" type="button">Remove</button>
         <button id="fz-clear" type="button">Clear all</button>
         <div id="fz-status"></div>
       </div>
@@ -565,11 +565,10 @@ body.night #fuse-btn { background:#2c2b28; }
     if (id !== hoverId) { hoverId = id; dirty = true; }
     canvas.style.cursor = id < 0 ? 'default' : 'pointer';
     if (id < 0) { tip.style.display = 'none'; return; }
-    var p = traits[id];
     tip.textContent = '';
-    var s1 = document.createElement('span'); s1.className = 'tid'; s1.textContent = '#' + id + '  ';
+    tip.appendChild(document.createTextNode('cryptopunk '));
+    var s1 = document.createElement('span'); s1.className = 'tid'; s1.textContent = '#' + id;
     tip.appendChild(s1);
-    tip.appendChild(document.createTextNode(p.t + (p.a.length ? ' · ' + p.a.join(' · ') : '')));
     var tw = tip.offsetWidth || 180;
     var left = Math.min(e.clientX + 14, window.innerWidth - tw - 8);
     tip.style.left = Math.max(8, left) + 'px';
@@ -603,9 +602,9 @@ body.night #fuse-btn { background:#2c2b28; }
     os.target = '_blank'; os.rel = 'noopener noreferrer'; os.textContent = 'OpenSea ↗'; links.appendChild(os);
     var ll = document.createElement('a'); ll.href = 'https://cryptopunks.app/cryptopunks/details/' + id;
     ll.target = '_blank'; ll.rel = 'noopener noreferrer'; ll.textContent = 'cryptopunks.app ↗'; links.appendChild(ll);
-    document.getElementById('fuse-btn').setAttribute('data-punk-id', String(id));
     if (!detail.classList.contains('open')) lockScroll();
     overlay.classList.add('open'); detail.classList.add('open');
+    _openFusion();                                   // fuse menu is always visible (no button)
   }
   function closeDetail() {
     if (!detail.classList.contains('open')) return;
@@ -1206,39 +1205,56 @@ function _extractComposition(decodedHtml) {
     pdCtx.clearRect(0, 0, 200, 200); pdCtx.imageSmoothingEnabled = false;
     pdCtx.drawImage(atlasBmp, (_fz.punkId % ATLAS_COLS) * 24, Math.floor(_fz.punkId / ATLAS_COLS) * 24, 24, 24, 0, 0, 200, 200);
   }
-  function _fuseFrame() {
-    _fz.raf = 0;
-    if (!_fz.assignments.size || !detail.classList.contains('open')) return;
-    try {
-      _fzAlloc();
-      _fz.assignments.forEach(function (a) { a.engine.step(a.engine.dtOps); a.engine.applyRects(); a.engine.tickRects && a.engine.tickRects(); });
-      // Rebuild the punk in z-order: assigned layers → masked artifact CA, others → static sprite.
-      _fz.comCtx.clearRect(0, 0, 24, 24);
-      for (var i = 0; i < _fz.L.length; i++) {
-        var li = _fz.L[i], a = _fz.assignments.get(li);
-        if (a && layerBmp) {
-          a.engine.paintToNative(a.off450, a.off450ctx);            // 450×250 raw modulo cells
-          _fz.caCtx.globalCompositeOperation = 'source-over';
-          _fz.caCtx.clearRect(0, 0, 24, 24);
-          _fz.caCtx.drawImage(a.off450, 0, 0, 450, 250, 0, 0, 24, 24);   // downscale to 24×24
-          _fz.caCtx.globalCompositeOperation = 'destination-in';
-          _fz.caCtx.drawImage(layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, 24, 24);  // mask to this trait
-          _fz.caCtx.globalCompositeOperation = 'source-over';
-          _fz.comCtx.drawImage(_fz.caCv, 0, 0);
-        } else if (layerBmp) {
-          _fz.comCtx.drawImage(layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, 24, 24);
+  // ── Unified animation loop: assignment engines (60fps) + picker previews (~30fps) ──
+  var _animRaf = 0, _animN = 0;
+  function _animStop() { if (_animRaf) { cancelAnimationFrame(_animRaf); _animRaf = 0; } }
+  function _animStopIfIdle() { if (!_fz.assignments.size && !_pk.live.size) _animStop(); }
+  function _animKick() { if (!_animRaf && detail.classList.contains('open') && (_fz.assignments.size || _pk.live.size)) _animRaf = requestAnimationFrame(_animFrame); }
+  function _animFrame() {
+    _animRaf = 0;
+    if (!detail.classList.contains('open')) return;
+    _animN++;
+    // (1) Assignment engines → rebuild the big punk preview in z-order
+    if (_fz.assignments.size) {
+      try {
+        _fzAlloc();
+        _fz.assignments.forEach(function (a) { a.engine.step(a.engine.dtOps); a.engine.applyRects(); a.engine.tickRects && a.engine.tickRects(); });
+        _fz.comCtx.clearRect(0, 0, 24, 24);
+        for (var i = 0; i < _fz.L.length; i++) {
+          var li = _fz.L[i], a = _fz.assignments.get(li);
+          if (a && layerBmp) {
+            a.engine.paintToNative(a.off450, a.off450ctx);
+            _fz.caCtx.globalCompositeOperation = 'source-over';
+            _fz.caCtx.clearRect(0, 0, 24, 24);
+            _fz.caCtx.drawImage(a.off450, 0, 0, 450, 250, 0, 0, 24, 24);
+            _fz.caCtx.globalCompositeOperation = 'destination-in';
+            _fz.caCtx.drawImage(layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, 24, 24);
+            _fz.caCtx.globalCompositeOperation = 'source-over';
+            _fz.comCtx.drawImage(_fz.caCv, 0, 0);
+          } else if (layerBmp) {
+            _fz.comCtx.drawImage(layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, 24, 24);
+          }
         }
-      }
-      pdCtx.clearRect(0, 0, 200, 200); pdCtx.imageSmoothingEnabled = false;
-      pdCtx.drawImage(_fz.comCv, 0, 0, 24, 24, 0, 0, 200, 200);    // upscale crisp
-    } catch (_) {}
-    _fz.raf = requestAnimationFrame(_fuseFrame);
+        pdCtx.clearRect(0, 0, 200, 200); pdCtx.imageSmoothingEnabled = false;
+        pdCtx.drawImage(_fz.comCv, 0, 0, 24, 24, 0, 0, 200, 200);
+      } catch (_) {}
+    }
+    // (2) Picker preview engines (throttled every other frame)
+    if (_pk.live.size && (_animN & 1) === 0) {
+      _pk.live.forEach(function (p) {
+        try {
+          p.engine.step(p.engine.dtOps); p.engine.applyRects(); p.engine.tickRects && p.engine.tickRects();
+          p.engine.paintToNative(p.off, p.offctx);
+          p.ctx.clearRect(0, 0, 24, 24); p.ctx.imageSmoothingEnabled = false;
+          p.ctx.drawImage(p.off, 0, 0, 450, 250, 0, 0, 24, 24);
+        } catch (_) {}
+      });
+    }
+    if (_fz.assignments.size || _pk.live.size) _animRaf = requestAnimationFrame(_animFrame);
   }
-  function _fzStopRaf() { if (_fz.raf) { cancelAnimationFrame(_fz.raf); _fz.raf = 0; } }
-  function _fzKick() { if (!_fz.raf && _fz.assignments.size && detail.classList.contains('open')) _fz.raf = requestAnimationFrame(_fuseFrame); }
-  function _fzTeardown() { _fzStopRaf(); _fz.assignments.clear(); _fz.pending.clear(); _fz.selected = null; _fz.punkId = null; }
-  function _resetFusion() { _fzTeardown(); var p = document.getElementById('fz-panel'); if (p) p.style.display = 'none'; _fzStatus(''); }
-  function _clearAllFusion() { _fzTeardown(); _refreshPills(); _drawStaticPunk(); _fzStatus('cleared'); }
+  function _fzTeardown() { _fz.assignments.clear(); _fz.pending.clear(); _fz.selected = null; _fz.punkId = null; _animStopIfIdle(); }
+  function _resetFusion() { _pkTeardown(); _fzTeardown(); var p = document.getElementById('fz-panel'); if (p) p.style.display = 'none'; _fzStatus(''); }
+  function _clearAllFusion() { _fz.assignments.clear(); _fz.pending.clear(); _animStopIfIdle(); _refreshPills(); _drawStaticPunk(); _fzStatus('cleared'); }
   function _refreshPills() {
     var host = document.getElementById('fz-traits'); if (!host) return;
     [].forEach.call(host.children, function (pill) {
@@ -1247,6 +1263,7 @@ function _extractComposition(decodedHtml) {
       pill.classList.toggle('assigned', !!a);
       pill.classList.toggle('active', _fz.selected === li);
     });
+    _pkHighlight();
   }
   function _openFusion() {
     var pid = window._activePunkId; if (pid == null || !traits[pid]) return;
@@ -1262,47 +1279,151 @@ function _extractComposition(decodedHtml) {
     });
     _refreshPills();
     document.getElementById('fz-panel').style.display = 'block';
-    _fzStatus(!layerBmp ? 'layer data unavailable' : (_fz.assignments.size ? '' : 'pick a trait + an artifact #'));
+    _fzStatus(!layerBmp ? 'layer data unavailable' : (_fz.assignments.size ? '' : 'pick a trait, then a modulo'));
+    _pkInit();
   }
   async function _applyFusion(artifactId, layerId) {
-    if (artifactId == null || !(artifactId >= 0)) { _fzStatus('enter an artifact #'); return; }
+    if (artifactId == null || !(artifactId >= 0)) { _fzStatus('pick a modulo'); return; }
     if (layerId == null) { _fzStatus('pick a trait first'); return; }
     if (!_fz.assignments.has(layerId) && _fz.assignments.size >= FUSE_CAP) { _fzStatus('max ' + FUSE_CAP + ' traits at once on this device'); return; }
     if (!_ensureOnChain()) { _fzStatus('on-chain unavailable — reload'); return; }
     var myPunk = _fz.punkId, token = ++_fz.tokenSeq;
     _fz.pending.set(layerId, token);
-    _fzStatus('loading artifact #' + artifactId + '…');
+    _fzStatus('loading modulo #' + artifactId + '…');
     var comp;
     try { comp = await _fetchArtifactComposition(artifactId); }
-    catch (e) { if (_fz.pending.get(layerId) === token) { _fz.pending.delete(layerId); _fzStatus('artifact #' + artifactId + ' unavailable'); } return; }
+    catch (e) { if (_fz.pending.get(layerId) === token) { _fz.pending.delete(layerId); _fzStatus('modulo #' + artifactId + ' unavailable'); } return; }
     if (_fz.punkId !== myPunk || !detail.classList.contains('open') || _fz.pending.get(layerId) !== token) return;  // stale (punk/panel/superseded)
     _fz.pending.delete(layerId);
-    var off = new OffscreenCanvas(450, 250), offctx = off.getContext('2d'); offctx.imageSmoothingEnabled = false;
+    var off = _pkOff(450, 250), offctx = off.getContext('2d'); offctx.imageSmoothingEnabled = false;
     var engine;
     try { engine = _createArtifactEngine(off, comp); }
     catch (e) { _fzStatus('engine failed'); return; }
     _fz.assignments.set(layerId, { engine: engine, off450: off, off450ctx: offctx, artifactId: artifactId });
     _refreshPills();
     _fzStatus(_fz.assignments.size + ' trait' + (_fz.assignments.size > 1 ? 's' : '') + ' animating');
-    _fzKick();
+    _animKick();
   }
   function _removeSelected() {
     if (_fz.selected == null || !_fz.assignments.has(_fz.selected)) { _fzStatus('select an assigned trait'); return; }
     _fz.assignments.delete(_fz.selected); _fz.pending.delete(_fz.selected);
     _refreshPills();
-    if (!_fz.assignments.size) { _fzStopRaf(); _drawStaticPunk(); _fzStatus('cleared'); }
+    if (!_fz.assignments.size) { _animStopIfIdle(); _drawStaticPunk(); _fzStatus('cleared'); }
     else _fzStatus(_fz.assignments.size + ' animating');
   }
-  document.getElementById('fuse-btn').addEventListener('click', _openFusion);
-  document.getElementById('fz-apply').addEventListener('click', function () {
-    var aid = parseInt(document.getElementById('fz-artifact').value, 10);
-    _applyFusion(isNaN(aid) ? null : aid, _fz.selected);
-  });
+
+  // ── Modulo picker (virtualized animated previews; all settled artifacts) ──
+  var PREVIEW_CAP = (window.matchMedia && window.matchMedia('(pointer:coarse)').matches) ? 6 : 12;
+  var _hasOSC = (typeof OffscreenCanvas !== 'undefined');
+  function _pkOff(w, h) { if (_hasOSC) return new OffscreenCanvas(w, h); var c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+  var _pk = { active: false, total: 0, io: null, cellEls: new Map(), live: new Map(), pending: new Set(), dwell: new Map() };
+  function _pkCellClick(e) { var id = +e.currentTarget.dataset.art; if (id >= 0) _applyFusion(id, _fz.selected); }
+  function _pkMakeCell(id) {
+    var el = document.createElement('button'); el.type = 'button'; el.className = 'pk-cell';
+    el.dataset.art = id; el.setAttribute('aria-label', 'modulo artifact #' + id);
+    var slot = document.createElement('span'); slot.className = 'pk-slot';
+    var cap = document.createElement('span'); cap.className = 'pk-cap'; cap.textContent = '#' + id;
+    el.appendChild(slot); el.appendChild(cap);
+    el.addEventListener('click', _pkCellClick);
+    return el;
+  }
+  function _pkHighlight() {
+    if (!_pk.active) return;
+    var aid = (_fz.selected != null && _fz.assignments.has(_fz.selected)) ? _fz.assignments.get(_fz.selected).artifactId : -1;
+    _pk.cellEls.forEach(function (el, id) { el.classList.toggle('pk-active', id === aid); });
+  }
+  function _pkUnmount(id) {
+    var p = _pk.live.get(id); if (!p) return;
+    _pk.live.delete(id);
+    if (p.cv && p.cv.parentNode) p.cv.parentNode.removeChild(p.cv);
+    p.engine = null; p.off = null; p.offctx = null; p.ctx = null;
+  }
+  function _pkEvict(exceptId) {
+    if (!_pk.live.size) return;
+    var r = detail.getBoundingClientRect(), mid = r.top + r.height / 2, far = -1, farD = -1;
+    _pk.live.forEach(function (p, id) {
+      if (id === exceptId) return;
+      var el = _pk.cellEls.get(id); if (!el) { far = id; farD = 1e9; return; }
+      var cr = el.getBoundingClientRect(), d = Math.abs((cr.top + cr.height / 2) - mid);
+      if (d > farD) { farD = d; far = id; }
+    });
+    if (far >= 0) _pkUnmount(far);
+  }
+  function _pkMount(id) {
+    if (!_pk.active) return;
+    if (_pk.live.has(id) || _pk.pending.has(id)) return;
+    if (_pk.live.size + _pk.pending.size >= PREVIEW_CAP) return;    // enough already live/in-flight
+    if (!_ensureOnChain()) return;
+    _pk.pending.add(id);
+    _fetchArtifactComposition(id).then(function (comp) {
+      _pk.pending.delete(id);
+      if (!_pk.active) return;                                       // teardown raced
+      var el = _pk.cellEls.get(id); if (!el || _pk.live.has(id)) return;
+      if (_pk.live.size >= PREVIEW_CAP) _pkEvict(id);                // re-check cap AFTER await
+      if (_pk.live.size >= PREVIEW_CAP) return;
+      var off = _pkOff(450, 250), offctx = off.getContext('2d'); offctx.imageSmoothingEnabled = false;
+      var engine;
+      try { engine = _createArtifactEngine(off, comp); } catch (e) { return; }
+      var cv = document.createElement('canvas'); cv.width = 24; cv.height = 24; cv.className = 'pk-cv';
+      var ctx = cv.getContext('2d'); ctx.imageSmoothingEnabled = false;
+      var slot = el.querySelector('.pk-slot'); (slot || el).appendChild(cv);
+      _pk.live.set(id, { engine: engine, off: off, offctx: offctx, cv: cv, ctx: ctx });
+      _animKick();
+    }).catch(function () { _pk.pending.delete(id); });
+  }
+  function _pkIO(entries) {
+    if (!_pk.active) return;                                         // teardown raced
+    entries.forEach(function (e) {
+      var id = +e.target.dataset.art;
+      if (e.isIntersecting) {
+        if (_pk.dwell.has(id) || _pk.live.has(id) || _pk.pending.has(id)) return;
+        var t = setTimeout(function () { _pk.dwell.delete(id); _pkMount(id); }, 60);   // dwell debounce
+        _pk.dwell.set(id, t);
+      } else {
+        var dt = _pk.dwell.get(id); if (dt) { clearTimeout(dt); _pk.dwell.delete(id); }
+        if (_pk.live.has(id)) _pkUnmount(id);
+      }
+    });
+    _animStopIfIdle();
+  }
+  function _pkBuildGrid() {
+    var host = document.getElementById('fz-picker'); if (!host) return;
+    _pk.dwell.forEach(function (t) { clearTimeout(t); }); _pk.dwell.clear();
+    _pk.live.forEach(function (p) { p.engine = null; p.off = null; }); _pk.live.clear(); _pk.pending.clear();
+    host.textContent = ''; _pk.cellEls.clear();
+    if (!_pk.io) _pk.io = new IntersectionObserver(_pkIO, { root: detail, rootMargin: '100px 0px', threshold: 0.01 });
+    else _pk.io.disconnect();
+    var frag = document.createDocumentFragment();
+    for (var id = 0; id < _pk.total; id++) { var el = _pkMakeCell(id); _pk.cellEls.set(id, el); frag.appendChild(el); }
+    host.appendChild(frag);
+    _pk.cellEls.forEach(function (el) { _pk.io.observe(el); });
+    _pkHighlight();
+  }
+  function _pkInit() {
+    if (_pk.active) { _pkBuildGrid(); return; }
+    if (!_ensureOnChain()) { _fzStatus('on-chain unavailable — reload'); return; }
+    _pk.active = true;
+    if (_pk.total > 0) { _pkBuildGrid(); return; }
+    _settleArtifact.totalArtifacts().then(function (n) {
+      _pk.total = Number(n) || 0;
+      if (!_pk.active) return;
+      _pkBuildGrid();
+    }).catch(function () { if (_pk.active) _fzStatus('could not load modulos — reload'); });
+  }
+  function _pkTeardown() {
+    _pk.active = false;                                              // set FIRST so queued callbacks bail
+    if (_pk.io) _pk.io.disconnect();
+    _pk.dwell.forEach(function (t) { clearTimeout(t); }); _pk.dwell.clear();
+    _pk.live.forEach(function (p) { if (p.cv && p.cv.parentNode) p.cv.parentNode.removeChild(p.cv); });
+    _pk.live.clear(); _pk.pending.clear(); _pk.cellEls.clear();
+    var host = document.getElementById('fz-picker'); if (host) host.textContent = '';
+    _animStopIfIdle();
+  }
   document.getElementById('fz-remove').addEventListener('click', _removeSelected);
   document.getElementById('fz-clear').addEventListener('click', _clearAllFusion);
-  document.getElementById('pd-close').addEventListener('click', _resetFusion);
-  canvas.addEventListener('click', _resetFusion);                  // switching punks in the grid resets fusion
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') _resetFusion(); });
+  // The modal opens the fuse menu automatically (openDetail → _openFusion, which drops a
+  // previous punk's assignments via its own pid-changed _fzTeardown). Every close path
+  // (red dot / Escape / backdrop) routes through closeDetail() → _resetFusion().
 
   init();
 })();
