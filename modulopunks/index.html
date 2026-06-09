@@ -385,7 +385,7 @@ body.night #pd-overlay { background:rgba(0,0,0,0.62); }
 <aside id="punk-detail" role="dialog" aria-modal="true" aria-label="Customize punk">
   <div class="pd-tbar"><span class="pd-title" id="pd-title">punk</span><button id="pd-close" title="close"></button></div>
   <div class="pd-body">
-    <div class="pd-punk-wrap"><canvas id="pd-canvas" width="200" height="200"></canvas></div>
+    <div class="pd-punk-wrap"><canvas id="pd-canvas" width="144" height="144"></canvas></div>
     <div class="pd-row"><div class="pd-k">Type</div><div class="pd-v" id="pd-type"></div></div>
     <div class="pd-row"><div class="pd-k" id="pd-acc-k">Accessories</div><div class="pd-accs" id="pd-accs"></div></div>
     <div class="pd-links" id="pd-links"></div>
@@ -590,8 +590,8 @@ body.night #pd-overlay { background:rgba(0,0,0,0.62); }
     window._activePunkId = id;
     document.getElementById('pd-title').textContent = 'punk #' + id;
     pdCtx.imageSmoothingEnabled = false;
-    pdCtx.clearRect(0, 0, 200, 200);
-    if (atlasBmp) pdCtx.drawImage(atlasBmp, (id % ATLAS_COLS) * SRC, Math.floor(id / ATLAS_COLS) * SRC, SRC, SRC, 0, 0, 200, 200);
+    pdCtx.clearRect(0, 0, 144, 144);
+    if (atlasBmp) pdCtx.drawImage(atlasBmp, (id % ATLAS_COLS) * SRC, Math.floor(id / ATLAS_COLS) * SRC, SRC, SRC, 0, 0, 144, 144);
     document.getElementById('pd-type').textContent = p.t;
     document.getElementById('pd-acc-k').textContent = 'Accessories (' + p.a.length + ')';
     var box = document.getElementById('pd-accs'); box.textContent = '';
@@ -1190,20 +1190,21 @@ function _extractComposition(decodedHtml) {
   // ── Fusion state + MULTI-engine compose loop (Phase 3: N traits at once) ──
   var FUSE_CAP = (window.matchMedia && window.matchMedia('(pointer:coarse)').matches) ? 2 : 6;
   var _fz = { raf: 0, punkId: null, L: null, selected: null, tokenSeq: 0,
-              assignments: new Map(),  // layerId -> { engine, off450, off450ctx, artifactId }
+              assignments: new Map(),  // layerId -> { engine, off, offctx, artifactId } (off = 144×144)
               pending: new Map(),       // layerId -> token (in-flight fetch guard)
               caCv: null, caCtx: null, comCv: null, comCtx: null };
+  // Compose at 6px/cell (144×144 = 24 cells × 6) so the artifact's dx glyphs render.
   function _fzAlloc() {
     if (_fz.caCv) return;
-    _fz.caCv = new OffscreenCanvas(24, 24);  _fz.caCtx = _fz.caCv.getContext('2d');   _fz.caCtx.imageSmoothingEnabled = false;
-    _fz.comCv = new OffscreenCanvas(24, 24); _fz.comCtx = _fz.comCv.getContext('2d'); _fz.comCtx.imageSmoothingEnabled = false;
+    _fz.caCv = _pkOff(144, 144);  _fz.caCtx = _fz.caCv.getContext('2d');   _fz.caCtx.imageSmoothingEnabled = false;
+    _fz.comCv = _pkOff(144, 144); _fz.comCtx = _fz.comCv.getContext('2d'); _fz.comCtx.imageSmoothingEnabled = false;
   }
   function _fzStatus(t) { var e = document.getElementById('fz-status'); if (e) e.textContent = t || ''; }
   function _labelFor(li, i) { return i === 0 ? 'Body' : (layerNames[String(li)] || ('#' + li)); }
   function _drawStaticPunk() {
     if (_fz.punkId == null || !atlasBmp) return;
-    pdCtx.clearRect(0, 0, 200, 200); pdCtx.imageSmoothingEnabled = false;
-    pdCtx.drawImage(atlasBmp, (_fz.punkId % ATLAS_COLS) * 24, Math.floor(_fz.punkId / ATLAS_COLS) * 24, 24, 24, 0, 0, 200, 200);
+    pdCtx.clearRect(0, 0, 144, 144); pdCtx.imageSmoothingEnabled = false;
+    pdCtx.drawImage(atlasBmp, (_fz.punkId % ATLAS_COLS) * 24, Math.floor(_fz.punkId / ATLAS_COLS) * 24, 24, 24, 0, 0, 144, 144);
   }
   // ── Unified animation loop: assignment engines (60fps) + picker previews (~30fps) ──
   var _animRaf = 0, _animN = 0;
@@ -1219,25 +1220,24 @@ function _extractComposition(decodedHtml) {
       try {
         _fzAlloc();
         _fz.assignments.forEach(function (a) { a.engine.step(a.engine.dtOps); a.engine.applyRects(); a.engine.tickRects && a.engine.tickRects(); });
-        _fz.comCtx.clearRect(0, 0, 24, 24);
+        _fz.comCtx.clearRect(0, 0, 144, 144);
         for (var i = 0; i < _fz.L.length; i++) {
           var li = _fz.L[i], a = _fz.assignments.get(li);
           if (a && layerBmp) {
-            a.engine.paintToNative(a.off450, a.off450ctx);
+            a.engine.paintTo(a.off, a.offctx);                          // 144×144 = centered 24-cell crop @6px/cell, WITH dx
             _fz.caCtx.globalCompositeOperation = 'source-over';
-            _fz.caCtx.clearRect(0, 0, 24, 24);
-            // Centered 24×24 crop of the 450×250 grid (1 punk cell = 1 modulo cell, no squish)
-            _fz.caCtx.drawImage(a.off450, 213, 113, 24, 24, 0, 0, 24, 24);
+            _fz.caCtx.clearRect(0, 0, 144, 144);
+            _fz.caCtx.drawImage(a.off, 0, 0);                           // 1:1
             _fz.caCtx.globalCompositeOperation = 'destination-in';
-            _fz.caCtx.drawImage(layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, 24, 24);
+            _fz.caCtx.drawImage(layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, 144, 144);  // trait mask upscaled 24→144 nearest
             _fz.caCtx.globalCompositeOperation = 'source-over';
             _fz.comCtx.drawImage(_fz.caCv, 0, 0);
           } else if (layerBmp) {
-            _fz.comCtx.drawImage(layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, 24, 24);
+            _fz.comCtx.drawImage(layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, 144, 144);  // static layer upscaled 24→144
           }
         }
-        pdCtx.clearRect(0, 0, 200, 200); pdCtx.imageSmoothingEnabled = false;
-        pdCtx.drawImage(_fz.comCv, 0, 0, 24, 24, 0, 0, 200, 200);
+        pdCtx.clearRect(0, 0, 144, 144); pdCtx.imageSmoothingEnabled = false;
+        pdCtx.drawImage(_fz.comCv, 0, 0);                               // 1:1 into the 144 pd-canvas
       } catch (_) {}
     }
     // (2) Picker preview engines (throttled every other frame)
@@ -1253,7 +1253,7 @@ function _extractComposition(decodedHtml) {
     }
     if (_fz.assignments.size || _pk.live.size) _animRaf = requestAnimationFrame(_animFrame);
   }
-  function _fzTeardown() { _fz.assignments.clear(); _fz.pending.clear(); _fz.selected = null; _fz.punkId = null; _animStopIfIdle(); }
+  function _fzTeardown() { _fz.assignments.clear(); _fz.pending.clear(); _fz.selected = null; _fz.punkId = null; _fz.caCv = null; _fz.comCv = null; _animStopIfIdle(); }
   function _resetFusion() { _pkTeardown(); _fzTeardown(); var p = document.getElementById('fz-panel'); if (p) p.style.display = 'none'; _fzStatus(''); }
   function _clearAllFusion() { _fz.assignments.clear(); _fz.pending.clear(); _animStopIfIdle(); _refreshPills(); _drawStaticPunk(); _fzStatus('cleared'); }
   function _refreshPills() {
@@ -1296,11 +1296,11 @@ function _extractComposition(decodedHtml) {
     catch (e) { if (_fz.pending.get(layerId) === token) { _fz.pending.delete(layerId); _fzStatus('modulo #' + artifactId + ' unavailable'); } return; }
     if (_fz.punkId !== myPunk || !detail.classList.contains('open') || _fz.pending.get(layerId) !== token) return;  // stale (punk/panel/superseded)
     _fz.pending.delete(layerId);
-    var off = _pkOff(450, 250), offctx = off.getContext('2d'); offctx.imageSmoothingEnabled = false;
+    var off = _pkOff(144, 144), offctx = off.getContext('2d'); offctx.imageSmoothingEnabled = false;
     var engine;
     try { engine = _createArtifactEngine(off, comp); }
     catch (e) { _fzStatus('engine failed'); return; }
-    _fz.assignments.set(layerId, { engine: engine, off450: off, off450ctx: offctx, artifactId: artifactId });
+    _fz.assignments.set(layerId, { engine: engine, off: off, offctx: offctx, artifactId: artifactId });
     _refreshPills();
     _fzStatus(_fz.assignments.size + ' trait' + (_fz.assignments.size > 1 ? 's' : '') + ' animating');
     _animKick();
