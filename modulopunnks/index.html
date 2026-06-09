@@ -1,0 +1,1311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- Modulo Punks — standalone browse + trait filter for all 10,000 CryptoPunks.
+     Read-only, off-chain: ships two static assets (a verified atlas + a traits
+     JSON), NO RPC at load, NO wallet, NO Firebase, NO external scripts. CSP is
+     therefore tight: only inline script/style (mirrors collection's unsafe-inline
+     model but without the jsdelivr/firebase/google allowances collection needs).
+     A later step will fuse punks × Modulo artifacts off-chain via the badge engine;
+     hooks (#fuse-btn / window._activePunkId) are left reachable but inert. -->
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'self';
+  script-src 'self' 'unsafe-inline';
+  style-src 'self' 'unsafe-inline';
+  font-src 'self' data:;
+  img-src 'self' data: blob:;
+  connect-src 'self' https://modulo.ubk.art;
+  frame-src 'none';
+  object-src 'none';
+  worker-src 'none';
+  base-uri 'self';
+  form-action 'self';
+">
+<!-- Frame-buster: clickjacking runtime fallback (mirrors collection). -->
+<script>
+  if (window !== window.top) {
+    try { window.top.location = window.location.href; } catch (_) {}
+    document.documentElement.innerHTML =
+      '<body style="background:#000;color:#fff;font-family:monospace;' +
+      'padding:40px;text-align:center"><h2>modulo</h2>' +
+      '<p>This page cannot be embedded in a frame. Open ' +
+      '<a href="https://modulo.ubk.art" style="color:#fff" target="_top" rel="noopener noreferrer">' +
+      'modulo.ubk.art</a> directly.</p></body>';
+    throw new Error('embedded in iframe — execution halted');
+  }
+</script>
+<link rel="icon" id="favicon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23d8d4c9'/%3E%3Crect x='4' y='4' width='8' height='8' fill='%23222'/%3E%3C/svg%3E">
+<script>
+// Animated favicon — verbatim from collection/index.html (Le directive 2026-05-17).
+(() => {
+  const PAIRS = [
+    ['#6363ff', '#ff003a'], ['#ffbd2e', '#28c840'], ['#a040ff', '#ff8c00'],
+    ['#ff4080', '#63ff63'], ['#ff63ff', '#1100ff'], ['#bfbcce', '#ab0a5f'],
+    ['#57686e', '#ffbd2e'], ['#ff003a', '#63ff63'], ['#6363ff', '#ff8c00'],
+  ];
+  const ANGLES = [
+    0,0,0,0,0, 10,20,30,40,50,60,70,80,
+    90,90,90,90,90,90,90,90,90,90, 100,110,120,130,140,150,160,170,
+    180,180,180,180,180,
+  ];
+  const K = '#222';
+  function genSVG(angle, c1, c2) {
+    const svg = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'>"
+      + "<g transform='rotate(" + angle + " 8 8)'>"
+      + "<rect x='3' y='3' width='5' height='5' fill='" + K  + "'/>"
+      + "<rect x='8' y='3' width='5' height='5' fill='" + c1 + "'/>"
+      + "<rect x='3' y='8' width='5' height='5' fill='" + c2 + "'/>"
+      + "<rect x='8' y='8' width='5' height='5' fill='" + K  + "'/>"
+      + "</g></svg>";
+    return 'data:image/svg+xml,' + encodeURIComponent(svg);
+  }
+  const link = document.getElementById('favicon');
+  if (!link) return;
+  let step = 0, mark = null;
+  setInterval(() => {
+    const inCycle = step % ANGLES.length;
+    const cycleNum = Math.floor(step / ANGLES.length);
+    const baseAngle = cycleNum * 180;
+    const angle = (baseAngle + ANGLES[inCycle]) % 360;
+    const pair = PAIRS[cycleNum % PAIRS.length];
+    const uri = genSVG(angle, pair[0], pair[1]);
+    link.href = uri;
+    if (!mark) mark = document.getElementById('header-mark');
+    if (mark) mark.src = uri;
+    step++;
+  }, 50);
+})();
+</script>
+<!-- ethers v6 UMD — SELF-HOSTED (same file + SRI as collection/) for the fusion
+     modal's on-chain artifact reads. Self-hosted keeps the CSP tight (no CDN in
+     script-src); only connect-src is opened to the modulo-rpc Worker. defer →
+     loads after parse, ready before the user can open the fusion modal. -->
+<script src="ethers.umd.min.js"
+        integrity="sha384-6Zl0Pc8zjSz8KvmNeXRvUQgY4ryFb+BwDvKCmLYcBME0joAaru491tQgi9B7zsMM"
+        crossorigin="anonymous" defer></script>
+<title>Modulo · Punks</title>
+<meta name="description" content="Browse all 10,000 CryptoPunks with an OpenSea-style trait filter. A Modulo experiment.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Modulo">
+<meta property="og:title" content="Modulo · Punks">
+<meta property="og:description" content="Browse all 10,000 CryptoPunks with an OpenSea-style trait filter. A Modulo experiment.">
+<meta property="og:url" content="https://modulo.ubk.art/modulopunks/">
+<style>
+* { box-sizing:border-box; margin:0; padding:0; }
+
+:root {
+  --tbar-bg:       #c9c6c0;
+  --bg:            #dbd8d1;
+  --bg-alt:        #d8d5cd;
+  --border:        rgba(0,0,0,0.12);
+  --border-mid:    rgba(0,0,0,0.20);
+  --border-strong: rgba(0,0,0,0.32);
+  --text:          rgba(0,0,0,0.78);
+  --text-sub:      rgba(0,0,0,0.44);
+  --text-meta:     rgba(0,0,0,0.28);
+}
+body.night {
+  --tbar-bg:       #111010;
+  --bg:            #1a1917;
+  --bg-alt:        #141312;
+  --border:        rgba(255,255,255,0.08);
+  --border-mid:    rgba(255,255,255,0.14);
+  --border-strong: rgba(255,255,255,0.24);
+  --text:          rgba(255,255,255,0.80);
+  --text-sub:      rgba(255,255,255,0.44);
+  --text-meta:     rgba(255,255,255,0.28);
+}
+
+html, body {
+  min-height:100vh;
+  background:var(--bg);
+  color:var(--text);
+  font-family:monospace;
+}
+
+/* ── Topbar (verbatim theme from collection) ── */
+.topbar {
+  position:sticky; top:0; z-index:200;
+  height:34px;
+  background:var(--tbar-bg);
+  border-bottom:0.5px solid var(--border-mid);
+  display:grid;
+  grid-template-columns:1fr auto minmax(0,1fr);
+  align-items:center;
+  padding:0 24px;
+  backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
+}
+.tbar-left { font-size:11px; letter-spacing:.05em; color:rgba(0,0,0,0.45); }
+body.night .tbar-left { color:rgba(255,255,255,0.40); }
+.tbar-right { display:flex; justify-content:flex-end; }
+.tbar-back { display:block; width:12px; height:12px; border-radius:50%; background:#ff5f57; }
+.tbar-back:hover { filter:brightness(0.85); }
+.tbar-night { display:block; width:12px; height:12px; border-radius:50%;
+  background:rgba(0,0,0,0.18); border:none; cursor:pointer; padding:0; }
+body.night .tbar-night { background:rgba(255,255,255,0.22); }
+.tbar-night:hover { filter:brightness(0.75); }
+
+/* ── Header nav ── */
+.side-nav { position:absolute; top:18px; left:24px; z-index:5; display:flex; flex-direction:column; gap:7px; }
+.side-nav a { font-size:11px; letter-spacing:.10em; text-transform:uppercase;
+  color:rgba(0,0,0,0.55); text-decoration:none; transition:color 0.14s; }
+.side-nav a:hover { color:rgba(0,0,0,0.92); }
+body.night .side-nav a { color:rgba(255,255,255,0.50); }
+body.night .side-nav a:hover { color:#fff; }
+#cta-collection { position:absolute; top:14px; right:24px; z-index:5;
+  display:inline-flex; align-items:center; padding:6px 14px;
+  font-size:11px; letter-spacing:.08em; text-transform:uppercase;
+  color:rgba(0,0,0,0.78); text-decoration:none; background:rgba(0,0,0,0.05);
+  border:0.5px solid var(--border-mid); border-radius:9px; white-space:nowrap;
+  transition:background 0.15s, color 0.15s, border-color 0.15s; }
+#cta-collection:hover { background:rgba(0,0,0,0.10); color:rgba(0,0,0,0.92); }
+body.night #cta-collection { color:rgba(255,255,255,0.82); background:rgba(255,255,255,0.06); border-color:rgba(255,255,255,0.18); }
+body.night #cta-collection:hover { background:rgba(255,255,255,0.12); color:#fff; }
+@media (pointer:coarse) { #cta-collection { min-height:44px; } .side-nav a { padding:12px 6px; } }
+
+/* ── Grid dot background + page header ── */
+.grid-bg { background-image:radial-gradient(rgba(0,0,0,0.09) 1px, transparent 1px); background-size:20px 20px; }
+body.night .grid-bg { background-image:radial-gradient(rgba(255,255,255,0.06) 1px, transparent 1px); }
+.page-header { padding:64px 52px 22px; position:relative; }
+.header-inner { max-width:1500px; margin:0 auto; display:flex; flex-direction:column; align-items:center; text-align:center; }
+.id-title-row { display:flex; align-items:baseline; justify-content:center; gap:14px; }
+.id-mark { display:inline-block; vertical-align:baseline; width:30px; height:30px; margin-left:14px; border-radius:5px; }
+.display-title { font-family:'Times New Roman',Times,serif; font-size:clamp(56px, 8vw, 120px);
+  font-weight:400; letter-spacing:-.02em; line-height:1.0; color:rgba(0,0,0,1.0); }
+body.night .display-title { color:rgba(255,255,255,1.0); }
+.display-sub { margin-top:12px; font-size:13px; letter-spacing:.04em; color:var(--text-sub); }
+.result-count { margin-top:10px; font-size:12px; letter-spacing:.06em; color:var(--text-sub); }
+.result-count b { color:var(--text); font-weight:400; }
+
+/* ── Layout: sidebar + grid ── */
+.punks-main { display:flex; align-items:flex-start; gap:0; }
+#filter-sidebar {
+  width:280px; flex:0 0 280px; align-self:flex-start;
+  position:sticky; top:34px; max-height:calc(100vh - 34px); overflow-y:auto;
+  border-right:0.5px solid var(--border-mid);
+  padding:18px 16px 60px; background:var(--bg);
+}
+.fs-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+.fs-title { font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--text-sub); }
+#clear-all { font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--text-sub);
+  background:none; border:none; cursor:pointer; padding:0; }
+#clear-all:hover { color:var(--text); }
+#clear-all:disabled { opacity:0.35; cursor:default; }
+#chips { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:14px; }
+.chip { display:inline-flex; align-items:center; gap:5px; font-size:10px;
+  padding:4px 8px; border:0.5px solid var(--border-mid); border-radius:20px;
+  background:var(--bg-alt); color:var(--text); cursor:pointer; }
+.chip:hover { border-color:var(--border-strong); }
+.chip .x { color:var(--text-sub); }
+#acc-search { width:100%; margin-bottom:12px; padding:8px 10px; font-family:monospace; font-size:12px;
+  background:var(--bg-alt); color:var(--text); border:0.5px solid var(--border-mid); border-radius:7px; }
+#acc-search:focus { outline:none; border-color:var(--border-strong); }
+.accordion { border-top:0.5px solid var(--border); }
+.acc-head { display:flex; align-items:center; justify-content:space-between; width:100%;
+  padding:11px 2px; font-family:monospace; font-size:11px; letter-spacing:.08em; text-transform:uppercase;
+  color:var(--text); background:none; border:none; cursor:pointer; }
+.acc-head .caret { color:var(--text-sub); transition:transform 0.15s; font-size:9px; }
+.accordion.collapsed .acc-head .caret { transform:rotate(-90deg); }
+.acc-body { display:flex; flex-direction:column; padding-bottom:8px; max-height:340px; overflow-y:auto; }
+.accordion.collapsed .acc-body { display:none; }
+.trait-row { display:flex; align-items:center; gap:9px; padding:6px 2px; cursor:pointer; font-size:12px; }
+.trait-row:hover { color:var(--text); }
+.trait-row input { width:13px; height:13px; flex-shrink:0; accent-color:#6363ff; cursor:pointer; }
+.trait-row .tlabel { flex:1; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.trait-row .tcount { color:var(--text-meta); font-size:11px; }
+.trait-row.hidden { display:none; }
+
+#grid-section { flex:1 1 auto; position:relative; min-width:0; background:var(--bg); }
+#punk-canvas { position:sticky; top:34px; display:block; width:100%; height:calc(100vh - 34px); }
+#empty-state { position:sticky; top:34px; height:calc(100vh - 34px); display:none;
+  align-items:center; justify-content:center; flex-direction:column; gap:12px; text-align:center; color:var(--text-sub); font-size:13px; }
+#empty-state button { margin-top:6px; font-family:monospace; font-size:11px; padding:7px 14px;
+  background:var(--bg-alt); color:var(--text); border:0.5px solid var(--border-mid); border-radius:7px; cursor:pointer; }
+
+/* ── Hover tooltip ── */
+#punk-tooltip { position:fixed; z-index:400; pointer-events:none; display:none;
+  padding:6px 9px; font-size:11px; letter-spacing:.02em;
+  background:#111010; color:#eee; border-radius:6px; box-shadow:0 4px 14px rgba(0,0,0,0.35);
+  max-width:240px; }
+#punk-tooltip .tid { color:#9aa; }
+
+/* ── Detail modal ── */
+#pd-overlay { position:fixed; inset:0; z-index:650; display:flex; align-items:center; justify-content:center;
+  padding:20px; background:rgba(0,0,0,0.5); opacity:0; pointer-events:none; transition:opacity 0.22s ease; }
+#pd-overlay.open { opacity:1; pointer-events:auto; }
+body.night #pd-overlay { background:rgba(0,0,0,0.62); }
+#punk-detail { position:relative; z-index:651; width:420px; max-width:92vw; max-height:90vh; overflow-y:auto;
+  background:var(--bg); border:0.5px solid var(--border-strong); border-radius:14px;
+  box-shadow:0 20px 60px rgba(0,0,0,0.35);
+  transform:translateY(12px) scale(0.98); opacity:0; transition:transform 0.24s ease, opacity 0.24s ease; }
+#pd-overlay.open #punk-detail { transform:translateY(0) scale(1); opacity:1; }
+.pd-tbar { height:34px; display:flex; align-items:center; justify-content:space-between;
+  padding:0 14px; background:var(--tbar-bg); border-bottom:0.5px solid var(--border-mid);
+  border-radius:14px 14px 0 0; position:sticky; top:0; z-index:1; }
+.pd-tbar .pd-title { font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--text-sub); }
+#pd-close { width:12px; height:12px; border-radius:50%; background:#ff5f57; border:none; cursor:pointer; padding:0; }
+#pd-close:hover { filter:brightness(0.85); }
+.pd-body { padding:22px 20px 40px; }
+.pd-punk-wrap { display:flex; justify-content:center; margin-bottom:20px; }
+#pd-canvas { width:min(300px,66vw); height:min(300px,66vw); image-rendering:pixelated; border:0.5px solid var(--border-mid);
+  border-radius:8px; background:repeating-conic-gradient(var(--bg-alt) 0% 25%, var(--bg) 0% 50%) 0 / 18px 18px; }
+.pd-row { margin-bottom:14px; }
+.pd-k { font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--text-meta); margin-bottom:5px; }
+.pd-v { font-size:13px; color:var(--text); }
+.pd-accs { display:flex; flex-direction:column; gap:4px; }
+.pd-accs .pd-acc { font-size:12px; color:var(--text); }
+.pd-accs .pd-acc::before { content:'· '; color:var(--text-sub); }
+.pd-links { display:flex; gap:8px; margin-top:18px; flex-wrap:wrap; }
+.pd-links a { font-size:11px; letter-spacing:.04em; padding:8px 12px; text-decoration:none;
+  background:var(--bg-alt); color:var(--text); border:0.5px solid var(--border-mid); border-radius:7px; }
+.pd-links a:hover { border-color:var(--border-strong); }
+#fuse-btn { margin-top:14px; width:100%; font-family:monospace; font-size:11px; letter-spacing:.06em;
+  text-transform:uppercase; padding:11px; border-radius:8px; cursor:pointer;
+  background:#23242a; color:#fff; border:0.5px solid var(--border-strong); transition:filter 0.14s; }
+#fuse-btn:hover { filter:brightness(1.15); }
+body.night #fuse-btn { background:#2c2b28; }
+/* Fusion sub-panel (Phase 2: one trait → one artifact) */
+#fz-panel { display:none; margin-top:16px; padding-top:14px; border-top:0.5px solid var(--border); }
+#fz-panel .fz-k { font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--text-meta); margin:0 0 7px; }
+#fz-traits { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:14px; }
+.fz-pill { font-family:monospace; font-size:11px; padding:6px 10px; border-radius:16px; cursor:pointer;
+  background:var(--bg-alt); color:var(--text); border:0.5px solid var(--border-mid); }
+.fz-pill:hover { border-color:var(--border-strong); }
+.fz-pill.active { box-shadow:0 0 0 2px #6363ff; }
+.fz-pill.assigned { background:#6363ff; color:#fff; border-color:#6363ff; }
+.fz-pill.assigned.active { box-shadow:0 0 0 2px var(--text); }
+.fz-row { display:flex; gap:8px; margin-bottom:10px; }
+.fz-row2 { display:flex; align-items:center; gap:12px; }
+#fz-artifact { flex:1; min-width:0; padding:9px 10px; font-family:monospace; font-size:13px;
+  background:var(--bg-alt); color:var(--text); border:0.5px solid var(--border-mid); border-radius:7px; }
+#fz-artifact:focus { outline:none; border-color:var(--border-strong); }
+#fz-apply, #fz-remove, #fz-clear { font-family:monospace; font-size:11px; letter-spacing:.04em; padding:9px 13px;
+  border-radius:7px; cursor:pointer; border:0.5px solid var(--border-mid); background:var(--bg-alt); color:var(--text); }
+#fz-apply { background:#6363ff; color:#fff; border-color:#6363ff; }
+#fz-apply:hover, #fz-remove:hover, #fz-clear:hover { filter:brightness(1.08); }
+#fz-clear { font-size:10px; padding:6px 0; background:none; border:none; color:var(--text-sub); text-transform:uppercase; }
+#fz-clear:hover { color:var(--text); filter:none; }
+#fz-status { flex:1; font-size:11px; color:var(--text-sub); min-height:14px; letter-spacing:.02em; }
+
+/* ── Mobile filter drawer ── */
+#filter-btn { display:none; }
+#filter-overlay { display:none; }
+@media (max-width:768px) {
+  .page-header { padding:48px 20px 16px; }
+  #filter-sidebar {
+    position:fixed; left:0; right:0; bottom:0; top:auto; width:100%; flex-basis:auto;
+    max-height:82vh; z-index:610; border-right:none; border-top:0.5px solid var(--border-strong);
+    border-radius:18px 18px 0 0; box-shadow:0 -10px 40px rgba(0,0,0,0.3);
+    transform:translateY(100%); transition:transform 0.28s ease;
+  }
+  body.filters-open #filter-sidebar { transform:translateY(0); }
+  #filter-overlay { position:fixed; inset:0; z-index:605; background:rgba(0,0,0,0.45); }
+  body.filters-open #filter-overlay { display:block; }
+  #filter-btn { display:inline-flex; align-items:center; gap:7px; position:fixed; left:50%; bottom:20px;
+    transform:translateX(-50%); z-index:600; font-family:monospace; font-size:12px; letter-spacing:.06em;
+    padding:13px 22px; min-height:44px; border-radius:24px; cursor:pointer;
+    background:#23242a; color:#fff; border:none; box-shadow:0 6px 20px rgba(0,0,0,0.32); }
+  body.night #filter-btn { background:#2c2b28; }
+  #pd-overlay { padding:0; }
+  #punk-detail { width:100%; max-width:100%; height:100%; max-height:100%; border-radius:0;
+    transform:translateY(20px) scale(1); }
+  #pd-overlay.open #punk-detail { transform:translateY(0) scale(1); }
+  .pd-tbar { border-radius:0; }
+}
+
+/* ── Loading / error overlay ── */
+#boot { position:fixed; inset:0; z-index:800; display:flex; align-items:center; justify-content:center;
+  flex-direction:column; gap:14px; background:var(--bg); color:var(--text-sub); font-size:13px; letter-spacing:.04em; }
+#boot.hide { display:none; }
+#boot .spin { width:26px; height:26px; border:2px solid var(--border-mid); border-top-color:var(--text);
+  border-radius:50%; animation:spin 0.8s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+#boot button { font-family:monospace; font-size:11px; padding:8px 16px; background:var(--bg-alt);
+  color:var(--text); border:0.5px solid var(--border-mid); border-radius:7px; cursor:pointer; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="tbar-left">modulo · punks</div>
+  <div></div>
+  <div class="tbar-right"><button class="tbar-night" id="night-toggle" title="toggle night mode"></button></div>
+</div>
+
+<nav class="side-nav">
+  <a href="../collection/">Collection</a>
+  <a href="../about/">About</a>
+  <a href="../app/">App</a>
+</nav>
+<a id="cta-collection" href="../collection/">← Collection</a>
+
+<header class="page-header grid-bg">
+  <div class="header-inner">
+    <div class="id-title-row">
+      <h1 class="display-title">Punks</h1>
+      <img id="header-mark" class="id-mark" alt="">
+    </div>
+    <div class="display-sub">all 10,000 cryptopunks · trait filter</div>
+    <div class="result-count" id="result-count"><b>10,000</b> / 10,000 punks</div>
+  </div>
+</header>
+
+<main class="punks-main">
+  <aside id="filter-sidebar">
+    <div class="fs-head">
+      <span class="fs-title">Filters</span>
+      <button id="clear-all" disabled>Clear all</button>
+    </div>
+    <div id="chips"></div>
+    <input id="acc-search" type="search" placeholder="Search accessories…" autocomplete="off">
+    <div id="accordions"></div>
+  </aside>
+
+  <section id="grid-section">
+    <canvas id="punk-canvas" role="grid" aria-label="CryptoPunks grid" tabindex="0"></canvas>
+    <div id="empty-state">
+      <div>No punks match these filters.</div>
+      <button id="empty-clear">Clear all</button>
+    </div>
+  </section>
+</main>
+
+<div id="filter-overlay"></div>
+<button id="filter-btn">Filters <span id="filter-btn-count"></span></button>
+
+<div id="punk-tooltip"></div>
+
+<div id="pd-overlay">
+<aside id="punk-detail" role="dialog" aria-modal="true" aria-label="Customize punk">
+  <div class="pd-tbar"><span class="pd-title" id="pd-title">punk</span><button id="pd-close" title="close"></button></div>
+  <div class="pd-body">
+    <div class="pd-punk-wrap"><canvas id="pd-canvas" width="200" height="200"></canvas></div>
+    <div class="pd-row"><div class="pd-k">Type</div><div class="pd-v" id="pd-type"></div></div>
+    <div class="pd-row"><div class="pd-k" id="pd-acc-k">Accessories</div><div class="pd-accs" id="pd-accs"></div></div>
+    <div class="pd-links" id="pd-links"></div>
+    <button id="fuse-btn">Fuse with Modulo</button>
+    <div id="fz-panel">
+      <p class="fz-k">Pick a trait, fill it with an artifact #. Repeat for more — several animate at once.</p>
+      <div id="fz-traits"></div>
+      <div class="fz-row">
+        <input id="fz-artifact" type="number" min="0" placeholder="artifact #" autocomplete="off">
+        <button id="fz-apply" type="button">Apply</button>
+        <button id="fz-remove" type="button">Remove</button>
+      </div>
+      <div class="fz-row2">
+        <button id="fz-clear" type="button">Clear all</button>
+        <div id="fz-status"></div>
+      </div>
+    </div>
+  </div>
+</aside>
+</div>
+
+<div id="boot"><div class="spin"></div><div id="boot-msg">Loading punks…</div></div>
+
+<script>
+(function () {
+  'use strict';
+  // ── Night mode (verbatim pattern from collection) ──
+  function _setNight(on) {
+    document.body.classList.toggle('night', on);
+    try { localStorage.setItem('tc-night', on ? '1' : '0'); } catch (_) {}
+  }
+  document.getElementById('night-toggle').addEventListener('click', () => {
+    _setNight(!document.body.classList.contains('night'));
+    dirty = true;
+  });
+  try { if (localStorage.getItem('tc-night') === '1') _setNight(true); } catch (_) {}
+
+  // ── Constants ──
+  var COLS = 8, SRC = 24, ATLAS_COLS = 100, TOTAL = 10000, STICKY = 34;
+  var DPR = Math.min(window.devicePixelRatio || 1, 3);
+  var ATLAS_URL = 'punks-atlas.png', TRAITS_URL = 'punks-traits.json';
+  var LAYERS_URL = 'punks-layers.png', NAMES_URL = 'punks-layer-names.json';
+
+  // Accessory sub-group order is cosmetic; v1 uses one searchable list. The
+  // OpenSea facets are: Type (one per punk), Accessory Count (0..7), Accessories.
+  // ── State ──
+  var traits = null;            // [{t, a:[...]}], index = punk id
+  var IDX = new Map();          // 'cat::value' -> Uint16Array of ids
+  var COUNTS = new Map();       // 'cat::value' -> count
+  var accList = [];             // [[name, count], ...] sorted by count desc
+  var filteredIds = null;       // Int32Array of currently-visible ids
+  var atlasBmp = null;          // ImageBitmap (composite punks)
+  var layerBmp = null;          // ImageBitmap (133-sprite layer atlas, for fusion masks)
+  var layerNames = {};          // { "assetIdx": "Pretty Name" }
+  var state = { Type: new Set(), AccCount: new Set(), Acc: new Set() };
+
+  var canvas = document.getElementById('punk-canvas');
+  var ctx = canvas.getContext('2d');
+  var section = document.getElementById('grid-section');
+  var cellPx = 48, cssW = 0, cssH = 0, gridTopDoc = 0;
+  var hoverId = -1, dirty = true, rafOn = true;
+
+  // ── Index build (single O(N) pass) ──
+  function buildIndex() {
+    var tmp = new Map();
+    function add(key, id) { var a = tmp.get(key); if (!a) { a = []; tmp.set(key, a); } a.push(id); }
+    for (var id = 0; id < TOTAL; id++) {
+      var p = traits[id]; if (!p) continue;
+      add('Type::' + p.t, id);
+      add('AccCount::' + p.a.length, id);
+      for (var j = 0; j < p.a.length; j++) add('Acc::' + p.a[j], id);
+    }
+    tmp.forEach(function (arr, k) { IDX.set(k, Uint16Array.from(arr)); COUNTS.set(k, arr.length); });
+    // accessory list sorted by count desc
+    COUNTS.forEach(function (c, k) { if (k.indexOf('Acc::') === 0) accList.push([k.slice(5), c]); });
+    accList.sort(function (a, b) { return b[1] - a[1]; });
+  }
+
+  // ── Filter (OR within a category, AND across) ──
+  function applyFilter() {
+    var dims = [];
+    [['Type', state.Type], ['AccCount', state.AccCount], ['Acc', state.Acc]].forEach(function (d) {
+      var cat = d[0], sel = d[1];
+      if (!sel.size) return;
+      var u = new Set();
+      sel.forEach(function (v) { var arr = IDX.get(cat + '::' + v); if (arr) for (var i = 0; i < arr.length; i++) u.add(arr[i]); });
+      dims.push(u);
+    });
+    if (!dims.length) { filteredIds = Int32Array.from({ length: TOTAL }, function (_, i) { return i; }); return; }
+    dims.sort(function (a, b) { return a.size - b.size; });
+    var result = dims[0];
+    for (var i = 1; i < dims.length; i++) {
+      var next = new Set(), big = dims[i];
+      result.forEach(function (id) { if (big.has(id)) next.add(id); });
+      result = next;
+    }
+    var arr = new Int32Array(result.size), k = 0;
+    result.forEach(function (id) { arr[k++] = id; });
+    arr.sort();
+    filteredIds = arr;
+  }
+
+  // ── Layout ──
+  function layout() {
+    cssW = section.clientWidth;
+    cssH = Math.max(1, window.innerHeight - STICKY);
+    cellPx = cssW / COLS;
+    canvas.style.width = cssW + 'px';
+    canvas.style.height = cssH + 'px';
+    canvas.width = Math.round(cssW * DPR);
+    canvas.height = Math.round(cssH * DPR);
+    var r = section.getBoundingClientRect();
+    gridTopDoc = r.top + window.scrollY;
+    sizeSpacer();
+    dirty = true;
+  }
+  function rowsCount() { return filteredIds ? Math.ceil(filteredIds.length / COLS) : 0; }
+  function sizeSpacer() { section.style.minHeight = (rowsCount() * cellPx) + 'px'; }
+  function maxScroll() { return Math.max(0, rowsCount() * cellPx - cssH); }
+  function gridScroll() { return Math.max(0, Math.min(window.scrollY - gridTopDoc + STICKY, maxScroll())); }
+
+  // ── Redraw (virtualized) ──
+  function redraw() {
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.clearRect(0, 0, cssW, cssH);
+    if (!atlasBmp || !filteredIds) return;
+    var empty = filteredIds.length === 0;
+    document.getElementById('empty-state').style.display = empty ? 'flex' : 'none';
+    canvas.style.display = empty ? 'none' : 'block';
+    if (empty) return;
+    ctx.imageSmoothingEnabled = false;
+    var gs = gridScroll();
+    var first = Math.floor(gs / cellPx);
+    var visRows = Math.ceil(cssH / cellPx) + 1;
+    var hx = null, hy = 0;
+    for (var row = first; row < first + visRows; row++) {
+      var yBase = row * cellPx - gs;
+      if (yBase >= cssH) break;
+      for (var col = 0; col < COLS; col++) {
+        var idx = row * COLS + col;
+        if (idx >= filteredIds.length) { row = 1e9; break; }
+        var id = filteredIds[idx];
+        var sx = (id % ATLAS_COLS) * SRC, sy = Math.floor(id / ATLAS_COLS) * SRC;
+        var dx = col * cellPx;
+        ctx.drawImage(atlasBmp, sx, sy, SRC, SRC, dx, yBase, cellPx, cellPx);
+        if (id === hoverId) { hx = dx; hy = yBase; }
+      }
+    }
+    // Hover "pop": redraw the hovered punk scaled up, on top of its neighbours
+    if (hoverId >= 0 && hx !== null) {
+      var hsx = (hoverId % ATLAS_COLS) * SRC, hsy = Math.floor(hoverId / ATLAS_COLS) * SRC;
+      var sc = 1.12, sz = cellPx * sc, o = (cellPx - sz) / 2;
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      ctx.shadowColor = 'rgba(0,0,0,0.28)';
+      ctx.shadowBlur = cellPx * 0.14;
+      ctx.shadowOffsetY = cellPx * 0.04;
+      ctx.drawImage(atlasBmp, hsx, hsy, SRC, SRC, hx + o, hy + o, sz, sz);
+      ctx.restore();
+    }
+  }
+  function tick() { if (!rafOn) return; if (dirty) { dirty = false; redraw(); } requestAnimationFrame(tick); }
+
+  // ── Hit-test ──
+  function hitTest(clientX, clientY) {
+    var r = canvas.getBoundingClientRect();
+    if (clientX < r.left || clientX > r.right || clientY < r.top || clientY > r.bottom) return -1;
+    var col = Math.floor((clientX - r.left) / cellPx);
+    if (col < 0 || col >= COLS) return -1;
+    var row = Math.floor((gridScroll() + (clientY - r.top)) / cellPx);
+    var idx = row * COLS + col;
+    if (idx < 0 || idx >= filteredIds.length) return -1;
+    return filteredIds[idx];
+  }
+
+  // ── Hover + tooltip ──
+  var tip = document.getElementById('punk-tooltip');
+  function onMove(e) {
+    var id = hitTest(e.clientX, e.clientY);
+    if (id !== hoverId) { hoverId = id; dirty = true; }
+    canvas.style.cursor = id < 0 ? 'default' : 'pointer';
+    if (id < 0) { tip.style.display = 'none'; return; }
+    var p = traits[id];
+    tip.textContent = '';
+    var s1 = document.createElement('span'); s1.className = 'tid'; s1.textContent = '#' + id + '  ';
+    tip.appendChild(s1);
+    tip.appendChild(document.createTextNode(p.t + (p.a.length ? ' · ' + p.a.join(' · ') : '')));
+    var tw = tip.offsetWidth || 180;
+    var left = Math.min(e.clientX + 14, window.innerWidth - tw - 8);
+    tip.style.left = Math.max(8, left) + 'px';
+    tip.style.top = Math.max(40, e.clientY - 14) + 'px';
+    tip.style.display = 'block';
+  }
+  function onLeave() { if (hoverId !== -1) { hoverId = -1; dirty = true; } tip.style.display = 'none'; }
+
+  // ── Detail modal ──
+  var detail = document.getElementById('punk-detail');
+  var overlay = document.getElementById('pd-overlay');
+  var pdCanvas = document.getElementById('pd-canvas');
+  var pdCtx = pdCanvas.getContext('2d');
+  var _savedScrollY = 0;
+  function lockScroll() { _savedScrollY = window.scrollY || 0; document.body.style.top = '-' + _savedScrollY + 'px'; document.body.style.position = 'fixed'; document.body.style.width = '100%'; }
+  function unlockScroll() { document.body.style.position = ''; document.body.style.top = ''; document.body.style.width = ''; window.scrollTo(0, _savedScrollY); }
+  function openDetail(id) {
+    var p = traits[id];
+    window._activePunkId = id;
+    document.getElementById('pd-title').textContent = 'punk #' + id;
+    pdCtx.imageSmoothingEnabled = false;
+    pdCtx.clearRect(0, 0, 200, 200);
+    if (atlasBmp) pdCtx.drawImage(atlasBmp, (id % ATLAS_COLS) * SRC, Math.floor(id / ATLAS_COLS) * SRC, SRC, SRC, 0, 0, 200, 200);
+    document.getElementById('pd-type').textContent = p.t;
+    document.getElementById('pd-acc-k').textContent = 'Accessories (' + p.a.length + ')';
+    var box = document.getElementById('pd-accs'); box.textContent = '';
+    if (!p.a.length) { var none = document.createElement('div'); none.className = 'pd-acc'; none.textContent = 'none'; box.appendChild(none); }
+    p.a.forEach(function (a) { var d = document.createElement('div'); d.className = 'pd-acc'; d.textContent = a; box.appendChild(d); });
+    var links = document.getElementById('pd-links'); links.textContent = '';
+    var os = document.createElement('a'); os.href = 'https://opensea.io/assets/ethereum/0xb47e3cd837ddf8e4c57f05d70ab865de6e193bbb/' + id;
+    os.target = '_blank'; os.rel = 'noopener noreferrer'; os.textContent = 'OpenSea ↗'; links.appendChild(os);
+    var ll = document.createElement('a'); ll.href = 'https://cryptopunks.app/cryptopunks/details/' + id;
+    ll.target = '_blank'; ll.rel = 'noopener noreferrer'; ll.textContent = 'cryptopunks.app ↗'; links.appendChild(ll);
+    document.getElementById('fuse-btn').setAttribute('data-punk-id', String(id));
+    if (!detail.classList.contains('open')) lockScroll();
+    overlay.classList.add('open'); detail.classList.add('open');
+  }
+  function closeDetail() {
+    if (!detail.classList.contains('open')) return;
+    overlay.classList.remove('open'); detail.classList.remove('open');
+    unlockScroll(); _resetFusion();
+  }
+  document.getElementById('pd-close').addEventListener('click', closeDetail);
+  overlay.addEventListener('click', function (e) { if (e.target === overlay) closeDetail(); });
+
+  // ── Sidebar render ──
+  function makeAccordion(title, collapsed) {
+    var acc = document.createElement('div'); acc.className = 'accordion' + (collapsed ? ' collapsed' : '');
+    var head = document.createElement('button'); head.className = 'acc-head'; head.type = 'button';
+    var ht = document.createElement('span'); ht.textContent = title; head.appendChild(ht);
+    var caret = document.createElement('span'); caret.className = 'caret'; caret.textContent = '▾'; head.appendChild(caret);
+    head.addEventListener('click', function () { acc.classList.toggle('collapsed'); });
+    var body = document.createElement('div'); body.className = 'acc-body';
+    acc.appendChild(head); acc.appendChild(body);
+    return { acc: acc, body: body };
+  }
+  function traitRow(cat, value, label, count) {
+    var row = document.createElement('label'); row.className = 'trait-row'; row.dataset.value = value;
+    var cb = document.createElement('input'); cb.type = 'checkbox';
+    cb.addEventListener('change', function () {
+      if (cb.checked) state[cat].add(value); else state[cat].delete(value);
+      onFilterChange();
+    });
+    var lab = document.createElement('span'); lab.className = 'tlabel'; lab.textContent = label;
+    var cnt = document.createElement('span'); cnt.className = 'tcount'; cnt.textContent = count.toLocaleString();
+    row.appendChild(cb); row.appendChild(lab); row.appendChild(cnt);
+    row._cb = cb; row._cat = cat; row._value = value;
+    return row;
+  }
+  var allRows = [];
+  function renderSidebar() {
+    var host = document.getElementById('accordions');
+    var TYPES = ['Male', 'Female', 'Zombie', 'Ape', 'Alien'];
+    var t = makeAccordion('Type', false);
+    TYPES.forEach(function (ty) { var c = COUNTS.get('Type::' + ty) || 0; if (!c) return;
+      var r = traitRow('Type', ty, ty, c); t.body.appendChild(r); allRows.push(r); });
+    host.appendChild(t.acc);
+
+    var a = makeAccordion('Accessories', false);
+    accList.forEach(function (pair) { var r = traitRow('Acc', pair[0], pair[0], pair[1]); a.body.appendChild(r); allRows.push(r); });
+    host.appendChild(a.acc);
+
+    var c = makeAccordion('Accessory Count', true);
+    for (var n = 0; n <= 7; n++) { var cc = COUNTS.get('AccCount::' + n) || 0; if (!cc) continue;
+      var r2 = traitRow('AccCount', String(n), n + (n === 1 ? ' accessory' : ' accessories'), cc); c.body.appendChild(r2); allRows.push(r2); }
+    host.appendChild(c.acc);
+  }
+
+  // accessory search filters the visible rows in the Accessories accordion
+  document.getElementById('acc-search').addEventListener('input', function (e) {
+    var q = e.target.value.trim().toLowerCase();
+    allRows.forEach(function (r) {
+      if (r._cat !== 'Acc') return;
+      r.classList.toggle('hidden', q && r._value.toLowerCase().indexOf(q) === -1);
+    });
+  });
+
+  // ── Filter change → grid + chrome ──
+  function activeCount() { return state.Type.size + state.AccCount.size + state.Acc.size; }
+  function onFilterChange() {
+    applyFilter();
+    window.scrollTo({ top: 0 });
+    sizeSpacer();
+    dirty = true;
+    syncResultCount(); syncChips(); syncFilterBtn();
+    document.getElementById('clear-all').disabled = activeCount() === 0;
+    serializeURL();
+  }
+  function syncResultCount() {
+    var n = filteredIds ? filteredIds.length : 0;
+    var el = document.getElementById('result-count'); el.textContent = '';
+    var b = document.createElement('b'); b.textContent = n.toLocaleString(); el.appendChild(b);
+    el.appendChild(document.createTextNode(' / 10,000 punks'));
+  }
+  function syncChips() {
+    var host = document.getElementById('chips'); host.textContent = '';
+    function addChip(cat, value, label) {
+      var c = document.createElement('span'); c.className = 'chip';
+      c.appendChild(document.createTextNode(label));
+      var x = document.createElement('span'); x.className = 'x'; x.textContent = '✕'; c.appendChild(x);
+      c.addEventListener('click', function () {
+        state[cat].delete(value);
+        allRows.forEach(function (r) { if (r._cat === cat && r._value === value) r._cb.checked = false; });
+        onFilterChange();
+      });
+      host.appendChild(c);
+    }
+    state.Type.forEach(function (v) { addChip('Type', v, v); });
+    state.Acc.forEach(function (v) { addChip('Acc', v, v); });
+    state.AccCount.forEach(function (v) { addChip('AccCount', v, v + ' acc'); });
+  }
+  function syncFilterBtn() {
+    var n = activeCount();
+    document.getElementById('filter-btn-count').textContent = n ? '(' + n + ')' : '';
+  }
+  function clearAll() {
+    state.Type.clear(); state.AccCount.clear(); state.Acc.clear();
+    allRows.forEach(function (r) { r._cb.checked = false; });
+    onFilterChange();
+  }
+  document.getElementById('clear-all').addEventListener('click', clearAll);
+  document.getElementById('empty-clear').addEventListener('click', clearAll);
+
+  // ── URL params ──
+  function serializeURL() {
+    var parts = [];
+    if (state.Type.size) parts.push('t=' + encodeURIComponent([].concat(Array.from(state.Type)).join(',')));
+    if (state.AccCount.size) parts.push('ac=' + encodeURIComponent(Array.from(state.AccCount).join(',')));
+    if (state.Acc.size) parts.push('a=' + encodeURIComponent(Array.from(state.Acc).join(',')));
+    var q = parts.length ? '?' + parts.join('&') : location.pathname;
+    try { history.replaceState(null, '', parts.length ? q : location.pathname); } catch (_) {}
+  }
+  function restoreURL() {
+    var p = new URLSearchParams(location.search);
+    function load(key, cat) { var v = p.get(key); if (!v) return; v.split(',').forEach(function (x) { x = x.trim(); if (x) state[cat].add(x); }); }
+    load('t', 'Type'); load('ac', 'AccCount'); load('a', 'Acc');
+    // reflect into checkboxes
+    allRows.forEach(function (r) { if (state[r._cat].has(r._value)) r._cb.checked = true; });
+  }
+
+  // ── Mobile drawer ──
+  document.getElementById('filter-btn').addEventListener('click', function () { document.body.classList.toggle('filters-open'); });
+  document.getElementById('filter-overlay').addEventListener('click', function () { document.body.classList.remove('filters-open'); });
+
+  // ── Events ──
+  window.addEventListener('scroll', function () { dirty = true; }, { passive: true });
+  canvas.addEventListener('mousemove', onMove);
+  canvas.addEventListener('mouseleave', onLeave);
+  canvas.addEventListener('click', function (e) { var id = hitTest(e.clientX, e.clientY); if (id >= 0) openDetail(id); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { closeDetail(); document.body.classList.remove('filters-open'); } });
+  // Use the window resize event (NOT ResizeObserver on body) — sizeSpacer() mutates
+  // section min-height, which would re-trigger a body/section ResizeObserver every
+  // layout (P2-1). window.resize fires only on real viewport changes (width, mobile
+  // URL-bar, orientation), which is exactly what needs a relayout.
+  var rzT = 0;
+  window.addEventListener('resize', function () { clearTimeout(rzT); rzT = setTimeout(layout, 120); });
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) { rafOn = false; }
+    else if (!rafOn) { rafOn = true; dirty = true; requestAnimationFrame(tick); }
+  });
+
+  // ── Boot ──
+  function bootError(msg) {
+    var boot = document.getElementById('boot'); boot.classList.remove('hide');
+    boot.textContent = ''; var m = document.createElement('div'); m.textContent = msg; boot.appendChild(m);
+    var b = document.createElement('button'); b.textContent = 'Retry'; b.addEventListener('click', function () { location.reload(); }); boot.appendChild(b);
+  }
+  // Decode the atlas blob → a drawImage-able source. Prefer createImageBitmap
+  // (GPU-decoded, off main thread); fall back to <img> for Safari <15 (P2-2).
+  function decodeAtlas(blob) {
+    if (typeof createImageBitmap === 'function') return createImageBitmap(blob);
+    return new Promise(function (resolve, reject) {
+      var url = URL.createObjectURL(blob);
+      var img = new Image();
+      img.onload = function () { URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('image decode failed')); };
+      img.src = url;
+    });
+  }
+  function init() {
+    Promise.all([
+      fetch(ATLAS_URL).then(function (r) { if (!r.ok) throw new Error('atlas ' + r.status); return r.blob(); }),
+      fetch(TRAITS_URL).then(function (r) { if (!r.ok) throw new Error('traits ' + r.status); return r.json(); }),
+      fetch(LAYERS_URL).then(function (r) { return r.ok ? r.blob() : null; }).catch(function () { return null; }),
+      fetch(NAMES_URL).then(function (r) { return r.ok ? r.json() : {}; }).catch(function () { return {}; })
+    ]).then(function (res) {
+      traits = res[1];
+      if (!Array.isArray(traits)) throw new Error('traits JSON malformed');   // P3-4 schema guard
+      layerNames = res[3] || {};
+      var ps = [decodeAtlas(res[0]).then(function (bmp) { atlasBmp = bmp; })];
+      if (res[2]) ps.push(decodeAtlas(res[2]).then(function (bmp) { layerBmp = bmp; }, function () { layerBmp = null; }));  // fusion data optional → never block boot
+      return Promise.all(ps);
+    }).then(function () {
+      buildIndex();
+      renderSidebar();
+      restoreURL();
+      applyFilter();
+      layout();
+      syncResultCount(); syncChips(); syncFilterBtn();
+      document.getElementById('clear-all').disabled = activeCount() === 0;
+      document.getElementById('boot').classList.add('hide');
+      requestAnimationFrame(tick);
+    }).catch(function (err) {
+      console.error('[punks] init failed:', err);
+      bootError('Could not load punk data (' + (err && err.message || 'error') + ').');
+    });
+  }
+  // ───────────────────────────────────────────────────────────────────────────
+  // FUSION (Phase 2) — fill ONE punk trait with a selected modulo artifact's
+  // cellular-automaton animation. Off-chain render; the artifact composition is
+  // read on-chain ON DEMAND (lazy ethers init, only when the user hits Apply).
+  // ───────────────────────────────────────────────────────────────────────────
+  var SETTLE_ARTIFACT_ADDRESS = '0xBFb21e5B736e85160A2FA2056764A7D5f4ab2cd9';
+  var CHAIN_ID = 1, RPC_URL = 'https://modulo.ubk.art/rpc';
+  var SETTLE_ARTIFACT_ABI = [
+    'function tokenURI(uint256) view returns (string)',
+    'function totalArtifacts() view returns (uint256)'
+  ];
+  var _provider = null, _settleArtifact = null;
+  function _ensureOnChain() {
+    if (_settleArtifact) return true;
+    if (!window.ethers) return false;
+    try {
+      _provider = new window.ethers.JsonRpcProvider(RPC_URL, CHAIN_ID, { batchMaxCount: 20 });
+      _settleArtifact = new window.ethers.Contract(SETTLE_ARTIFACT_ADDRESS, SETTLE_ARTIFACT_ABI, _provider);
+      return true;
+    } catch (e) { console.error('[fuse] chain init', e); return false; }
+  }
+  var _artCache = new Map();
+  function _fetchArtifactComposition(id) {
+    if (_artCache.has(id)) return _artCache.get(id);
+    var p = (async function () {
+      var uri = await _settleArtifact.tokenURI(id);
+      var html = _decodeTokenURI(uri);
+      var comp = html && _extractComposition(html);
+      if (!comp) throw new Error('no composition');
+      return comp;
+    })();
+    _artCache.set(id, p);
+    p.catch(function () { _artCache.delete(id); });   // don't cache a rejected fetch -> allow retry
+    return p;
+  }
+
+  function _decodeTokenURI(uri) {
+  if (typeof uri !== 'string') return null;
+  const comma = uri.indexOf(',');
+  if (comma < 0) return null;
+  try {
+    // atob returns "binary string" — each char's code point is one byte
+    // (0-255). For UTF-8 multibyte sequences (e.g. em-dash U+2014 = E2 80
+    // 94, middle-dot U+00B7 = C2 B7) the raw atob output is the byte
+    // sequence interpreted as Latin-1 codepoints, which renders as
+    // mojibake (`Â·`, `â„`) when the iframe srcdoc parser sees it as
+    // UTF-8 chars. Re-interpret the binary string as bytes and decode
+    // as UTF-8 to recover the original glyphs.
+    const prefix = uri.slice(0, comma);
+    const binStr = atob(uri.slice(comma + 1));
+    const bytes = new Uint8Array(binStr.length);
+    for (let i = 0; i < binStr.length; i++) bytes[i] = binStr.charCodeAt(i);
+    const decoded = new TextDecoder('utf-8').decode(bytes);
+
+    // P0-A 2026-05-13: tokenURI now returns JSON envelope wrapping the HTML
+    // payload (data:application/json;base64,<JSON>). The HTML lives inside
+    // the JSON's `animation_url` field as a nested data URI. Decode the
+    // envelope, extract animation_url, then decode that recursively to
+    // recover the HTML for iframe srcdoc rendering. Old data:text/html;
+    // base64 path kept as fall-through for backwards compat (any contract
+    // version still returning raw HTML continues to work).
+    if (prefix.startsWith('data:application/json')) {
+      const meta = JSON.parse(decoded);
+      const animUrl = meta.animation_url;
+      if (typeof animUrl !== 'string') return null;
+      const animComma = animUrl.indexOf(',');
+      if (animComma < 0) return null;
+      const animBin = atob(animUrl.slice(animComma + 1));
+      const animBytes = new Uint8Array(animBin.length);
+      for (let i = 0; i < animBin.length; i++) animBytes[i] = animBin.charCodeAt(i);
+      return new TextDecoder('utf-8').decode(animBytes);
+    }
+    return decoded;
+  } catch (_) { return null; }
+}
+  function _normalizeComposition(raw) {
+  const num = v => (typeof v === 'bigint' ? Number(v) : Number(v)) | 0;
+  return {
+    artifactId: num(raw.artifactId),
+    moduloId:   num(raw.moduloId),
+    tokens:     raw.tokens.map(t => ({
+      tokenId:    num(t.tokenId),
+      rank:       num(t.rank),
+      seed:       String(t.seed),
+      hasMode:    !!t.hasMode,
+      hasSize:    !!t.hasSize,
+      hasRS:      !!t.hasRS,
+      hasRD:      !!t.hasRD,
+      hasBios:    !!t.hasBios,
+      hasDX:      !!t.hasDX,
+      modes:      Array.isArray(t.modes) ? t.modes.map(num) : [],
+      dx:         Array.isArray(t.dx)    ? t.dx.map(num)    : [],
+      rv:         Array.isArray(t.rv)    ? t.rv.map(num)    : [],
+      size:       num(t.size),
+      rectSize:   num(t.rectSize),
+      rectDim:    num(t.rectDim),
+      biosOn:     !!t.biosOn,
+      colorIndex: num(t.colorIndex),
+      speed:      num(t.speed),
+    })),
+  };
+}
+
+// Extract the COMPOSITION JSON literal from the decoded tokenURI HTML.
+// HTMLBuilder.sol:65 substitutes `__MODULO_COMPOSITION__` with a JSON object
+// inside `const COMPOSITION=...;`. We regex back the JSON, parse, normalize.
+function _extractComposition(decodedHtml) {
+  if (!decodedHtml) return null;
+  const m = decodedHtml.match(/const COMPOSITION\s*=\s*(\{[\s\S]*?\});/);
+  if (!m) return null;
+  try {
+    return _normalizeComposition(JSON.parse(m[1]));
+  } catch (err) {
+    console.error('[export] composition parse failed:', err);
+    return null;
+  }
+}
+
+// Engine factory — direct port of html-placeholders/artifact-render.html.
+// Differences from the placeholder:
+  function _createArtifactEngine(canvas, rawComposition) {
+  // ===== ENGINE START =====
+  const COMPOSITION = rawComposition;
+  const MODE_NAMES = ['feedback','shift','noise','modulo','wave','jungle','sector','blocks'];
+  const SIZE_INT_TO_STR = ['sm','md','lg'];
+  const RS_INT_TO_STR   = ['sm','md','lg','xl'];
+  const RD_INT_TO_STR   = ['lo','md','hi','mx'];
+  const DX_KEY_BY_INDEX = ['x','plus','h','sq','num','numi','m','o'];
+  const RV_NAME_BY_INDEX = ['core','mecha','hysteria','metro','side-b','earthquake','retro','ladder'];
+  function _seedFromBytes32(hex) {
+    const h = (hex || '').slice(2);
+    let s = 0;
+    for (let i = 0; i < 8; i++) s ^= parseInt(h.slice(i*8, i*8+8), 16) | 0;
+    return s | 0;
+  }
+  function mulberry32(seed) {
+    return function() {
+      seed |= 0; seed = seed + 1831565813 | 0;
+      let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+  // Composition seed — XOR-fold each token seed, XOR with artifactId
+  let _compSeed = (COMPOSITION.artifactId | 0);
+  for (let i = 0; i < COMPOSITION.tokens.length; i++) {
+    _compSeed ^= _seedFromBytes32(COMPOSITION.tokens[i].seed);
+  }
+  const _rng = mulberry32(_compSeed | 0);
+  const COLS_DATA = [['#6363ff','#a040ff','#ff003a','#ff8c00','#ffbd2e','#28c840','#ff4080','#ff63ff','#1100ff','#63ff63','#57686e','#2a0b18','#23242a','#ab0a5f','#0f1021','#000000','#bfbcce','#8b8b8b']];
+  const DX_PATTERNS = {
+    x:[[0,0],[0,5],[1,1],[1,4],[2,2],[2,3],[3,2],[3,3],[4,1],[4,4],[5,0],[5,5]],
+    plus:[[0,2],[0,3],[1,2],[1,3],[2,0],[2,1],[2,2],[2,3],[2,4],[2,5],[3,0],[3,1],[3,2],[3,3],[3,4],[3,5],[4,2],[4,3],[5,2],[5,3]],
+    h:[[2,0],[2,1],[2,2],[2,3],[2,4],[2,5],[3,0],[3,1],[3,2],[3,3],[3,4],[3,5]],
+    sq:[[0,0],[0,1],[0,2],[0,3],[0,4],[0,5],[5,0],[5,1],[5,2],[5,3],[5,4],[5,5],[1,0],[2,0],[3,0],[4,0],[1,5],[2,5],[3,5],[4,5]],
+    tri:[[1,2],[1,3],[2,1],[2,2],[2,3],[2,4],[3,1],[3,2],[3,3],[3,4],[4,0],[4,1],[4,2],[4,3],[4,4],[4,5]],
+    circle:[[0,1],[0,2],[0,3],[0,4],[1,0],[1,5],[2,0],[2,5],[3,0],[3,5],[4,0],[4,5],[5,1],[5,2],[5,3],[5,4]],
+    diamond:[[0,2],[0,3],[1,1],[1,4],[2,0],[2,5],[3,0],[3,5],[4,1],[4,4],[5,2],[5,3]],
+    checker:[[0,0],[0,1],[0,4],[0,5],[1,0],[1,1],[1,4],[1,5],[2,2],[2,3],[3,2],[3,3],[4,0],[4,1],[4,4],[4,5],[5,0],[5,1],[5,4],[5,5]],
+    legoStud:[[1,2],[1,3],[2,1],[2,4],[3,1],[3,4],[4,2],[4,3]],
+  };
+  const _DX_MULTI = ['tri','circle','diamond','checker'];
+  const DX_DIGIT_PATTERNS = [[[2,4],[2,5],[2,6],[3,3],[3,7],[4,3],[4,7],[5,3],[5,7],[6,3],[6,7],[7,3],[7,7],[8,4],[8,5],[8,6]],[[2,5],[3,4],[3,5],[4,5],[5,5],[6,5],[7,5],[8,4],[8,5],[8,6]],[[2,4],[2,5],[2,6],[3,3],[3,7],[4,7],[5,6],[6,5],[7,4],[8,3],[8,4],[8,5],[8,6],[8,7]],[[2,4],[2,5],[2,6],[3,3],[3,7],[4,7],[5,5],[5,6],[6,7],[7,3],[7,7],[8,4],[8,5],[8,6]],[[2,6],[3,5],[3,6],[4,4],[4,6],[5,3],[5,6],[6,3],[6,4],[6,5],[6,6],[6,7],[7,6],[8,6]],[[2,3],[2,4],[2,5],[2,6],[2,7],[3,3],[4,3],[5,3],[5,4],[5,5],[5,6],[6,7],[7,7],[8,3],[8,4],[8,5],[8,6]],[[2,4],[2,5],[2,6],[3,3],[4,3],[5,3],[5,4],[5,5],[5,6],[6,3],[6,7],[7,3],[7,7],[8,4],[8,5],[8,6]],[[2,3],[2,4],[2,5],[2,6],[2,7],[3,7],[4,6],[5,5],[6,4],[7,4],[8,4]],[[2,4],[2,5],[2,6],[3,3],[3,7],[4,3],[4,7],[5,4],[5,5],[5,6],[6,3],[6,7],[7,3],[7,7],[8,4],[8,5],[8,6]],[[2,4],[2,5],[2,6],[3,3],[3,7],[4,3],[4,7],[5,4],[5,5],[5,6],[5,7],[6,7],[7,7],[8,4],[8,5],[8,6]]];
+  const DX_DIGIT_PATTERNS_INV = DX_DIGIT_PATTERNS.map(p => {
+    let set = new Set(p.map(([r,c]) => r*12+c)), inv = [];
+    for (let r = 0; r < 12; r++) for (let c = 0; c < 12; c++) if (!set.has(r*12+c)) inv.push([r,c]);
+    return inv;
+  });
+  const BIOS_DATA = [{title:'save & exit setup',msg:'save configuration and exit?',btns:['yes','no']},{title:'boot order',msg:'set boot device?',btns:['ok','no']},{title:'load defaults',msg:'load optimal defaults?',btns:['yes','no']},{title:'clear cmos',msg:'reset all settings?',btns:['yes','no']},{title:'exit without saving',msg:'discard changes?',btns:['yes','no']}];
+  const SIZE_SCALES = {sm:0.4, md:1, lg:2};
+  const SHIFT_BASE_SCALES = {sm:0.15, md:0.4, lg:0.8};
+  const SHIFT_ZONE_SCALES = {sm:1, md:2, lg:2.5};
+  const RS_PARAMS = {sm:{min:4,max:20},md:{min:10,max:30},lg:{min:20,max:50},xl:{min:40,max:80}};
+  const RD_PARAMS = {lo:{offMin:5e3,offMax:12e3,onMin:500,onMax:1500},md:{offMin:1e3,offMax:6e3,onMin:1500,onMax:6500},hi:{offMin:200,offMax:1e3,onMin:3e3,onMax:8e3},mx:{offMin:50,offMax:200,onMin:5e3,onMax:12e3}};
+  const sId = 'r';
+  const MODULOS = [{id: sId, personal: false, tokens: COMPOSITION.tokens.map(t => t.tokenId)}];
+  const tokenModes = {}, tokenSizes = {}, tokenRectSizes = {}, tokenRectDensities = {}, biosStates = {}, tokenDitherPatterns = {}, tokenRectVariants = {};
+  const TOKEN_DATA = {};
+  tokenModes[sId] = {}; tokenSizes[sId] = {}; tokenRectSizes[sId] = {}; tokenRectDensities[sId] = {};
+  biosStates[sId] = {}; tokenDitherPatterns[sId] = {}; tokenRectVariants[sId] = {};
+  COMPOSITION.tokens.forEach((t, i) => {
+    TOKEN_DATA[t.tokenId] = {rank: t.rank, palette: 0, sel: t.colorIndex, speed: t.speed};
+    if (t.hasMode && t.modes && t.modes.length) tokenModes[sId][i] = MODE_NAMES[t.modes[0]] || 'feedback';
+    if (t.hasSize) tokenSizes[sId][i] = SIZE_INT_TO_STR[t.size] || 'md';
+    if (t.hasRS)   tokenRectSizes[sId][i] = RS_INT_TO_STR[t.rectSize] || 'md';
+    if (t.hasRD)   tokenRectDensities[sId][i] = RD_INT_TO_STR[t.rectDim] || 'md';
+    if (t.hasBios) biosStates[sId][i] = !!t.biosOn;
+    if (t.hasDX && t.dx && t.dx.length) tokenDitherPatterns[sId][i] = DX_KEY_BY_INDEX[t.dx[0]] || 'x';
+    if (t.rv && t.rv.length) tokenRectVariants[sId][i] = RV_NAME_BY_INDEX[t.rv[0]] || null;
+  });
+  // v3 sync (2026-05-22): speed is canonical ops range 1..28 (matches workshop
+  // engine + the on-chain artifact-render-v2.html); default 10. Was: round(speed/7)
+  // — legacy v1 conversion → MP4 export rendered at 1/7 the ops/frame of the
+  // on-chain renderer (~7× intensity drift). security-auditor a321707f GO.
+  const _tokenOpsArr = COMPOSITION.tokens.map(t => Math.max(1, t.speed || 10));
+  const _sumTokenOps = _tokenOpsArr.reduce((a, b) => a + b, 0) || 14;
+
+  function getTokenDitherPattern(modId, i) { return tokenDitherPatterns[modId] && tokenDitherPatterns[modId][i] != null ? tokenDitherPatterns[modId][i] : null; }
+  function getTokenSize(modId, i) { return tokenSizes[modId] && tokenSizes[modId][i] != null ? tokenSizes[modId][i] : null; }
+  function getTokenMode(modId, i) { return tokenModes[modId] ? (tokenModes[modId][i] ?? null) : null; }
+  function getBiosState(modId, i) { return biosStates[modId] ? biosStates[modId][i] : void 0; }
+  function getBiosOn(modId, i) { return getBiosState(modId, i) === true; }
+  function moduloDistinctRectSizes(mod) { let s = new Set(); mod.tokens.forEach((_, i) => { let v = tokenRectSizes[mod.id] && tokenRectSizes[mod.id][i]; v != null && s.add(v); }); return [...s]; }
+  function moduloDistinctRectVariants(mod) { let s = new Set(); mod.tokens.forEach((_, i) => { let v = tokenRectVariants[mod.id] && tokenRectVariants[mod.id][i]; v != null && s.add(v); }); return [...s]; }
+  function moduloDistinctRectDensities(mod) { let s = new Set(); mod.tokens.forEach((_, i) => { let v = tokenRectDensities[mod.id] && tokenRectDensities[mod.id][i]; v != null && s.add(v); }); return [...s]; }
+  function moduloDistinctModes(mod) { let s = new Set(); mod.tokens.forEach((_, i) => { let m = getTokenMode(mod.id, i); m !== null && s.add(m); }); return [...s]; }
+  function getSizeForMode(mod, mn) { for (let i = 0; i < mod.tokens.length; i++) if (getTokenMode(mod.id, i) === mn) { let sz = getTokenSize(mod.id, i); if (sz !== null) return sz; } return null; }
+  function getModuloDxPattern(mod) { for (let i = 0; i < mod.tokens.length; i++) { let v = getTokenDitherPattern(mod.id, i); if (v !== null) return v; } return null; }
+  function getSelIdx(modId, i) { let mod = MODULOS.find(c => c.id === modId), td = TOKEN_DATA[mod ? mod.tokens[i] : void 0], palLen = td ? COLS_DATA[td.palette].length : 1; return td ? Math.min(Math.max(0, td.sel), palLen - 1) : 0; }
+
+  // === Per-modulo animation state (was inside startAnim in placeholder) ===
+  const mod = MODULOS[0];
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  ctx.imageSmoothingEnabled = false;
+
+  let grid = new Uint8Array(450 * 250), next = new Uint8Array(450 * 250);
+  let PAL = [], _palThresholds = [];
+  function _recomputeThresholds(N) { _palThresholds = Array(N); let wSum = 0, weights = Array(N); for (let k = 0; k < N; k++) { let w = (N - k) ** 1.5; weights[k] = w; wSum += w; } let acc = 0; for (let k = 0; k < N; k++) { acc += weights[k] / wSum; _palThresholds[k] = acc; } }
+  function _pickWeighted() { let r = _rng(), N = _palThresholds.length; for (let k = 0; k < N; k++) if (r < _palThresholds[k]) return k; return N - 1; }
+  let _txtPalIdx = 0, _txtPalIdx2 = 0;
+  function _pickTxtColors() { _txtPalIdx = Math.floor(_rng() * PAL.length); _txtPalIdx2 = PAL.length > 1 ? (_txtPalIdx + 1 + Math.floor(_rng() * (PAL.length - 1))) % PAL.length : _txtPalIdx; }
+  let _prevPalN = -1;
+  function updatePalette() {
+    PAL = mod.tokens.map((t, si) => ({t, si, rank: TOKEN_DATA[t] && TOKEN_DATA[t].rank || 9999}))
+      .sort((a, b) => a.rank - b.rank)
+      .map(({t, si}) => { let hex = COLS_DATA[TOKEN_DATA[t] ? TOKEN_DATA[t].palette : 0][getSelIdx(mod.id, si)]; return [parseInt(hex.slice(1,3),16), parseInt(hex.slice(3,5),16), parseInt(hex.slice(5,7),16)]; });
+    if (PAL.length === 0) PAL = [[0, 0, 0]];
+    let _N = PAL.length;
+    if (_N !== _prevPalN) { _recomputeThresholds(_N); for (let i = 0; i < grid.length; i++) grid[i] = _pickWeighted(); _prevPalN = _N; }
+    _pickTxtColors();
+  }
+  updatePalette();
+  function idx(c, r) { return (r + 250) % 250 * 450 + (c + 450) % 450; }
+  let _sizeScale = 1, _shiftBaseScale = 0.15, _shiftZoneScale = 1, _sizeScaleTarget = 1, _shiftBaseScaleTarget = 0.15, _shiftZoneScaleTarget = 1;
+  function _lerpScale(cur, tg, fr) { if (cur === tg) return cur; let d = (tg - cur) / fr; return Math.abs(tg - cur) < Math.abs(d) ? tg : cur + d; }
+  function makeRect() { return {x: Math.floor(_rng()*450), y: Math.floor(_rng()*250), w: 2 + Math.floor(_rng() * Math.max(1, Math.round(12 * _sizeScale))), h: 2 + Math.floor(_rng() * Math.max(1, Math.round(6 * _sizeScale)))}; }
+  let _SHIFT_ZONE_R2 = 54 ** 2, _shiftZones = [], _shiftZoneTimer = 0;
+  function _refreshShiftZones() { let n = 3 + Math.floor(_rng() * 2); _shiftZones = Array.from({length: n}, () => ({cx: Math.floor(_rng()*450), cy: Math.floor(_rng()*250)})); }
+  _refreshShiftZones();
+  function animNoise() { let r = makeRect(); for (let dy = 0; dy < r.h; dy++) for (let dx = 0; dx < r.w; dx++) next[idx(r.x + dx, r.y + dy)] = _pickWeighted(); }
+  function animShift() { let rx = Math.floor(_rng()*450), ry = Math.floor(_rng()*250), inZone = _shiftZones.some(z => { let dx = rx - z.cx, dy = ry - z.cy; return dx*dx + dy*dy < _SHIFT_ZONE_R2; }), sc = inZone ? _shiftZoneScale : _shiftBaseScale, r = {x: rx, y: ry, w: 2 + Math.floor(_rng() * Math.max(1, Math.round(12*sc))), h: 2 + Math.floor(_rng() * Math.max(1, Math.round(6*sc)))}, horiz = _rng() < 0.5, dist = inZone ? 1 + Math.floor(_rng() * (horiz ? 2 : 3)) : 1, dir = (_rng() < 0.5 ? 1 : -1) * dist; for (let dy = 0; dy < r.h; dy++) for (let dx = 0; dx < r.w; dx++) next[idx(r.x+dx, r.y+dy)] = grid[horiz ? idx(r.x+dx+dir, r.y+dy) : idx(r.x+dx, r.y+dy+dir)]; if (++_shiftZoneTimer > 1200) { _shiftZoneTimer = 0; _refreshShiftZones(); } }
+  function animJungle() { let rx = Math.floor(_rng()*450), ry = Math.floor(_rng()*250), inZone = _shiftZones.some(z => { let dx = rx - z.cx, dy = ry - z.cy; return dx*dx + dy*dy < _SHIFT_ZONE_R2; }), sc = inZone ? _shiftZoneScale : _shiftBaseScale, r = {x: rx, y: ry, w: 2 + Math.floor(_rng() * Math.max(1, Math.round(12*sc))), h: 2 + Math.floor(_rng() * Math.max(1, Math.round(6*sc)))}, dirH = (_rng() < 0.5 ? 1 : -1) * (1 + Math.floor(_rng() * (inZone ? 3 : 2))), dirV = (_rng() < 0.5 ? 1 : -1) * (1 + Math.floor(_rng() * (inZone ? 4 : 2))); for (let dy = 0; dy < r.h; dy++) for (let dx = 0; dx < r.w; dx++) next[idx(r.x+dx, r.y+dy)] = grid[idx(r.x+dx+dirH, r.y+dy+dirV)]; if (++_shiftZoneTimer > 1200) { _shiftZoneTimer = 0; _refreshShiftZones(); } }
+  function animModulo() { if (PAL.length < 2) return; let r = makeRect(), step = 1 + Math.floor(_rng() * (PAL.length - 1)); for (let dy = 0; dy < r.h; dy++) for (let dx = 0; dx < r.w; dx++) { let i = idx(r.x+dx, r.y+dy); if (_rng() < 0.5) next[i] = (grid[i] + step) % PAL.length; } }
+  let _waveT = 0;
+  function animWave() { _waveT += 0.003; let r = makeRect(), zoneAmp = Math.max(0, Math.sin(r.x*0.018 + _waveT*0.4) * Math.sin(r.y*0.022 + _waveT*0.25)) ** 1.5, amp = 1 + Math.round(11*zoneAmp); for (let dy = 0; dy < r.h; dy++) { let cy = r.y + dy, wcy = cy % 250, speedMod = 1 + Math.sin(wcy*0.03)*0.5, offset = Math.round(Math.sin(wcy*0.08 + _waveT*speedMod) * amp); for (let dx = 0; dx < r.w; dx++) next[idx(r.x+dx, cy)] = grid[idx(r.x+dx-offset, cy)]; } if (PAL.length >= 2 && _rng() < 0.005) { let sx = Math.floor(_rng()*450), baseY = Math.floor(_rng()*250), sh = 8 + Math.floor(_rng()*20), halfW = 1 + Math.floor(_rng()*2); for (let h = 0; h < sh; h++) { let taper = 1 - h/sh, wHere = Math.max(1, Math.round(halfW*taper)), y = (baseY - h + 250) % 250; for (let w = -wHere; w <= wHere; w++) { let x = (sx + w + 450) % 450; if (_rng() < 0.8) next[idx(x, y)] = _pickWeighted(); } } } }
+  function animFeedback() { let r = makeRect(); for (let dy = 0; dy < r.h; dy++) for (let dx = 0; dx < r.w; dx++) { let cx = r.x + dx, cy = r.y + dy; if (_rng() < 0.05) { next[idx(cx, cy)] = _pickWeighted(); continue; } let nb = [grid[idx(cx-1,cy)], grid[idx(cx+1,cy)], grid[idx(cx,cy-1)], grid[idx(cx,cy+1)]], count = Array(PAL.length).fill(0); for (let n of nb) if (n < PAL.length) count[n]++; let max = 0, best = grid[idx(cx,cy)]; for (let v = 0; v < PAL.length; v++) if (count[v] > max) { max = count[v]; best = v; } next[idx(cx,cy)] = best; } }
+  const _BAYER2 = [[0,2],[3,1]]; let _sectorT = 0;
+  function animSector() { if (_rng() < 0.65) return; _sectorT += 0.012; let roll = _rng(); if (roll < 0.6) { let shape = _rng(), amp = 2 + Math.round(8 * _sizeScale); if (shape < 0.04) { let x = Math.floor(_rng()*450), y = Math.floor(_rng()*250), wRand = Math.pow(_rng(), 1.6), w = 2 + Math.floor(wRand * Math.max(1, Math.round(19*_sizeScale))), h = 1 + (_rng() < 0.4 ? 1 : 0), wcy = y % 250, off = Math.round(Math.sin(wcy*0.11 + _sectorT*1.4)*amp + (_rng()-0.5)*4); for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) next[idx(x+dx, y+dy)] = grid[idx(x+dx+off, y+dy)]; } else if (shape < 0.6) { let y = Math.floor(_rng()*250), wcy = y % 250, segCount = 2 + Math.floor(_rng()*6); for (let s = 0; s < segCount; s++) { if (_rng() < 0.35) continue; let x = Math.floor(_rng()*450), tier = _rng(), w; if (tier < 0.3) w = 1 + Math.floor(_rng()*1); else if (tier < 0.75) w = 2 + Math.floor(_rng() * Math.max(1, Math.round(4*_sizeScale))); else w = 5 + Math.floor(_rng() * Math.max(1, Math.round(14*_sizeScale))); let off = Math.round(Math.sin(wcy*0.11 + _sectorT*1.4)*amp + (_rng()-0.5)*6), h = 1 + Math.floor(_rng()*3); for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) next[idx(x+dx, y+dy)] = grid[idx(x+dx+off, y+dy)]; } } else { let x = Math.floor(_rng()*450), y = Math.floor(_rng()*250), square = _rng() < 0.5, tier = _rng(), baseSz; if (tier < 0.25) baseSz = 1 + Math.floor(_rng()*2); else if (tier < 0.65) baseSz = 3 + Math.floor(_rng()*4); else if (tier < 0.92) baseSz = 7 + Math.floor(_rng() * Math.max(1, Math.round(7*_sizeScale))); else baseSz = 13 + Math.floor(_rng() * Math.max(1, Math.round(13*_sizeScale))); let w = square ? baseSz : baseSz + Math.floor(_rng() * Math.max(2, baseSz)), h = square ? baseSz : Math.max(2, Math.floor(baseSz * (0.3 + _rng()*0.9))), off = Math.round((_rng()-0.5) * 2 * amp); for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) next[idx(x+dx, y+dy)] = grid[idx(x+dx+off, y+dy)]; } } else if (roll < 0.85) { let cx = Math.floor(_rng()*450), halfW = 1 + Math.floor(_rng() * Math.max(1, Math.round(2*_sizeScale))), yStart = Math.floor(_rng()*250), tier = _rng(), len; if (tier < 0.4) len = 2 + Math.floor(_rng()*4); else if (tier < 0.85) len = 5 + Math.floor(_rng()*8); else if (tier < 0.96) len = 12 + Math.floor(_rng()*13); else len = 30 + Math.floor(_rng() * Math.max(1, Math.round(20*_sizeScale))); let srcY = (yStart + (_rng() < 0.5 ? -20 : 20) + 250) % 250; for (let h = 0; h < len; h++) { let cy = (yStart + h) % 250; for (let w = -halfW; w <= halfW; w++) next[idx(cx+w, cy)] = grid[idx(cx+w, srcY)]; } } else { if (PAL.length < 2) return; let r = makeRect(), N = PAL.length, last = N - 1; for (let dy = 0; dy < r.h; dy++) for (let dx = 0; dx < r.w; dx++) { let i = idx(r.x+dx, r.y+dy), v = grid[i], bayer = _BAYER2[dy & 1][dx & 1] / 4 - 0.375, norm = v / last, jit = (_rng() - 0.5) * 0.25, q = Math.max(0, Math.min(1, norm + bayer * (1/N) + jit)); next[i] = Math.round(q * last); } } }
+  const BLOCKS_TUNING = {skipPct: 50, feedbackMix: 73, pBands: 87, pPeaks: 13, bandMaxH: 16, bandWaveAmp: 7, peakMaxH: 17, peakBaseW: 2, erosionMaxW: 18, erosionMaxH: 10};
+  let _blocksT = 0;
+  function _localFeedbackAt(ox, oy) { let w = 2 + Math.floor(_rng() * Math.max(1, Math.round(12*_sizeScale))), h = 2 + Math.floor(_rng() * Math.max(1, Math.round(6*_sizeScale))), sx = ox - (w >> 1), sy = oy - (h >> 1); for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) { let cx = sx + dx, cy = sy + dy, nb = [grid[idx(cx-1,cy)], grid[idx(cx+1,cy)], grid[idx(cx,cy-1)], grid[idx(cx,cy+1)]], count = Array(PAL.length).fill(0); for (let n of nb) if (n < PAL.length) count[n]++; let max = 0, best = grid[idx(cx,cy)]; for (let v = 0; v < PAL.length; v++) if (count[v] > max) { max = count[v]; best = v; } next[idx(cx,cy)] = best; } }
+  function _runFeedbackModeOpAt(ox, oy) { let r = _rng(); if (r < 0.7) _localFeedbackAt(ox, oy); else if (r < 0.8) animShift(); else if (r < 0.9) animNoise(); else animModulo(); }
+  function animBlocks() { let T = BLOCKS_TUNING, ox = Math.floor(_rng()*450), oy = Math.floor(_rng()*250); if (T.feedbackMix > 0) { let tBlend = (ox/450 + oy/250) / 2, v = Math.pow(T.feedbackMix/100, 0.4), prob = v <= 0.5 ? (2*v*tBlend) : (tBlend*(2-2*v) + (2*v-1)); if (_rng() < prob) { _runFeedbackModeOpAt(ox, oy); return; } } if (_rng() < T.skipPct/100) return; _blocksT += 0.008; if (PAL.length < 2) return; let last = PAL.length - 1, pB = T.pBands/100, pP = T.pPeaks/100, roll = _rng(), _pickLit = () => { let N = PAL.length; if (N <= 2) return last; let r = Math.pow(_rng(), 2.2); return 1 + Math.floor(r * last); }; if (roll < pB) { let cy = oy, tier = _rng(), h; if (tier < 0.6) h = 2 + Math.floor(_rng() * Math.max(1, Math.round((T.bandMaxH * 0.25) * _sizeScale))); else if (tier < 0.93) h = Math.round(T.bandMaxH * 0.31) + Math.floor(_rng() * Math.max(1, Math.round((T.bandMaxH * 0.31) * _sizeScale))); else h = Math.round(T.bandMaxH * 0.56) + Math.floor(_rng() * Math.max(1, Math.round((T.bandMaxH * 0.44) * _sizeScale))); let bx = ox, wTier = _rng(), bw, isMd = _sizeScale >= 0.99 && _sizeScale <= 1.01; if (wTier < 0.55) bw = 4 + Math.floor(_rng() * (isMd ? 17 : 12)); else if (wTier < 0.92) bw = (isMd ? 16 : 13) + Math.floor(_rng() * (isMd ? 7 : 6)); else bw = (isMd ? 28 : 23) + Math.floor(_rng() * (isMd ? 2 : 3)); let ampY = 1 + Math.floor(_rng() * Math.max(1, T.bandWaveAmp)), freq = 0.025 + _rng()*0.05, phase = _blocksT*1.2 + _rng()*6.28, halfH = h/2, v = _pickLit(); for (let dx = 0; dx < bw; dx++) { let wave = Math.sin((bx+dx)*freq + phase) * ampY, top = Math.round(cy + wave - halfH); for (let dy = 0; dy < h; dy++) next[idx(bx+dx, top+dy)] = v; } } else if (roll < pB + pP) { let cx = ox, baseY = oy, tier = _rng(), height; if (tier < 0.55) height = 4 + Math.floor(_rng() * Math.max(1, Math.round(T.peakMaxH * 0.16))); else if (tier < 0.92) height = Math.round(T.peakMaxH * 0.26) + Math.floor(_rng() * Math.max(1, Math.round(T.peakMaxH * 0.29))); else height = Math.round(T.peakMaxH * 0.52) + Math.floor(_rng() * Math.max(1, Math.round(T.peakMaxH * 0.48 * _sizeScale))); let baseHalfW = 1 + Math.floor(_rng() * Math.max(1, T.peakBaseW)), v = _pickLit(); for (let h = 0; h < height; h++) { let taper = 1 - h/height, halfW = Math.max(0, Math.floor(baseHalfW*taper)); for (let w = -halfW; w <= halfW; w++) next[idx(cx+w, baseY-h)] = v; } } else { let cx = ox, cy = oy, w = 2 + Math.floor(_rng() * Math.max(1, Math.round(T.erosionMaxW * _sizeScale))), h = 2 + Math.floor(_rng() * Math.max(1, Math.round(T.erosionMaxH * _sizeScale))); for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) next[idx(cx+dx, cy+dy)] = 0; } }
+
+  const DIRS = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1],[1,-1],[-1,1]];
+  let rectShifts = [], _rsDistinct = moduloDistinctRectSizes(mod), _rsCycleIdx = 0, _rsCycleFrames = 0, _rsSize = _rsDistinct[0] || 'md';
+  let _rdDistinct = moduloDistinctRectDensities(mod), _rdCycleIdx = 0, _rdCycleFrames = 0, _rdDensity = _rdDistinct[0] || 'md';
+  let _rvDistinct = moduloDistinctRectVariants(mod), _rvCycleIdx = 0, _rvCycleFrames = 0, _activeRectVariant = _rvDistinct[0] || 'core';
+  let _activeDxPattern = getModuloDxPattern(mod);
+  function _makeRect1() { let p = RS_PARAMS[_rsSize] || RS_PARAMS.md, cw = p.min + Math.floor(_rng()*(p.max-p.min)), ch = p.min + Math.floor(_rng()*(p.max-p.min)), cx = Math.floor(_rng() * Math.max(1, 450-cw)), cy = Math.floor(_rng() * Math.max(1, 250-ch)), [ddx, ddy] = DIRS[Math.floor(_rng()*DIRS.length)]; return {cx, cy, cw, ch, dx: ddx, dy: ddy, tiles: null}; }
+  function _makeRect6() { let p = RS_PARAMS[_rsSize] || RS_PARAMS.md, cw = Math.min(450, Math.round((p.min + Math.floor(_rng()*(p.max-p.min)))*1.3)), ch = Math.min(250, Math.round((p.min + Math.floor(_rng()*(p.max-p.min)))*1.3)), cx = Math.floor(_rng() * Math.max(1, 450-cw)), cy = Math.floor(_rng() * Math.max(1, 250-ch)), [ddx, ddy] = DIRS[Math.floor(_rng()*DIRS.length)]; return {cx, cy, cw, ch, dx: ddx, dy: ddy, tiles: null, walkRate: 0.10}; }
+  function _makeRect7() { let p = RS_PARAMS[_rsSize] || RS_PARAMS.md, cw = Math.min(450, Math.round((p.min + Math.floor(_rng()*(p.max-p.min)))*1.4)), ch = Math.min(250, Math.round((p.min + Math.floor(_rng()*(p.max-p.min)))*1.4)), cx = Math.floor(_rng() * Math.max(1, 450-cw)), cy = Math.floor(_rng() * Math.max(1, 250-ch)), tw = Math.max(2, Math.round(cw * (0.35 + _rng()*0.15))), th = Math.max(2, Math.round(ch * (0.35 + _rng()*0.15))), stepX = Math.max(1, Math.floor((cw - tw) / 2)), stepY = Math.max(1, Math.floor((ch - th) / 2)), rects, shape = Math.floor(_rng()*4); if (shape === 0) rects = [{x: cx, y: cy, w: tw, h: th},{x: cx+stepX, y: cy+stepY, w: tw, h: th},{x: cx+stepX*2, y: cy+stepY*2, w: tw, h: th}]; else if (shape === 1) rects = [{x: cx, y: cy+stepY*2, w: tw, h: th},{x: cx+stepX, y: cy+stepY, w: tw, h: th},{x: cx+stepX*2, y: cy, w: tw, h: th}]; else if (shape === 2) rects = [{x: cx+stepX*2, y: cy, w: tw, h: th},{x: cx+stepX, y: cy+stepY, w: tw, h: th},{x: cx, y: cy+stepY*2, w: tw, h: th}]; else rects = [{x: cx+stepX*2, y: cy+stepY*2, w: tw, h: th},{x: cx+stepX, y: cy+stepY, w: tw, h: th},{x: cx, y: cy, w: tw, h: th}]; let phaseOffsets = [0, 3, 5], tiles = rects.map((r, i) => { let ph = phaseOffsets[i], [pdx, pdy] = DIRS[ph]; return {x: r.x, y: r.y, w: r.w, h: r.h, dx: pdx, dy: pdy, phaseIdx: ph, phaseTimer: 0}; }); return {cx, cy, cw, ch, dx: 1, dy: 0, tiles}; }
+  function _makeRect8() { let p = RS_PARAMS[_rsSize] || RS_PARAMS.md, cw = p.min + Math.floor(_rng()*(p.max-p.min)), ch = p.min + Math.floor(_rng()*(p.max-p.min)), cx = Math.floor(_rng() * Math.max(1, 450-cw)), cy = Math.floor(_rng() * Math.max(1, 250-ch)), horiz = _rng() < 0.5, sign = _rng() < 0.5 ? 1 : -1, tiles = []; if (horiz) { let nBands = Math.min(ch, 4 + Math.floor(_rng()*3)), bandH = Math.max(1, Math.floor(ch/nBands)); for (let k = 0; k < nBands; k++) { let yk = cy + k*bandH, hk = k === nBands-1 ? cy + ch - yk : bandH, mag = 1 + Math.floor(k/2); tiles.push({x: cx, y: yk, w: cw, h: hk, dx: sign*mag, dy: 0}); } } else { let nBands = Math.min(cw, 4 + Math.floor(_rng()*3)), bandW = Math.max(1, Math.floor(cw/nBands)); for (let k = 0; k < nBands; k++) { let xk = cx + k*bandW, wk = k === nBands-1 ? cx + cw - xk : bandW, mag = 1 + Math.floor(k/2); tiles.push({x: xk, y: cy, w: wk, h: ch, dx: 0, dy: sign*mag}); } } return {cx, cy, cw, ch, dx: sign, dy: 0, tiles}; }
+  function _makeRect9() { let p = RS_PARAMS[_rsSize] || RS_PARAMS.md, cw = Math.min(450, Math.round((p.min + Math.floor(_rng()*(p.max-p.min)))*1.3)), ch = Math.min(250, Math.round((p.min + Math.floor(_rng()*(p.max-p.min)))*1.3)), cx = Math.floor(_rng() * Math.max(1, 450-cw)), cy = Math.floor(_rng() * Math.max(1, 250-ch)), nSubs = 3 + Math.floor(_rng()*2), tiles = []; for (let i = 0; i < nSubs; i++) { let tw = Math.max(2, Math.round(cw * (0.25 + _rng()*0.35))), th = Math.max(2, Math.round(ch * (0.25 + _rng()*0.35))), tx = cx + Math.floor(_rng() * Math.max(1, cw-tw)), ty = cy + Math.floor(_rng() * Math.max(1, ch-th)), [tdx, tdy] = DIRS[Math.floor(_rng()*DIRS.length)]; tiles.push({x: tx, y: ty, w: tw, h: th, dx: tdx, dy: tdy, resetIn: 40 + Math.floor(_rng()*41), _box: {cx, cy, cw, ch}}); } return {cx, cy, cw, ch, dx: 1, dy: 0, tiles}; }
+  function _pickDirSet() { let n = 1 + Math.floor(_rng()*3), pool = DIRS.slice(), picks = []; for (let i = 0; i < n && pool.length; i++) picks.push(pool.splice(Math.floor(_rng()*pool.length), 1)[0]); return picks; }
+  function _makeRect2() { let p = RS_PARAMS[_rsSize] || RS_PARAMS.md, cw = Math.min(450, Math.round((p.min + Math.floor(_rng()*(p.max-p.min)))*1.4)), ch = Math.min(250, Math.round((p.min + Math.floor(_rng()*(p.max-p.min)))*1.4)), cx = Math.floor(_rng() * Math.max(1, 450-cw)), cy = Math.floor(_rng() * Math.max(1, 250-ch)), tw = Math.max(2, Math.round(cw * (0.35 + _rng()*0.15))), th = Math.max(2, Math.round(ch * (0.35 + _rng()*0.15))), stepX = Math.max(1, Math.floor((cw - tw) / 2)), stepY = Math.max(1, Math.floor((ch - th) / 2)), tiles, shape = Math.floor(_rng()*4); if (shape === 0) tiles = [{x: cx, y: cy, w: tw, h: th},{x: cx+stepX, y: cy+stepY, w: tw, h: th},{x: cx+stepX*2, y: cy+stepY*2, w: tw, h: th}]; else if (shape === 1) tiles = [{x: cx, y: cy+stepY*2, w: tw, h: th},{x: cx+stepX, y: cy+stepY, w: tw, h: th},{x: cx+stepX*2, y: cy, w: tw, h: th}]; else if (shape === 2) tiles = [{x: cx+stepX*2, y: cy, w: tw, h: th},{x: cx+stepX, y: cy+stepY, w: tw, h: th},{x: cx, y: cy+stepY*2, w: tw, h: th}]; else tiles = [{x: cx+stepX*2, y: cy+stepY*2, w: tw, h: th},{x: cx+stepX, y: cy+stepY, w: tw, h: th},{x: cx, y: cy, w: tw, h: th}]; let nTiles = 1 + Math.floor(_rng()*3); tiles = tiles.slice(0, nTiles); let rerollIn = 5 + Math.floor(_rng()*11); return {cx, cy, cw, ch, dx: 1, dy: 0, tiles, rerollIn, dirs: _pickDirSet()}; }
+  function _makeRect4() { let p = RS_PARAMS[_rsSize] || RS_PARAMS.md, cw = p.min + Math.floor(_rng()*(p.max-p.min)), ch = p.min + Math.floor(_rng()*(p.max-p.min)), cx = Math.floor(_rng() * Math.max(1, 450-cw)), cy = Math.floor(_rng() * Math.max(1, 250-ch)), CARDINAL = [[1,0],[-1,0],[0,1],[0,-1]], [wdx, wdy] = CARDINAL[Math.floor(_rng()*4)], tiles = [], N_BANDS = 4; if (wdx !== 0) { let waveW = Math.max(2, Math.floor(cw*0.4)), impactW = Math.max(1, Math.floor(cw*0.2)), sprayW = Math.max(2, cw - waveW - impactW), waveX, impactX, sprayX; if (wdx > 0) { waveX = cx; impactX = cx + waveW; sprayX = cx + waveW + impactW; } else { sprayX = cx; impactX = cx + sprayW; waveX = cx + sprayW + impactW; } tiles.push({x: waveX, y: cy, w: waveW, h: ch, dx: wdx, dy: 0}); tiles.push({x: impactX, y: cy, w: impactW, h: ch, dx: -wdx, dy: 0}); let bandH = Math.max(1, Math.floor(ch/N_BANDS)); for (let k = 0; k < N_BANDS; k++) { let yk = cy + k*bandH, hk = k === N_BANDS-1 ? cy + ch - yk : bandH; tiles.push({x: sprayX, y: yk, w: sprayW, h: hk, dx: 0, dy: k%2===0 ? 1 : -1}); } } else { let waveH = Math.max(2, Math.floor(ch*0.4)), impactH = Math.max(1, Math.floor(ch*0.2)), sprayH = Math.max(2, ch - waveH - impactH), waveY, impactY, sprayY; if (wdy > 0) { waveY = cy; impactY = cy + waveH; sprayY = cy + waveH + impactH; } else { sprayY = cy; impactY = cy + sprayH; waveY = cy + sprayH + impactH; } tiles.push({x: cx, y: waveY, w: cw, h: waveH, dx: 0, dy: wdy}); tiles.push({x: cx, y: impactY, w: cw, h: impactH, dx: 0, dy: -wdy}); let bandW = Math.max(1, Math.floor(cw/N_BANDS)); for (let k = 0; k < N_BANDS; k++) { let xk = cx + k*bandW, wk = k === N_BANDS-1 ? cx + cw - xk : bandW; tiles.push({x: xk, y: sprayY, w: wk, h: sprayH, dx: k%2===0 ? 1 : -1, dy: 0}); } } return {cx, cy, cw, ch, dx: wdx, dy: wdy, tiles}; }
+  function _makeRect3() { let p = RS_PARAMS[_rsSize] || RS_PARAMS.md, bw = Math.min(450, Math.round((p.min + Math.floor(_rng()*(p.max-p.min)))*2.112)), bh = Math.min(250, Math.round((p.min + Math.floor(_rng()*(p.max-p.min)))*1.584)), bx = Math.floor(_rng() * Math.max(1, 450-bw)), by = Math.floor(_rng() * Math.max(1, 250-bh)), FREQ_PAIRS = [[2,3],[3,5],[2,5],[3,4],[4,7]], [f1, f2] = FREQ_PAIRS[Math.floor(_rng()*FREQ_PAIRS.length)], ph1 = _rng()*Math.PI*2, ph2 = _rng()*Math.PI*2, ampBase = bh * (0.22 + _rng()*0.08), nTiles = 6 + Math.floor(_rng()*4), tw = Math.max(3, Math.round(bw * (0.198 + _rng()*0.132))), thBase = Math.max(3, Math.round(bh * (0.242 + _rng()*0.132))), thMin = Math.max(2, Math.round(thBase*0.25)), tiles = []; for (let i = 0; i < nTiles; i++) { let t = i / Math.max(1, nTiles-1), w1 = Math.sin(t*f1*Math.PI*2 + ph1), w2 = Math.sin(t*f2*Math.PI*2 + ph2), compound = (w1+w2)*0.5, th = Math.round(thMin + (thBase-thMin)*Math.abs(compound)), tx = bx + Math.round(t * (bw-tw)), ty = by + Math.round(bh*0.5 + compound*ampBase - th*0.5), [tdx, tdy] = DIRS[Math.floor(_rng()*DIRS.length)]; tiles.push({x: Math.max(bx, Math.min(bx+bw-tw, tx)), y: Math.max(by, Math.min(by+bh-th, ty)), w: tw, h: th, dx: tdx, dy: tdy}); } return {cx: bx, cy: by, cw: bw, ch: bh, dx: 1, dy: 0, tiles}; }
+  const RECT_SHIFT_VARIANTS = {core: _makeRect1, mecha: _makeRect6, hysteria: _makeRect7, metro: _makeRect8, 'side-b': _makeRect9, earthquake: _makeRect2, retro: _makeRect4, ladder: _makeRect3};
+  function makeRandomRect() { let fn = RECT_SHIFT_VARIANTS[_activeRectVariant] || RECT_SHIFT_VARIANTS.core; return fn(); }
+  function _rdFrameCount(field) { let dp = RD_PARAMS[_rdDensity] || RD_PARAMS.md, ms = dp[field+'Min'] + _rng()*(dp[field+'Max'] - dp[field+'Min']); return Math.max(1, Math.round(ms / (1000/60))); }
+  function buildRectShifts() { rectShifts = []; for (let i = 0; i < 10; i++) rectShifts.push({...makeRandomRect(), active: false, countdown: _rdFrameCount('off')}); }
+  buildRectShifts();
+  let _rectsPaused = false;
+  const CONVERGE_FRAMES = 15;
+  function tickRects() { if (_rectsPaused) return; if (_rvDistinct.length === 0) { for (let i = 0; i < rectShifts.length; i++) if (rectShifts[i].active) { rectShifts[i].active = false; rectShifts[i].countdown = _rdFrameCount('off'); rectShifts[i]._converging = 0; } return; } for (let i = 0; i < rectShifts.length; i++) { let rs = rectShifts[i]; rs.countdown--; if (rs.active && rs.countdown <= CONVERGE_FRAMES && !rs._converging) { rs._converging = 1; let d = DIRS[Math.floor(_rng()*DIRS.length)]; rs.dx = d[0]; rs.dy = d[1]; if (rs.dirs) rs.dirs = [[d[0], d[1]]]; if (rs.tiles) for (let t of rs.tiles) { t.dx = d[0]; t.dy = d[1]; } } if (rs.active && rs.rerollIn !== void 0 && !rs._converging) { rs.rerollIn--; if (rs.rerollIn <= 0) { rs.dirs = _pickDirSet(); rs.rerollIn = 5 + Math.floor(_rng()*11); } } if (rs.active && rs.walkRate !== void 0 && !rs._converging) { if (rs.pingPongLeft > 0) { rs.pingPongLeft--; if (rs.pingPongLeft === 0) rs.dirs = null; } else { if (_rng() < rs.walkRate) { if (_rng() < 0.5) rs.dx = Math.max(-1, Math.min(1, rs.dx + (_rng()<0.5 ? -1 : 1))); else rs.dy = Math.max(-1, Math.min(1, rs.dy + (_rng()<0.5 ? -1 : 1))); if (rs.dx === 0 && rs.dy === 0) { if (_rng() < 0.5) rs.dx = _rng()<0.5 ? 1 : -1; else rs.dy = _rng()<0.5 ? 1 : -1; } } if (rs.pingPongIn === void 0) rs.pingPongIn = 90 + Math.floor(_rng()*120); rs.pingPongIn--; if (rs.pingPongIn <= 0) { let pp = Math.floor(_rng()*4)*2; rs.dirs = [DIRS[pp], DIRS[pp+1]]; rs.pingPongLeft = 5 + Math.floor(_rng()*10); rs.pingPongIn = 90 + Math.floor(_rng()*120); } } } if (rs.active && rs.tiles && !rs._converging) { for (let t of rs.tiles) { if (t.phaseIdx !== void 0) { t.phaseTimer = (t.phaseTimer || 0) + 1; if (t.phaseTimer >= 15) { t.phaseTimer = 0; if (!t.boomerangDone) { t.phaseIdx = (t.phaseIdx + 1) % DIRS.length; t.boomerangDone = 1; } else { let inv = t.phaseIdx ^ 1, nx; do { nx = Math.floor(_rng()*DIRS.length); } while (nx === inv || nx === t.phaseIdx); t.phaseIdx = nx; } t.dx = DIRS[t.phaseIdx][0]; t.dy = DIRS[t.phaseIdx][1]; } } if (t.resetIn !== void 0 && t._box) { t.resetIn--; if (t.resetIn <= 0) { let b = t._box, tw = Math.max(2, Math.round(b.cw * (0.25 + _rng()*0.35))), th = Math.max(2, Math.round(b.ch * (0.25 + _rng()*0.35))); t.x = b.cx + Math.floor(_rng() * Math.max(1, b.cw-tw)); t.y = b.cy + Math.floor(_rng() * Math.max(1, b.ch-th)); t.w = tw; t.h = th; let d = DIRS[Math.floor(_rng()*DIRS.length)]; t.dx = d[0]; t.dy = d[1]; t.resetIn = 40 + Math.floor(_rng()*41); } } } } if (rs.countdown <= 0) { if (rs.active) { rs.active = false; rs.countdown = _rdFrameCount('off'); rs._converging = 0; } else { rectShifts[i] = {...makeRandomRect(), active: true, countdown: _rdFrameCount('on'), _converging: 0}; if (rectShifts[i].rerollIn !== void 0) rectShifts[i].countdown = Math.max(60, rectShifts[i].countdown - 240); } } } }
+  let anyActive = () => rectShifts.some(rs => rs.active);
+  let _ditherNoise = new Float32Array(450 * 250), _ditherNext = new Float32Array(450 * 250);
+  for (let i = 0; i < _ditherNoise.length; i++) _ditherNoise[i] = _rng();
+  function _churnDither() { let count = Math.ceil(_ditherNoise.length * 0.008); for (let i = 0; i < count; i++) _ditherNoise[Math.floor(_rng() * _ditherNoise.length)] = _rng(); }
+  function applyRectShifts() { if (!anyActive()) return; next.set(grid); _ditherNext.set(_ditherNoise); for (let s = 0; s < rectShifts.length; s++) { let rs = rectShifts[s]; if (!rs.active) continue; if (rs.tiles) { let rdx = rs.dx, rdy = rs.dy; if (rs.dirs && rs.dirs.length) { let d = rs.dirs[Math.floor(_rng()*rs.dirs.length)]; rdx = d[0]; rdy = d[1]; } for (let t of rs.tiles) { let tdx = t.dx !== void 0 ? t.dx : rdx, tdy = t.dy !== void 0 ? t.dy : rdy; for (let r = t.y; r < t.y + t.h; r++) { let rr = r % 250; for (let c = t.x; c < t.x + t.w; c++) { let cc = c % 450, sr = (rr - tdy + 250) % 250, sc = (cc - tdx + 450) % 450; next[rr*450 + cc] = grid[sr*450 + sc]; _ditherNext[rr*450 + cc] = _ditherNoise[sr*450 + sc]; } } } } else { let rdx = rs.dx, rdy = rs.dy; if (rs.dirs && rs.dirs.length) { let d = rs.dirs[Math.floor(_rng()*rs.dirs.length)]; rdx = d[0]; rdy = d[1]; } for (let r = rs.cy; r < rs.cy + rs.ch; r++) for (let c = rs.cx; c < rs.cx + rs.cw; c++) { let sr = (r - rdy + 250) % 250, sc = (c - rdx + 450) % 450; next[r*450 + c] = grid[sr*450 + sc]; _ditherNext[r*450 + c] = _ditherNoise[sr*450 + sc]; } } } grid.set(next); _ditherNoise.set(_ditherNext); }
+
+  // BIOS text
+  const _BMPFONT = {' ':['000','000','000','000','000'],a:['0110','1001','1111','1001','1001'],c:['0111','1000','1000','1000','0111'],d:['1110','1001','1001','1001','1110'],e:['1111','1000','1110','1000','1111'],f:['111','100','110','100','100'],h:['1001','1001','1111','1001','1001'],i:['111','010','010','010','111'],j:['011','001','001','101','011'],l:['10','10','10','10','11'],n:['1001','1101','1011','1001','1001'],o:['0110','1001','1001','1001','0110'],p:['1110','1001','1110','1000','1000'],q:['0111','1001','0111','0001','0001'],r:['110','101','110','100','100'],s:['0111','1000','0110','0001','1110'],t:['111','010','010','010','011'],u:['1001','1001','1001','1001','0110'],v:['101','101','101','010','010'],z:['1111','0001','0110','1000','1111'],g:['0111','1000','1011','1001','0111'],m:['11011','10101','10101','10001','10001'],w:['10001','10001','10101','01010','01010'],y:['1001','1001','0111','0001','0110'],b:['100','110','101','101','110'],k:['101','110','100','110','101'],x:['10001','01010','00100','01010','10001'],'&':['010','101','010','10101','01101'],'?':['110','001','010','000','010']};
+  const DITHER_DENSITY = 0.025;
+  let _txtFrame = 0, _biosCycleIdx = 0, _txtInst = [null];
+  function _rasterWord(word) { let glyphs = [...word.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()].map(ch => _BMPFONT[ch] || _BMPFONT[' ']), fw = glyphs.reduce((s, g, i) => s + g[0].length + (i < glyphs.length-1 ? 1 : 0), 0), imgData = new Uint8ClampedArray(fw*5*4), x = 0; for (let gi = 0; gi < glyphs.length; gi++) { let g = glyphs[gi], gw = g[0].length; for (let r = 0; r < 5; r++) for (let c = 0; c < gw; c++) if (g[r][c] === '1') imgData[(r*fw + x + c)*4 + 3] = 255; x += gw + 1; } return {imgData, fw, fh: 5}; }
+  function pickText(slotIdx) { if (slotIdx === void 0) slotIdx = Math.floor(_rng() * mod.tokens.length); let t = mod.tokens[slotIdx], entry = BIOS_DATA[t % BIOS_DATA.length]; _txtInst[0] = {sx: Math.floor(_rng()*307), sy: Math.floor(_rng()*192), gcols: 142, grows: 57, s: 1, palIdx: _txtPalIdx, palIdx2: _txtPalIdx2, rTitle: _rasterWord(entry.title), rMsg: _rasterWord(entry.msg), rBtn0: _rasterWord(entry.btns[0]), rBtn1: _rasterWord(entry.btns[1])}; _stampBiosToGrid(); }
+  function _stampBiosToGrid() { for (let i = 0; i < _txtInst.length; i++) { let inst = _txtInst[i]; if (!inst) continue; let {sx, sy, gcols, grows, s, palIdx, palIdx2, rTitle, rMsg, rBtn0, rBtn1} = inst, setCell = (gc, gr, pi) => { if (gc >= 0 && gc < 450 && gr >= 0 && gr < 250) grid[gr*450 + gc] = pi; }, fillBox = (gx, gy, gw, gh, pi) => { for (let gr = gy; gr < gy + gh; gr++) for (let gc = gx; gc < gx + gw; gc++) setCell(gc, gr, pi); }, stampGlyph = (raster, gx, gy, pi) => { let {imgData, fw, fh} = raster; for (let fr = 0; fr < fh; fr++) for (let fc = 0; fc < fw; fc++) if (imgData[(fr*fw + fc)*4 + 3] > 128) setCell(gx + fc, gy + fr, pi); }, lh = 5*s, msgY = sy + 16, sepY = sy + 36, btnY = sy + 44; fillBox(Math.max(0, sx-1), Math.max(0, sy-1), gcols+2, grows+2, palIdx); fillBox(sx, sy, gcols, grows, palIdx); fillBox(sx, sy+1, 1, grows-2, palIdx2); fillBox(sx + gcols-1, sy+1, 1, grows-2, palIdx2); fillBox(sx, sy + grows-1, gcols, 1, palIdx2); setCell(sx, sy, palIdx2); setCell(sx + gcols-1, sy, palIdx2); let titleX = sx + 1 + Math.floor((gcols - 2 - rTitle.fw) / 2); if (titleX - 2 > sx + 1) fillBox(sx+1, sy, titleX-sx-2, 1, palIdx2); let dashRx = titleX + rTitle.fw + 1; if (dashRx < sx + gcols - 1) fillBox(dashRx, sy, sx+gcols-1-dashRx, 1, palIdx2); stampGlyph(rTitle, titleX, sy, palIdx2); stampGlyph(rMsg, sx + 1 + Math.floor((gcols - 2 - rMsg.fw) / 2), msgY, palIdx2); fillBox(sx, sepY, gcols, 1, palIdx2); let btn0BW = rBtn0.fw + 2, totalBW = btn0BW + 6 + rBtn1.fw, btn0X = sx + 1 + Math.floor((gcols - 2 - totalBW) / 2), btn1X = btn0X + btn0BW + 6; fillBox(btn0X, btnY, btn0BW, lh, palIdx2); stampGlyph(rBtn0, btn0X+1, btnY, palIdx); stampGlyph(rBtn1, btn1X, btnY, palIdx2); } }
+  function _applyDither(buf, W, visCols, visRows, offC, offR) { if (!_activeDxPattern) return; if (_activeDxPattern === 'o') { const O_DENSITY = 0.90, O_R = 106, O_G = 98, O_B = 98, ALPHA = 0.40, INV = 1 - ALPHA; let pattern = DX_PATTERNS.legoStud; for (let r = 0; r < visRows; r++) for (let c = 0; c < visCols; c++) { let gi = (offR + r)*450 + (offC + c); if (_ditherNoise[gi] > O_DENSITY) continue; let baseRow = r*6, baseCol = c*6; for (let k = 0; k < pattern.length; k++) { let i2 = ((baseRow + pattern[k][0])*W + (baseCol + pattern[k][1]))*4; buf[i2] = (O_R*ALPHA + buf[i2]*INV) | 0; buf[i2+1] = (O_G*ALPHA + buf[i2+1]*INV) | 0; buf[i2+2] = (O_B*ALPHA + buf[i2+2]*INV) | 0; buf[i2+3] = 255; } } return; } if (PAL.length <= 0) return; let ci = Math.min(1, PAL.length - 1); if (ci === 0) return; let [R, G, B] = PAL[ci]; if (_activeDxPattern === 'num' || _activeDxPattern === 'numi') { let maxRow = visRows*6, maxCol = W, NUM_DENSITY = DITHER_DENSITY * 1.95; for (let r = 0; r < visRows-1; r += 2) for (let c = 0; c < visCols-1; c += 2) { let gi = (offR + r)*450 + (offC + c); if (_ditherNoise[gi] > NUM_DENSITY) continue; if (grid[gi] !== 0) continue; if (grid[(offR+r)*450 + (offC+c+1)] !== 0) continue; if (grid[(offR+r+1)*450 + (offC+c)] !== 0) continue; if (grid[(offR+r+1)*450 + (offC+c+1)] !== 0) continue; let digit = ((offR+r)*7 + (offC+c)*13) % 10, pattern = _activeDxPattern === 'numi' ? DX_DIGIT_PATTERNS_INV[digit] : DX_DIGIT_PATTERNS[digit], baseRow = r*6, baseCol = c*6; for (let k = 0; k < pattern.length; k++) { let pr = baseRow + pattern[k][0], pc = baseCol + pattern[k][1]; if (pr >= maxRow || pc >= maxCol) continue; let i2 = (pr*W + pc)*4; buf[i2] = R; buf[i2+1] = G; buf[i2+2] = B; buf[i2+3] = 255; } } } else if (_activeDxPattern === 'm') { let N = _DX_MULTI.length, bandWidth = DITHER_DENSITY / N; for (let r = 0; r < visRows; r++) for (let c = 0; c < visCols; c++) { let gi = (offR + r)*450 + (offC + c); if (grid[gi] !== 0) continue; if (_ditherNoise[gi] > DITHER_DENSITY) continue; let shapeIdx = Math.min(N-1, Math.floor(_ditherNoise[gi] / bandWidth)), pattern = DX_PATTERNS[_DX_MULTI[shapeIdx]], baseRow = r*6, baseCol = c*6; for (let k = 0; k < pattern.length; k++) { let i2 = ((baseRow + pattern[k][0])*W + (baseCol + pattern[k][1]))*4; buf[i2] = R; buf[i2+1] = G; buf[i2+2] = B; buf[i2+3] = 255; } } } else { let pattern = DX_PATTERNS[_activeDxPattern] || DX_PATTERNS.x; for (let r = 0; r < visRows; r++) for (let c = 0; c < visCols; c++) { let gi = (offR + r)*450 + (offC + c); if (grid[gi] !== 0) continue; if (_ditherNoise[gi] > DITHER_DENSITY) continue; let baseRow = r*6, baseCol = c*6; for (let k = 0; k < pattern.length; k++) { let i2 = ((baseRow + pattern[k][0])*W + (baseCol + pattern[k][1]))*4; buf[i2] = R; buf[i2+1] = G; buf[i2+2] = B; buf[i2+3] = 255; } } } }
+  const MODE_PROBS = {feedback:[0.7,0.1,0.1,0.1,0,0,0,0],shift:[0,1,0,0,0,0,0,0],noise:[0.1,0.1,0.7,0.1,0,0,0,0],modulo:[0.3,0.25,0.2,0.25,0,0,0,0],wave:[0,0,0,0,1,0,0,0],jungle:[0,0,0,0,0,1,0,0],sector:[0,0,0,0,0,0,1,0],blocks:[0,0,0,0,0,0,0,1]};
+  let _cycleModes = moduloDistinctModes(mod), _cycleIdx = 0, _cycleFrames = 0, _dtMode = _cycleModes[0] || 'feedback';
+  { let _sz = getSizeForMode(mod, _dtMode); _sizeScale = _sizeScaleTarget = SIZE_SCALES[_sz] || 1; _shiftBaseScale = _shiftBaseScaleTarget = SHIFT_BASE_SCALES[_sz] || 0.4; _shiftZoneScale = _shiftZoneScaleTarget = SHIFT_ZONE_SCALES[_sz] || 1; }
+  let _xfadeT = 60, _xfadeFrom = _dtMode, _xfadeTo = _dtMode, _breathFrame = 0;
+  function step(ops) { next.set(grid); let pFb, pSh, pNo, pMo, pWv, pOr, pGl, pBl; if (_xfadeT < 60 && _cycleModes.length > 1) { let alpha = _xfadeT / 60, fP = MODE_PROBS[_xfadeFrom] || MODE_PROBS.feedback, tP = MODE_PROBS[_xfadeTo] || MODE_PROBS.feedback; [pFb, pSh, pNo, pMo, pWv, pOr, pGl, pBl] = fP.map((p, i) => p*(1-alpha) + tP[i]*alpha); _xfadeT++; } else { [pFb, pSh, pNo, pMo, pWv, pOr, pGl, pBl] = MODE_PROBS[_dtMode] || MODE_PROBS.feedback; if (_dtMode === 'noise') { if (_breathFrame < 225) { let t = _breathFrame / 300; pNo = 0.5 * (1 - Math.sin(Math.PI * 2 * t) ** 2); pFb += 0.7 - pNo; _breathFrame++; } else if (_breathFrame < 300) { pNo = 0.3 * ((_breathFrame - 225) / 75); pFb += 0.7 - pNo; _breathFrame++; } else { _breathFrame = 0; pNo = 0.5; pFb += 0.2; } } } let cFb = pFb, cSh = pFb + pSh, cNo = cSh + pNo, cMo = cNo + pMo, cWv = cMo + pWv, cJg = cWv + pOr, cGl = cJg + pGl, cBl = cGl + pBl; for (let i = 0; i < (ops || 8); i++) { let r = _rng(); if (r < cFb) animFeedback(); else if (r < cSh) animShift(); else if (r < cNo) animNoise(); else if (r < cMo) animModulo(); else if (r < cWv) animWave(); else if (r < cJg) animJungle(); else if (r < cGl) animSector(); else if (r < cBl) animBlocks(); } grid.set(next); _sizeScale = _lerpScale(_sizeScale, _sizeScaleTarget, 60); _shiftBaseScale = _lerpScale(_shiftBaseScale, _shiftBaseScaleTarget, 60); _shiftZoneScale = _lerpScale(_shiftZoneScale, _shiftZoneScaleTarget, 60); _cycleFrames++; if (_cycleModes.length > 1 && _cycleFrames === 270 && _xfadeT >= 60) { _xfadeFrom = _dtMode; _xfadeTo = _cycleModes[(_cycleIdx + 1) % _cycleModes.length]; _xfadeT = 0; } if (_cycleFrames >= 300) _cycleFrames = 0; if (_cycleModes.length > 1 && _cycleFrames === 0) { _cycleIdx = (_cycleIdx + 1) % _cycleModes.length; _dtMode = _cycleModes[_cycleIdx]; let _sz = getSizeForMode(mod, _dtMode); _sizeScaleTarget = SIZE_SCALES[_sz] || 1; _shiftBaseScaleTarget = SHIFT_BASE_SCALES[_sz] || 0.4; _shiftZoneScaleTarget = SHIFT_ZONE_SCALES[_sz] || 1; _breathFrame = 0; } if (_rsDistinct.length > 1) { _rsCycleFrames++; if (_rsCycleFrames >= 300) { _rsCycleFrames = 0; _rsCycleIdx = (_rsCycleIdx + 1) % _rsDistinct.length; _rsSize = _rsDistinct[_rsCycleIdx]; } } if (_rdDistinct.length > 1) { _rdCycleFrames++; if (_rdCycleFrames >= 300) { _rdCycleFrames = 0; _rdCycleIdx = (_rdCycleIdx + 1) % _rdDistinct.length; _rdDensity = _rdDistinct[_rdCycleIdx]; } } if (_rvDistinct.length > 1) { _rvCycleFrames++; if (_rvCycleFrames >= 300) { _rvCycleFrames = 0; _rvCycleIdx = (_rvCycleIdx + 1) % _rvDistinct.length; _activeRectVariant = _rvDistinct[_rvCycleIdx]; } } _churnDither(); _txtFrame++; if (_txtFrame % 300 === 0) { let onIdxs = mod.tokens.map((t, i) => i).filter(i => getBiosOn(mod.id, i)); if (onIdxs.length === 1) pickText(onIdxs[0]); else if (onIdxs.length > 1) { _biosCycleIdx = (_biosCycleIdx + 1) % onIdxs.length; pickText(onIdxs[_biosCycleIdx]); } } }
+  function paintTo(target, tctx) { let W = target.width, H = target.height, visCols = Math.floor(W/6), visRows = Math.floor(H/6), offC = Math.floor((450 - visCols) / 2), offR = Math.floor((250 - visRows) / 2), img = tctx.createImageData(W, H), buf = img.data; for (let r = 0; r < visRows; r++) for (let c = 0; c < visCols; c++) { let [R, G, B] = PAL[grid[(offR + r)*450 + (offC + c)]] || PAL[0]; for (let py = 0; py < 6; py++) for (let px = 0; px < 6; px++) { let i = ((r*6 + py)*W + (c*6 + px))*4; buf[i] = R; buf[i+1] = G; buf[i+2] = B; buf[i+3] = 255; } } _applyDither(buf, W, visCols, visRows, offC, offR); tctx.putImageData(img, 0, 0); }
+  // Native-resolution paint: 1 pixel = 1 cell. Used by the 'native' export preset
+  // for pixel-perfect output at 450×250. Skips _applyDither because DX patterns
+  // are 6×6 cell-internal and have no representation at 1 px/cell. Trade-off
+  // documented in the preset description (user-facing).
+  function paintToNative(target, tctx) {
+    const img = tctx.createImageData(450, 250), buf = img.data;
+    for (let r = 0; r < 250; r++) {
+      for (let c = 0; c < 450; c++) {
+        const [R, G, B] = PAL[grid[r*450 + c]] || PAL[0];
+        const i = (r*450 + c)*4;
+        buf[i] = R; buf[i+1] = G; buf[i+2] = B; buf[i+3] = 255;
+      }
+    }
+    tctx.putImageData(img, 0, 0);
+  }
+  function render() { paintTo(canvas, ctx); }
+
+  // ── Badge filter render (off-chain visualizer, 2026-06-07) ────────────────
+  // Downsamples the live grid to fewer/larger cells; each cell → a verified-
+  // badge glyph in that cell's color with a beige (cut-out) tick. Cells the
+  // artifact's own DX logic would dither render as ONLY a colored check (the
+  // dither color = PAL[min(1,len-1)], no badge body). Same grid/PAL/_ditherNoise
+  // → faithful animation. SAME method used by the live badge modal AND the later
+  // MP4 / hi-res screenshot export (any target incl. OffscreenCanvas at any W/H).
+  const BADGE_BG = '#dbd8d1';
+  let _badgeSprites = null, _badgeSig = '';
+  function _bNewCanvas(w, h) { if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(w, h); const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+  // Normal cell: seal in the cell color + beige check on top (1:1 SVG badge).
+  function _bBadgeSprite(CELL, col, bg) { const cv = _bNewCanvas(CELL, CELL), x = cv.getContext('2d'); _badgeFillSeal(x, CELL, col); _badgeFillCheck(x, CELL, bg); return cv; }
+  // Dither cell: ONLY the check, in the dither color (no seal body).
+  function _bDitherSprite(CELL, col) { const cv = _bNewCanvas(CELL, CELL), x = cv.getContext('2d'); _badgeFillCheck(x, CELL, col); return cv; }
+  function _bBuildSprites(CELL, bg) { const normal = []; for (let i = 0; i < PAL.length; i++) normal.push(_bBadgeSprite(CELL, 'rgb(' + PAL[i][0] + ',' + PAL[i][1] + ',' + PAL[i][2] + ')', bg)); if (!PAL.length) normal.push(_bBadgeSprite(CELL, '#000', bg)); const ci = PAL.length > 1 ? 1 : 0, dc = PAL[ci] ? 'rgb(' + PAL[ci][0] + ',' + PAL[ci][1] + ',' + PAL[ci][2] + ')' : '#000'; return { normal, dither: _bDitherSprite(CELL, dc) }; }
+  // Faithful to _applyDither's cell-selection conditions (P1-B reviewer 2026-06-07):
+  // 'o' = lego overlay on ~90% of cells (no index-0 gate); 'num'/'numi' require
+  // the full 2×2 index-0 block; all others = single index-0 cell + density gate.
+  function _bIsDither(gi, dxp, offR, offC, gr, gc) {
+    if (!dxp) return false;
+    if (dxp === 'o') return _ditherNoise[gi] <= 0.90;
+    if (dxp === 'num' || dxp === 'numi') {
+      if (_ditherNoise[gi] > DITHER_DENSITY * 1.95) return false;
+      if (grid[gi] !== 0) return false;
+      if (grid[(offR + gr) * 450 + (offC + gc + 1)] !== 0) return false;
+      if (grid[(offR + gr + 1) * 450 + (offC + gc)] !== 0) return false;
+      if (grid[(offR + gr + 1) * 450 + (offC + gc + 1)] !== 0) return false;
+      return true;
+    }
+    return grid[gi] === 0 && _ditherNoise[gi] <= DITHER_DENSITY;
+  }
+  function paintToBadge(target, tctx, opts) {
+    const CELL = (opts && opts.cell) || 26;
+    const BG = (opts && opts.bg) || BADGE_BG;
+    const W = target.width, H = target.height;
+    // Sampling window into the 450×250 grid. Default: stride coupled to CELL
+    // (density matches the on-screen view). Card mode (opts.cols/opts.rows):
+    // sample an EXPLICIT cols×rows window with per-axis stride spanning the full
+    // grid — decoupled from CELL so large cells still show all the rows (the
+    // stride=round(CELL/6) path otherwise caps rows at ~22 once CELL is large).
+    // Back-compat: with cols/rows absent, strideC===strideR===stride → byte-identical.
+    let visCols, visRows, strideC, strideR, offC, offR;
+    if (opts && opts.cols && opts.rows) {
+      visCols = Math.max(1, opts.cols | 0);
+      visRows = Math.max(1, opts.rows | 0);
+      strideC = Math.max(1, Math.floor(450 / visCols));
+      strideR = Math.max(1, Math.floor(250 / visRows));
+      offC = Math.floor((450 - visCols * strideC) / 2);
+      offR = Math.floor((250 - visRows * strideR) / 2);
+    } else {
+      const stride = Math.max(1, Math.round(CELL / 6));
+      const maxC = Math.floor(450 / stride), maxR = Math.floor(250 / stride);
+      visCols = Math.min(Math.floor(W / CELL), maxC);
+      visRows = Math.min(Math.floor(H / CELL), maxR);
+      strideC = stride; strideR = stride;
+      offC = Math.floor((450 - visCols * stride) / 2);
+      offR = Math.floor((250 - visRows * stride) / 2);
+    }
+    tctx.fillStyle = BG; tctx.fillRect(0, 0, W, H);
+    if (visCols <= 0 || visRows <= 0) return;
+    const sig = CELL + '|' + BG + '|' + PAL.map(p => p[0] + ',' + p[1] + ',' + p[2]).join(';');
+    if (_badgeSig !== sig) { _badgeSprites = _bBuildSprites(CELL, BG); _badgeSig = sig; }
+    const SP = _badgeSprites, dxp = _activeDxPattern;
+    const gW = visCols * CELL, gH = visRows * CELL, px0 = Math.floor((W - gW) / 2), py0 = Math.floor((H - gH) / 2);
+    for (let r = 0; r < visRows; r++) for (let c = 0; c < visCols; c++) {
+      const gr = r * strideR, gc = c * strideC, gi = (offR + gr) * 450 + (offC + gc);
+      const dx = px0 + c * CELL, dy = py0 + r * CELL;
+      if (_bIsDither(gi, dxp, offR, offC, gr, gc)) { tctx.drawImage(SP.dither, dx, dy); continue; }
+      const s = SP.normal[grid[gi]] || SP.normal[0];
+      if (s) tctx.drawImage(s, dx, dy);
+    }
+  }
+  // ===== ENGINE END =====
+
+  return {step, render, paintTo, paintToNative, paintToBadge, applyRects: applyRectShifts, tickRects, dtOps: _sumTokenOps};
+}
+
+  // ── Fusion state + MULTI-engine compose loop (Phase 3: N traits at once) ──
+  var FUSE_CAP = (window.matchMedia && window.matchMedia('(pointer:coarse)').matches) ? 2 : 6;
+  var _fz = { raf: 0, punkId: null, L: null, selected: null, tokenSeq: 0,
+              assignments: new Map(),  // layerId -> { engine, off450, off450ctx, artifactId }
+              pending: new Map(),       // layerId -> token (in-flight fetch guard)
+              caCv: null, caCtx: null, comCv: null, comCtx: null };
+  function _fzAlloc() {
+    if (_fz.caCv) return;
+    _fz.caCv = new OffscreenCanvas(24, 24);  _fz.caCtx = _fz.caCv.getContext('2d');   _fz.caCtx.imageSmoothingEnabled = false;
+    _fz.comCv = new OffscreenCanvas(24, 24); _fz.comCtx = _fz.comCv.getContext('2d'); _fz.comCtx.imageSmoothingEnabled = false;
+  }
+  function _fzStatus(t) { var e = document.getElementById('fz-status'); if (e) e.textContent = t || ''; }
+  function _labelFor(li, i) { return i === 0 ? 'Body' : (layerNames[String(li)] || ('#' + li)); }
+  function _drawStaticPunk() {
+    if (_fz.punkId == null || !atlasBmp) return;
+    pdCtx.clearRect(0, 0, 200, 200); pdCtx.imageSmoothingEnabled = false;
+    pdCtx.drawImage(atlasBmp, (_fz.punkId % ATLAS_COLS) * 24, Math.floor(_fz.punkId / ATLAS_COLS) * 24, 24, 24, 0, 0, 200, 200);
+  }
+  function _fuseFrame() {
+    _fz.raf = 0;
+    if (!_fz.assignments.size || !detail.classList.contains('open')) return;
+    try {
+      _fzAlloc();
+      _fz.assignments.forEach(function (a) { a.engine.step(a.engine.dtOps); a.engine.applyRects(); a.engine.tickRects && a.engine.tickRects(); });
+      // Rebuild the punk in z-order: assigned layers → masked artifact CA, others → static sprite.
+      _fz.comCtx.clearRect(0, 0, 24, 24);
+      for (var i = 0; i < _fz.L.length; i++) {
+        var li = _fz.L[i], a = _fz.assignments.get(li);
+        if (a && layerBmp) {
+          a.engine.paintToNative(a.off450, a.off450ctx);            // 450×250 raw modulo cells
+          _fz.caCtx.globalCompositeOperation = 'source-over';
+          _fz.caCtx.clearRect(0, 0, 24, 24);
+          _fz.caCtx.drawImage(a.off450, 0, 0, 450, 250, 0, 0, 24, 24);   // downscale to 24×24
+          _fz.caCtx.globalCompositeOperation = 'destination-in';
+          _fz.caCtx.drawImage(layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, 24, 24);  // mask to this trait
+          _fz.caCtx.globalCompositeOperation = 'source-over';
+          _fz.comCtx.drawImage(_fz.caCv, 0, 0);
+        } else if (layerBmp) {
+          _fz.comCtx.drawImage(layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, 24, 24);
+        }
+      }
+      pdCtx.clearRect(0, 0, 200, 200); pdCtx.imageSmoothingEnabled = false;
+      pdCtx.drawImage(_fz.comCv, 0, 0, 24, 24, 0, 0, 200, 200);    // upscale crisp
+    } catch (_) {}
+    _fz.raf = requestAnimationFrame(_fuseFrame);
+  }
+  function _fzStopRaf() { if (_fz.raf) { cancelAnimationFrame(_fz.raf); _fz.raf = 0; } }
+  function _fzKick() { if (!_fz.raf && _fz.assignments.size && detail.classList.contains('open')) _fz.raf = requestAnimationFrame(_fuseFrame); }
+  function _fzTeardown() { _fzStopRaf(); _fz.assignments.clear(); _fz.pending.clear(); _fz.selected = null; _fz.punkId = null; }
+  function _resetFusion() { _fzTeardown(); var p = document.getElementById('fz-panel'); if (p) p.style.display = 'none'; _fzStatus(''); }
+  function _clearAllFusion() { _fzTeardown(); _refreshPills(); _drawStaticPunk(); _fzStatus('cleared'); }
+  function _refreshPills() {
+    var host = document.getElementById('fz-traits'); if (!host) return;
+    [].forEach.call(host.children, function (pill) {
+      var li = +pill.dataset.li, i = +pill.dataset.i, a = _fz.assignments.get(li);
+      pill.textContent = _labelFor(li, i) + (a ? ' · #' + a.artifactId : '');
+      pill.classList.toggle('assigned', !!a);
+      pill.classList.toggle('active', _fz.selected === li);
+    });
+  }
+  function _openFusion() {
+    var pid = window._activePunkId; if (pid == null || !traits[pid]) return;
+    if (pid !== _fz.punkId) _fzTeardown();                          // new punk → drop old assignments
+    _fz.punkId = pid; _fz.L = traits[pid].L || [];
+    _fz.selected = (_fz.L.length ? _fz.L[0] : null);
+    var host = document.getElementById('fz-traits'); host.textContent = '';
+    _fz.L.forEach(function (li, i) {
+      var pill = document.createElement('button'); pill.type = 'button'; pill.className = 'fz-pill';
+      pill.dataset.li = li; pill.dataset.i = i;
+      pill.addEventListener('click', function () { _fz.selected = li; _refreshPills(); });
+      host.appendChild(pill);
+    });
+    _refreshPills();
+    document.getElementById('fz-panel').style.display = 'block';
+    _fzStatus(!layerBmp ? 'layer data unavailable' : (_fz.assignments.size ? '' : 'pick a trait + an artifact #'));
+  }
+  async function _applyFusion(artifactId, layerId) {
+    if (artifactId == null || !(artifactId >= 0)) { _fzStatus('enter an artifact #'); return; }
+    if (layerId == null) { _fzStatus('pick a trait first'); return; }
+    if (!_fz.assignments.has(layerId) && _fz.assignments.size >= FUSE_CAP) { _fzStatus('max ' + FUSE_CAP + ' traits at once on this device'); return; }
+    if (!_ensureOnChain()) { _fzStatus('on-chain unavailable — reload'); return; }
+    var myPunk = _fz.punkId, token = ++_fz.tokenSeq;
+    _fz.pending.set(layerId, token);
+    _fzStatus('loading artifact #' + artifactId + '…');
+    var comp;
+    try { comp = await _fetchArtifactComposition(artifactId); }
+    catch (e) { if (_fz.pending.get(layerId) === token) { _fz.pending.delete(layerId); _fzStatus('artifact #' + artifactId + ' unavailable'); } return; }
+    if (_fz.punkId !== myPunk || !detail.classList.contains('open') || _fz.pending.get(layerId) !== token) return;  // stale (punk/panel/superseded)
+    _fz.pending.delete(layerId);
+    var off = new OffscreenCanvas(450, 250), offctx = off.getContext('2d'); offctx.imageSmoothingEnabled = false;
+    var engine;
+    try { engine = _createArtifactEngine(off, comp); }
+    catch (e) { _fzStatus('engine failed'); return; }
+    _fz.assignments.set(layerId, { engine: engine, off450: off, off450ctx: offctx, artifactId: artifactId });
+    _refreshPills();
+    _fzStatus(_fz.assignments.size + ' trait' + (_fz.assignments.size > 1 ? 's' : '') + ' animating');
+    _fzKick();
+  }
+  function _removeSelected() {
+    if (_fz.selected == null || !_fz.assignments.has(_fz.selected)) { _fzStatus('select an assigned trait'); return; }
+    _fz.assignments.delete(_fz.selected); _fz.pending.delete(_fz.selected);
+    _refreshPills();
+    if (!_fz.assignments.size) { _fzStopRaf(); _drawStaticPunk(); _fzStatus('cleared'); }
+    else _fzStatus(_fz.assignments.size + ' animating');
+  }
+  document.getElementById('fuse-btn').addEventListener('click', _openFusion);
+  document.getElementById('fz-apply').addEventListener('click', function () {
+    var aid = parseInt(document.getElementById('fz-artifact').value, 10);
+    _applyFusion(isNaN(aid) ? null : aid, _fz.selected);
+  });
+  document.getElementById('fz-remove').addEventListener('click', _removeSelected);
+  document.getElementById('fz-clear').addEventListener('click', _clearAllFusion);
+  document.getElementById('pd-close').addEventListener('click', _resetFusion);
+  canvas.addEventListener('click', _resetFusion);                  // switching punks in the grid resets fusion
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') _resetFusion(); });
+
+  init();
+})();
+</script>
+</body>
+</html>
