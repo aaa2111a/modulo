@@ -736,8 +736,7 @@ body.night #filter-btn { background:#2c2b28; }
   function activeCount() { return state.Type.size + state.AccCount.size + state.Acc.size; }
   function onFilterChange() {
     applyFilter();
-    window.scrollTo({ top: 0 });
-    sizeSpacer();
+    sizeSpacer();                 // keep the user's scroll position; gridScroll() clamps to the new max if the set shrank
     dirty = true;
     syncResultCount(); syncChips(); syncFilterBtn();
     document.getElementById('clear-all').disabled = (activeCount() === 0 && _punkQuery == null);
