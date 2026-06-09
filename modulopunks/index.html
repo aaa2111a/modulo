@@ -252,20 +252,16 @@ body.night #pd-overlay { background:rgba(0,0,0,0.62); }
 .pd-punk-wrap { display:flex; justify-content:center; margin-bottom:20px; }
 #pd-canvas { width:min(720px,60vw); height:min(720px,60vw); image-rendering:pixelated; border:0.5px solid var(--border-mid);
   border-radius:8px; background:repeating-conic-gradient(var(--bg-alt) 0% 25%, var(--bg) 0% 50%) 0 / 18px 18px; }
-.pd-row { margin-bottom:14px; }
-.pd-k { font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--text-meta); margin-bottom:5px; }
-.pd-v { font-size:13px; color:var(--text); }
-.pd-accs { display:flex; flex-direction:column; gap:4px; }
-.pd-accs .pd-acc { font-size:12px; color:var(--text); }
-.pd-accs .pd-acc::before { content:'· '; color:var(--text-sub); }
-.pd-links { display:flex; gap:8px; margin-top:18px; flex-wrap:wrap; }
+#pd-name { text-align:center; font-family:'Times New Roman', Times, serif; font-size:18px; letter-spacing:.01em; color:var(--text); margin-bottom:12px; }
+.pd-links { display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap; margin-bottom:8px; }
 .pd-links a { font-size:11px; letter-spacing:.04em; padding:8px 12px; text-decoration:none;
   background:var(--bg-alt); color:var(--text); border:0.5px solid var(--border-mid); border-radius:7px; }
 .pd-links a:hover { border-color:var(--border-strong); }
-#fuse-title { margin-top:18px; padding-top:16px; border-top:0.5px solid var(--border); text-align:center;
+#fuse-title { margin-top:14px; text-align:center;
   font-family:monospace; font-size:11px; letter-spacing:.10em; text-transform:uppercase; color:var(--text-sub); }
 /* Fusion menu — always visible while a punk modal is open */
-#fz-panel { display:none; margin-top:10px; }
+#fz-panel { display:none; margin-top:6px; }
+#fz-pick { display:none; margin-top:16px; padding-top:14px; border-top:0.5px solid var(--border); }
 #fz-panel .fz-k { font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--text-meta); margin:0 0 7px; text-align:center; }
 #fz-traits { display:flex; flex-wrap:wrap; justify-content:center; gap:6px; margin-bottom:14px; }
 .fz-pill { font-family:monospace; font-size:11px; padding:6px 10px; border-radius:16px; cursor:pointer;
@@ -383,16 +379,17 @@ body.night #pd-overlay { background:rgba(0,0,0,0.62); }
 
 <div id="pd-overlay">
 <aside id="punk-detail" role="dialog" aria-modal="true" aria-label="Customize punk">
-  <div class="pd-tbar"><span class="pd-title" id="pd-title">punk</span><button id="pd-close" title="close"></button></div>
+  <div class="pd-tbar"><span class="pd-title" id="pd-title">Trait fusing</span><button id="pd-close" title="close"></button></div>
   <div class="pd-body">
-    <div class="pd-punk-wrap"><canvas id="pd-canvas" width="144" height="144"></canvas></div>
-    <div class="pd-row"><div class="pd-k">Type</div><div class="pd-v" id="pd-type"></div></div>
-    <div class="pd-row"><div class="pd-k" id="pd-acc-k">Accessories</div><div class="pd-accs" id="pd-accs"></div></div>
     <div class="pd-links" id="pd-links"></div>
+    <div id="pd-name"></div>
+    <div class="pd-punk-wrap"><canvas id="pd-canvas" width="144" height="144"></canvas></div>
     <div id="fuse-title">Fuse with Modulo</div>
     <div id="fz-panel">
       <p class="fz-k">Pick a trait, then pick a modulo to fill it. Several animate at once.</p>
       <div id="fz-traits"></div>
+    </div>
+    <div id="fz-pick">
       <div id="fz-picker"></div>
       <div class="fz-row2">
         <button id="fz-remove" type="button">Remove</button>
@@ -422,6 +419,7 @@ body.night #pd-overlay { background:rgba(0,0,0,0.62); }
 
   // ── Constants ──
   var COLS = 8, SRC = 24, ATLAS_COLS = 100, TOTAL = 10000, STICKY = 34;
+  var PUNK_BG = '#638596';   // canonical CryptoPunks background (shown in the modal; grid stays transparent)
   var DPR = Math.min(window.devicePixelRatio || 1, 3);
   var ATLAS_URL = 'punks-atlas.png', TRAITS_URL = 'punks-traits.json';
   var LAYERS_URL = 'punks-layers.png', NAMES_URL = 'punks-layer-names.json';
@@ -586,17 +584,12 @@ body.night #pd-overlay { background:rgba(0,0,0,0.62); }
   function lockScroll() { _savedScrollY = window.scrollY || 0; document.body.style.top = '-' + _savedScrollY + 'px'; document.body.style.position = 'fixed'; document.body.style.width = '100%'; }
   function unlockScroll() { document.body.style.position = ''; document.body.style.top = ''; document.body.style.width = ''; window.scrollTo(0, _savedScrollY); }
   function openDetail(id) {
-    var p = traits[id];
     window._activePunkId = id;
-    document.getElementById('pd-title').textContent = 'punk #' + id;
+    document.getElementById('pd-name').textContent = 'CryptoPunk #' + id;
     pdCtx.imageSmoothingEnabled = false;
     pdCtx.clearRect(0, 0, 144, 144);
+    pdCtx.fillStyle = PUNK_BG; pdCtx.fillRect(0, 0, 144, 144);
     if (atlasBmp) pdCtx.drawImage(atlasBmp, (id % ATLAS_COLS) * SRC, Math.floor(id / ATLAS_COLS) * SRC, SRC, SRC, 0, 0, 144, 144);
-    document.getElementById('pd-type').textContent = p.t;
-    document.getElementById('pd-acc-k').textContent = 'Accessories (' + p.a.length + ')';
-    var box = document.getElementById('pd-accs'); box.textContent = '';
-    if (!p.a.length) { var none = document.createElement('div'); none.className = 'pd-acc'; none.textContent = 'none'; box.appendChild(none); }
-    p.a.forEach(function (a) { var d = document.createElement('div'); d.className = 'pd-acc'; d.textContent = a; box.appendChild(d); });
     var links = document.getElementById('pd-links'); links.textContent = '';
     var os = document.createElement('a'); os.href = 'https://opensea.io/assets/ethereum/0xb47e3cd837ddf8e4c57f05d70ab865de6e193bbb/' + id;
     os.target = '_blank'; os.rel = 'noopener noreferrer'; os.textContent = 'OpenSea ↗'; links.appendChild(os);
@@ -1204,6 +1197,7 @@ function _extractComposition(decodedHtml) {
   function _drawStaticPunk() {
     if (_fz.punkId == null || !atlasBmp) return;
     pdCtx.clearRect(0, 0, 144, 144); pdCtx.imageSmoothingEnabled = false;
+    pdCtx.fillStyle = PUNK_BG; pdCtx.fillRect(0, 0, 144, 144);
     pdCtx.drawImage(atlasBmp, (_fz.punkId % ATLAS_COLS) * 24, Math.floor(_fz.punkId / ATLAS_COLS) * 24, 24, 24, 0, 0, 144, 144);
   }
   // ── Unified animation loop: assignment engines (60fps) + picker previews (~30fps) ──
@@ -1237,6 +1231,7 @@ function _extractComposition(decodedHtml) {
           }
         }
         pdCtx.clearRect(0, 0, 144, 144); pdCtx.imageSmoothingEnabled = false;
+        pdCtx.fillStyle = PUNK_BG; pdCtx.fillRect(0, 0, 144, 144);     // punk background behind the fused layers
         pdCtx.drawImage(_fz.comCv, 0, 0);                               // 1:1 into the 144 pd-canvas
       } catch (_) {}
     }
@@ -1254,7 +1249,7 @@ function _extractComposition(decodedHtml) {
     if (_fz.assignments.size || _pk.live.size) _animRaf = requestAnimationFrame(_animFrame);
   }
   function _fzTeardown() { _fz.assignments.clear(); _fz.pending.clear(); _fz.selected = null; _fz.punkId = null; _fz.caCv = null; _fz.comCv = null; _animStopIfIdle(); }
-  function _resetFusion() { _pkTeardown(); _fzTeardown(); var p = document.getElementById('fz-panel'); if (p) p.style.display = 'none'; _fzStatus(''); }
+  function _resetFusion() { _pkTeardown(); _fzTeardown(); var p = document.getElementById('fz-panel'); if (p) p.style.display = 'none'; var p2 = document.getElementById('fz-pick'); if (p2) p2.style.display = 'none'; _fzStatus(''); }
   function _clearAllFusion() { _fz.assignments.clear(); _fz.pending.clear(); _animStopIfIdle(); _refreshPills(); _drawStaticPunk(); _fzStatus('cleared'); }
   function _refreshPills() {
     var host = document.getElementById('fz-traits'); if (!host) return;
@@ -1280,6 +1275,7 @@ function _extractComposition(decodedHtml) {
     });
     _refreshPills();
     document.getElementById('fz-panel').style.display = 'block';
+    document.getElementById('fz-pick').style.display = 'block';
     _fzStatus(!layerBmp ? 'layer data unavailable' : (_fz.assignments.size ? '' : 'pick a trait, then a modulo'));
     _pkInit();
   }
@@ -1318,7 +1314,12 @@ function _extractComposition(decodedHtml) {
   var _hasOSC = (typeof OffscreenCanvas !== 'undefined');
   function _pkOff(w, h) { if (_hasOSC) return new OffscreenCanvas(w, h); var c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
   var _pk = { active: false, total: 0, io: null, cellEls: new Map(), live: new Map(), pending: new Set(), dwell: new Map() };
-  function _pkCellClick(e) { var id = +e.currentTarget.dataset.art; if (id >= 0) _applyFusion(id, _fz.selected); }
+  function _pkCellClick(e) {
+    var id = +e.currentTarget.dataset.art; if (!(id >= 0)) return;
+    var cur = (_fz.selected != null) ? _fz.assignments.get(_fz.selected) : null;
+    if (cur && cur.artifactId === id) { _removeSelected(); return; }   // click the already-assigned modulo again → deselect
+    _applyFusion(id, _fz.selected);
+  }
   function _pkMakeCell(id) {
     var el = document.createElement('button'); el.type = 'button'; el.className = 'pk-cell';
     el.dataset.art = id; el.setAttribute('aria-label', 'modulo artifact #' + id);
