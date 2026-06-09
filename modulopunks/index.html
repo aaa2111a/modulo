@@ -85,6 +85,10 @@
 <script src="ethers.umd.min.js"
         integrity="sha384-6Zl0Pc8zjSz8KvmNeXRvUQgY4ryFb+BwDvKCmLYcBME0joAaru491tQgi9B7zsMM"
         crossorigin="anonymous" defer></script>
+<!-- mp4-muxer 5.1.3 UMD (self-hosted) — MP4 card export from OffscreenCanvas + WebCodecs. global Mp4Muxer. -->
+<script src="mp4-muxer.min.js"
+        integrity="sha384-SujebcgqCNlLMRSnVkLD+3eWOzsxobv30Bct+0lV+fc1EHHEuvcePwmDgMzpnptj"
+        crossorigin="anonymous" defer></script>
 <title>Modulo · Punks</title>
 <meta name="description" content="Browse all 10,000 CryptoPunks with an OpenSea-style trait filter. A Modulo experiment.">
 <meta property="og:type" content="website">
@@ -299,12 +303,20 @@ body.night #pd-overlay { background:rgba(0,0,0,0.62); }
 .fz-pill.assigned { background:#6363ff; color:#fff; border-color:#6363ff; }
 .fz-pill.assigned.active { box-shadow:0 0 0 2px var(--text); }
 .fz-row2 { display:flex; align-items:center; gap:12px; }
-#fz-remove, #fz-clear { font-family:monospace; font-size:11px; letter-spacing:.04em; padding:9px 13px;
+#fz-remove, #fz-clear, #fz-export { font-family:monospace; font-size:11px; letter-spacing:.04em; padding:9px 13px;
   border-radius:7px; cursor:pointer; border:0.5px solid var(--border-mid); background:var(--bg-alt); color:var(--text); }
-#fz-remove:hover, #fz-clear:hover { filter:brightness(1.08); }
+#fz-remove:hover, #fz-clear:hover, #fz-export:hover { filter:brightness(1.08); }
+#fz-export { background:#23242a; color:#fff; border-color:var(--border-strong); }
+body.night #fz-export { background:#2c2b28; }
+#fz-export:disabled { opacity:0.5; cursor:default; }
 #fz-clear { font-size:10px; padding:6px 0; background:none; border:none; color:var(--text-sub); text-transform:uppercase; }
 #fz-clear:hover { color:var(--text); filter:none; }
 #fz-status { flex:1; font-size:11px; color:var(--text-sub); min-height:14px; letter-spacing:.02em; }
+/* Mobile MP4 save banner (Web Share / blob download after a card export) */
+#mobile-dl-banner { display:none; position:fixed; left:50%; bottom:24px; transform:translateX(-50%); z-index:700;
+  background:#23242a; border-radius:24px; box-shadow:0 6px 24px rgba(0,0,0,0.4); }
+#mobile-dl-link { display:inline-flex; align-items:center; min-height:44px; padding:12px 22px; color:#fff;
+  text-decoration:none; font-family:monospace; font-size:13px; letter-spacing:.04em; }
 /* Modulo picker grid (Phase 4: virtualized animated previews) */
 #fz-picker { display:grid; grid-template-columns:repeat(auto-fill, minmax(52px,1fr)); gap:8px; margin:2px 0 14px; }
 .pk-cell { position:relative; display:flex; flex-direction:column; align-items:center; gap:4px; padding:6px 4px;
@@ -420,12 +432,15 @@ body.night #filter-btn { background:#2c2b28; }
       <div class="fz-row2">
         <button id="fz-remove" type="button">Remove</button>
         <button id="fz-clear" type="button">Clear all</button>
+        <button id="fz-export" type="button">↓ MP4 card</button>
         <div id="fz-status"></div>
       </div>
     </div>
   </div>
 </aside>
 </div>
+
+<div id="mobile-dl-banner"><a id="mobile-dl-link" href="#">Tap to save MP4</a></div>
 
 <div id="boot"><div class="spin"></div><div id="boot-msg">Loading punks…</div></div>
 
@@ -1295,43 +1310,46 @@ function _extractComposition(decodedHtml) {
     pdCtx.drawImage(atlasBmp, (_fz.punkId % ATLAS_COLS) * 24, Math.floor(_fz.punkId / ATLAS_COLS) * 24, 24, 24, 0, 0, 144, 144);
   }
   // ── Unified animation loop: assignment engines (60fps) + picker previews (~30fps) ──
-  var _animRaf = 0, _animN = 0;
+  var _animRaf = 0, _animN = 0, _exportInFlight = false;
   function _animStop() { if (_animRaf) { cancelAnimationFrame(_animRaf); _animRaf = 0; } }
   function _animStopIfIdle() { if (!_fz.assignments.size) _animStop(); }   // picker is static now — only assignments drive the rAF
-  function _animKick() { if (!_animRaf && detail.classList.contains('open') && _fz.assignments.size) _animRaf = requestAnimationFrame(_animFrame); }
+  function _animKick() { if (_exportInFlight) return; if (!_animRaf && detail.classList.contains('open') && _fz.assignments.size) _animRaf = requestAnimationFrame(_animFrame); }
+  // Steps the assignment engines + rebuilds _fz.comCv (144) in z-order: background base, then each
+  // layer (masked CA if fused, else static). Single source of truth for preview + MP4 export.
+  function _composeFusionFrame() {
+    _fzAlloc();
+    _fz.assignments.forEach(function (a) { a.engine.step(a.engine.dtOps); a.engine.applyRects(); a.engine.tickRects && a.engine.tickRects(); });
+    _fz.comCtx.clearRect(0, 0, 144, 144);
+    var bgA = _fz.assignments.get(BG_ID);
+    if (bgA) { bgA.engine.paintTo(bgA.off, bgA.offctx); _fz.comCtx.drawImage(bgA.off, 0, 0); }  // full-frame base = background
+    for (var i = 0; i < _fz.L.length; i++) {
+      var li = _fz.L[i], a = _fz.assignments.get(li);
+      if (a && layerBmp) {
+        a.engine.paintTo(a.off, a.offctx);                          // 144×144 = centered 24-cell crop @6px/cell, WITH dx
+        _fz.caCtx.globalCompositeOperation = 'source-over';
+        _fz.caCtx.clearRect(0, 0, 144, 144);
+        _fz.caCtx.drawImage(a.off, 0, 0);                           // 1:1
+        _fz.caCtx.globalCompositeOperation = 'destination-in';
+        _fz.caCtx.drawImage(layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, 144, 144);  // trait mask upscaled 24→144 nearest
+        _fz.caCtx.globalCompositeOperation = 'source-over';
+        _fz.comCtx.drawImage(_fz.caCv, 0, 0);
+      } else if (layerBmp) {
+        _fz.comCtx.drawImage(layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, 144, 144);  // static layer upscaled 24→144
+      }
+    }
+  }
   function _animFrame() {
     _animRaf = 0;
     if (!detail.classList.contains('open')) return;
     _animN++;
-    // (1) Assignment engines → rebuild the big punk preview in z-order
     if (_fz.assignments.size) {
       try {
-        _fzAlloc();
-        _fz.assignments.forEach(function (a) { a.engine.step(a.engine.dtOps); a.engine.applyRects(); a.engine.tickRects && a.engine.tickRects(); });
-        _fz.comCtx.clearRect(0, 0, 144, 144);
-        var bgA = _fz.assignments.get(BG_ID);
-        if (bgA) { bgA.engine.paintTo(bgA.off, bgA.offctx); _fz.comCtx.drawImage(bgA.off, 0, 0); }  // full-frame base = background
-        for (var i = 0; i < _fz.L.length; i++) {
-          var li = _fz.L[i], a = _fz.assignments.get(li);
-          if (a && layerBmp) {
-            a.engine.paintTo(a.off, a.offctx);                          // 144×144 = centered 24-cell crop @6px/cell, WITH dx
-            _fz.caCtx.globalCompositeOperation = 'source-over';
-            _fz.caCtx.clearRect(0, 0, 144, 144);
-            _fz.caCtx.drawImage(a.off, 0, 0);                           // 1:1
-            _fz.caCtx.globalCompositeOperation = 'destination-in';
-            _fz.caCtx.drawImage(layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, 144, 144);  // trait mask upscaled 24→144 nearest
-            _fz.caCtx.globalCompositeOperation = 'source-over';
-            _fz.comCtx.drawImage(_fz.caCv, 0, 0);
-          } else if (layerBmp) {
-            _fz.comCtx.drawImage(layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, 144, 144);  // static layer upscaled 24→144
-          }
-        }
+        _composeFusionFrame();
         pdCtx.clearRect(0, 0, 144, 144); pdCtx.imageSmoothingEnabled = false;
         pdCtx.fillStyle = _punkBg; pdCtx.fillRect(0, 0, 144, 144);     // live status background behind the fused layers
         pdCtx.drawImage(_fz.comCv, 0, 0);                               // 1:1 into the 144 pd-canvas
       } catch (_) {}
     }
-    // (Picker previews are STATIC — rendered once on mount, NOT driven by this loop.)
     if (_fz.assignments.size) _animRaf = requestAnimationFrame(_animFrame);
   }
   function _fzTeardown() { _fz.assignments.clear(); _fz.pending.clear(); _fz.selected = null; _fz.punkId = null; _fz.caCv = null; _fz.comCv = null; _animStopIfIdle(); }
@@ -1512,6 +1530,103 @@ function _extractComposition(decodedHtml) {
     var host = document.getElementById('fz-picker'); if (host) host.textContent = '';
     _animStopIfIdle();
   }
+  // ── MP4 card export (1080×1080, ~20 MB ArrayBuffer; all browsers — ports collection's compact path) ──
+  function _cardTextColor(bg) {
+    var dark = '#23242a', light = '#dbd8d1';
+    if (typeof bg !== 'string' || bg[0] !== '#' || bg.length < 7) return dark;
+    var toLin = function (c) { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+    var lum = function (hex) {
+      var r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+      if ([r, g, b].some(Number.isNaN)) return null;
+      return 0.2126 * toLin(r) + 0.7152 * toLin(g) + 0.0722 * toLin(b);
+    };
+    var Lbg = lum(bg); if (Lbg == null) return dark;
+    var ratio = function (a, b) { var hi = Math.max(a, b) + 0.05, lo = Math.min(a, b) + 0.05; return hi / lo; };
+    return ratio(Lbg, lum(dark)) >= ratio(Lbg, lum(light)) ? dark : light;
+  }
+  function _offerMobileDownload(blob, filename) {
+    var banner = document.getElementById('mobile-dl-banner'), link = document.getElementById('mobile-dl-link');
+    if (!banner || !link) { console.error('[card-export] download banner missing'); return; }
+    if (link._dlUrl) { try { URL.revokeObjectURL(link._dlUrl); } catch (_) {} link._dlUrl = null; }
+    banner.style.display = 'none'; link.onclick = null;
+    var ua = navigator.userAgent || '';
+    if (/Android/.test(ua) && /\bwv\b/.test(ua)) { alert('Open this page in Chrome to save the video (in-app browsers block downloads).'); return; }
+    var file = null; try { file = new File([blob], filename, { type: 'video/mp4' }); } catch (_) {}
+    var canShare = !!(file && navigator.share && navigator.canShare && navigator.canShare({ files: [file] }));
+    link.textContent = 'Tap to save MP4 (' + (blob.size / 1e6).toFixed(1) + ' MB)';
+    banner.style.display = 'block';
+    if (canShare) {
+      link.href = '#'; link.removeAttribute('download');
+      link.onclick = function (e) { e.preventDefault(); navigator.share({ files: [file] }).then(function () { banner.style.display = 'none'; }).catch(function (err) { if (err && err.name !== 'AbortError') console.error('[share]', err); }); };
+    } else {
+      var url = URL.createObjectURL(blob);
+      link._dlUrl = url; link.href = url; link.download = filename;
+      link.onclick = function () { setTimeout(function () { URL.revokeObjectURL(url); if (link._dlUrl === url) link._dlUrl = null; banner.style.display = 'none'; link.onclick = null; }, 2000); };
+    }
+  }
+  async function _exportPunkCard() {
+    if (_exportInFlight) return;
+    if (!window.VideoEncoder || !window.Mp4Muxer) { alert('Video export not supported by this browser (try Chrome/Edge).'); return; }
+    var myPunk = _fz.punkId; if (myPunk == null) return;
+    _exportInFlight = true; _animStop();
+    var btn = document.getElementById('fz-export'), origText = btn ? btn.textContent : '↓ MP4';
+    if (btn) btn.disabled = true;
+    var encoder = null, muxer = null;
+    try {
+      var W = 1080, H = 1080, FPS = 60, FRAMES = FPS * 20, BITRATE = 8000000;
+      var ladder = ['avc1.64002a', 'avc1.640028', 'avc1.4d4028', 'avc1.42e01f'], codec = null;
+      for (var ci = 0; ci < ladder.length; ci++) {
+        var sup = null; try { sup = await VideoEncoder.isConfigSupported({ codec: ladder[ci], width: W, height: H, bitrate: BITRATE, framerate: FPS, bitrateMode: 'constant', latencyMode: 'quality', hardwareAcceleration: 'prefer-hardware' }); } catch (_) {}
+        if (sup && sup.supported) { codec = ladder[ci]; break; }
+      }
+      if (!codec) { alert('No supported H.264 configuration on this device.'); return; }
+      var capBg = _punkBg;
+      var S = 832, pX = Math.floor((W - S) / 2), pY = 40;            // square punk above the caption (no overlap)
+      var card = _pkOff(W, H), cx = card.getContext('2d'); cx.imageSmoothingEnabled = false;
+      cx.fillStyle = capBg; cx.fillRect(0, 0, W, H);
+      var SERIF = "'Times New Roman', Times, serif";
+      cx.textAlign = 'center'; cx.textBaseline = 'alphabetic'; cx.fillStyle = _cardTextColor(capBg);
+      var MAXW = W * 0.86, line1 = 'CryptoPunk #' + myPunk;
+      var sz1 = Math.round(W * 0.034); cx.font = sz1 + 'px ' + SERIF;
+      var w1 = cx.measureText(line1).width;
+      if (w1 > MAXW) { sz1 = Math.max(16, Math.floor(sz1 * MAXW / w1)); cx.font = sz1 + 'px ' + SERIF; }
+      cx.fillText(line1, W / 2, Math.round(H * 0.867));
+      var sz2 = Math.max(12, Math.round(sz1 * 0.55)); cx.font = sz2 + 'px ' + SERIF;
+      cx.save(); cx.globalAlpha = 0.55; cx.fillText('Modulo Punks', W / 2, Math.round(H * 0.905)); cx.restore();
+
+      var target = new Mp4Muxer.ArrayBufferTarget();
+      muxer = new Mp4Muxer.Muxer({ target: target, video: { codec: 'avc', width: W, height: H, frameRate: FPS }, fastStart: 'fragmented' });
+      encoder = new VideoEncoder({ output: function (chunk, meta) { muxer.addVideoChunk(chunk, meta); }, error: function (e) { console.error('[card-export]', e); } });
+      encoder.configure({ codec: codec, width: W, height: H, bitrate: BITRATE, framerate: FPS, bitrateMode: 'constant', latencyMode: 'quality', hardwareAcceleration: 'prefer-hardware' });
+
+      for (var f = 0; f < FRAMES; f++) {
+        if (_fz.punkId !== myPunk || !detail.classList.contains('open')) throw new Error('modal changed mid-export');
+        _composeFusionFrame();
+        cx.fillStyle = capBg; cx.fillRect(pX, pY, S, S);             // clear punk area (comCv has transparent gaps when no BG modulo)
+        cx.imageSmoothingEnabled = false;
+        cx.drawImage(_fz.comCv, 0, 0, 144, 144, pX, pY, S, S);       // fused punk upscaled (nearest)
+        var frame = new VideoFrame(card, { timestamp: Math.round(f * 1000000 / FPS), duration: Math.round(1000000 / FPS) });
+        encoder.encode(frame, { keyFrame: f % 120 === 0 });
+        frame.close();
+        var stall = 0;
+        while (encoder.encodeQueueSize > 4) { if (++stall > 600) throw new Error('VideoEncoder stalled'); await new Promise(function (r) { setTimeout(r, 0); }); }
+        if (f % 30 === 0 && btn) { btn.textContent = '▪ ' + Math.round(f / FRAMES * 100) + '%'; await new Promise(function (r) { setTimeout(r, 0); }); }
+      }
+      await encoder.flush(); encoder.close(); encoder = null;
+      muxer.finalize();
+      var blob = new Blob([target.buffer], { type: 'video/mp4' });
+      _offerMobileDownload(blob, 'cryptopunk-' + myPunk + '-modulo.mp4');
+    } catch (err) {
+      console.error('[card-export] failed:', err);
+      if (String((err && err.message) || '').indexOf('mid-export') === -1) alert('Export failed. See console.');
+    } finally {
+      _exportInFlight = false;
+      if (btn) { btn.disabled = false; btn.textContent = origText; }
+      if (encoder) { try { encoder.close(); } catch (_) {} }
+      _animKick();
+    }
+  }
+  document.getElementById('fz-export').addEventListener('click', _exportPunkCard);
   document.getElementById('fz-remove').addEventListener('click', _removeSelected);
   document.getElementById('fz-clear').addEventListener('click', _clearAllFusion);
   // The modal opens the fuse menu automatically (openDetail → _openFusion, which drops a
