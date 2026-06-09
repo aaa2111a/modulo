@@ -250,7 +250,7 @@ body.night #pd-overlay { background:rgba(0,0,0,0.62); }
 #pd-close:hover { filter:brightness(0.85); }
 .pd-body { padding:22px 20px 40px; }
 .pd-punk-wrap { display:flex; justify-content:center; margin-bottom:20px; }
-#pd-canvas { width:min(360px,60vw); height:min(360px,60vw); image-rendering:pixelated; border:0.5px solid var(--border-mid);
+#pd-canvas { width:min(720px,60vw); height:min(720px,60vw); image-rendering:pixelated; border:0.5px solid var(--border-mid);
   border-radius:8px; background:repeating-conic-gradient(var(--bg-alt) 0% 25%, var(--bg) 0% 50%) 0 / 18px 18px; }
 .pd-row { margin-bottom:14px; }
 .pd-k { font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--text-meta); margin-bottom:5px; }
@@ -262,12 +262,12 @@ body.night #pd-overlay { background:rgba(0,0,0,0.62); }
 .pd-links a { font-size:11px; letter-spacing:.04em; padding:8px 12px; text-decoration:none;
   background:var(--bg-alt); color:var(--text); border:0.5px solid var(--border-mid); border-radius:7px; }
 .pd-links a:hover { border-color:var(--border-strong); }
-#fuse-title { margin-top:18px; padding-top:16px; border-top:0.5px solid var(--border);
+#fuse-title { margin-top:18px; padding-top:16px; border-top:0.5px solid var(--border); text-align:center;
   font-family:monospace; font-size:11px; letter-spacing:.10em; text-transform:uppercase; color:var(--text-sub); }
 /* Fusion menu — always visible while a punk modal is open */
 #fz-panel { display:none; margin-top:10px; }
-#fz-panel .fz-k { font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--text-meta); margin:0 0 7px; }
-#fz-traits { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:14px; }
+#fz-panel .fz-k { font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--text-meta); margin:0 0 7px; text-align:center; }
+#fz-traits { display:flex; flex-wrap:wrap; justify-content:center; gap:6px; margin-bottom:14px; }
 .fz-pill { font-family:monospace; font-size:11px; padding:6px 10px; border-radius:16px; cursor:pointer;
   background:var(--bg-alt); color:var(--text); border:0.5px solid var(--border-mid); }
 .fz-pill:hover { border-color:var(--border-strong); }
