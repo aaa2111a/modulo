@@ -232,11 +232,11 @@ body.night .display-title { color:rgba(255,255,255,1.0); }
 .accordion.collapsed .acc-head .caret { transform:rotate(-90deg); }
 .acc-body { display:flex; flex-direction:column; padding:0 8px 8px 0; max-height:340px; overflow-y:auto; }
 /* Themed scrollbars (kill the white default); gap to the trait counts via the padding-right above */
-#filter-sidebar, .acc-body, #punk-detail { scrollbar-width:thin; scrollbar-color:var(--border-mid) transparent; }
-#filter-sidebar::-webkit-scrollbar, .acc-body::-webkit-scrollbar, #punk-detail::-webkit-scrollbar { width:8px; height:8px; }
-#filter-sidebar::-webkit-scrollbar-track, .acc-body::-webkit-scrollbar-track, #punk-detail::-webkit-scrollbar-track { background:transparent; }
-#filter-sidebar::-webkit-scrollbar-thumb, .acc-body::-webkit-scrollbar-thumb, #punk-detail::-webkit-scrollbar-thumb { background:var(--border-mid); border-radius:4px; }
-#filter-sidebar::-webkit-scrollbar-thumb:hover, .acc-body::-webkit-scrollbar-thumb:hover, #punk-detail::-webkit-scrollbar-thumb:hover { background:var(--border-strong); }
+#filter-sidebar, .acc-body, .pd-body { scrollbar-width:thin; scrollbar-color:var(--border-mid) transparent; }
+#filter-sidebar::-webkit-scrollbar, .acc-body::-webkit-scrollbar, .pd-body::-webkit-scrollbar { width:8px; height:8px; }
+#filter-sidebar::-webkit-scrollbar-track, .acc-body::-webkit-scrollbar-track, .pd-body::-webkit-scrollbar-track { background:transparent; }
+#filter-sidebar::-webkit-scrollbar-thumb, .acc-body::-webkit-scrollbar-thumb, .pd-body::-webkit-scrollbar-thumb { background:var(--border-mid); border-radius:4px; }
+#filter-sidebar::-webkit-scrollbar-thumb:hover, .acc-body::-webkit-scrollbar-thumb:hover, .pd-body::-webkit-scrollbar-thumb:hover { background:var(--border-strong); }
 .accordion.collapsed .acc-body { display:none; }
 .trait-row { display:flex; align-items:center; gap:9px; padding:6px 2px; cursor:pointer; font-size:12px; }
 .trait-row:hover { color:var(--text); }
@@ -269,18 +269,19 @@ body.night .display-title { color:rgba(255,255,255,1.0); }
   padding:2vh 2vw; background:rgba(0,0,0,0.5); opacity:0; pointer-events:none; transition:opacity 0.22s ease; }
 #pd-overlay.open { opacity:1; pointer-events:auto; }
 body.night #pd-overlay { background:rgba(0,0,0,0.62); }
-#punk-detail { position:relative; z-index:651; width:min(96vw, calc(220px + (90vh - 40px) * 1.8)); max-width:96vw; height:90vh; max-height:90vh; overflow-y:auto;
+#punk-detail { position:relative; z-index:651; width:min(96vw, calc(220px + (90vh - 40px) * 1.8)); max-width:96vw; height:90vh; max-height:90vh;
+  overflow:hidden; display:flex; flex-direction:column;                 /* tbar fixed at top; only .pd-body scrolls */
   background:var(--bg); border:0.5px solid var(--border-strong); border-radius:14px;
   box-shadow:0 20px 60px rgba(0,0,0,0.35);
   transform:translateY(12px) scale(0.98); opacity:0; transition:transform 0.24s ease, opacity 0.24s ease; }
 #pd-overlay.open #punk-detail { transform:translateY(0) scale(1); opacity:1; }
-.pd-tbar { height:34px; display:flex; align-items:center; justify-content:space-between;
-  padding:0 14px; background:var(--tbar-bg); border-bottom:0.5px solid var(--border-mid);
-  border-radius:14px 14px 0 0; position:sticky; top:0; z-index:1; }
+.pd-tbar { flex:0 0 auto; height:34px; display:flex; align-items:center; justify-content:space-between;
+  padding:0 14px; background:var(--tbar-bg); border-bottom:0.5px solid var(--border-mid); border-radius:14px 14px 0 0; }
 .pd-tbar .pd-title { font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--text-sub); }
+.pd-tbar-actions { display:flex; align-items:center; gap:10px; }
 #pd-close { width:12px; height:12px; border-radius:50%; background:#ff5f57; border:none; cursor:pointer; padding:0; }
 #pd-close:hover { filter:brightness(0.85); }
-.pd-body { padding:22px 20px 40px; }
+.pd-body { flex:1 1 auto; min-height:0; overflow-y:auto; padding:22px 20px 40px; }
 .pd-punk-wrap { display:flex; justify-content:center; margin-bottom:20px; }
 #pd-canvas { width:min(720px,60vw); height:min(720px,60vw); image-rendering:pixelated; border:0.5px solid var(--border-mid);
   border-radius:8px; background:repeating-conic-gradient(var(--bg-alt) 0% 25%, var(--bg) 0% 50%) 0 / 18px 18px; }
@@ -303,10 +304,12 @@ body.night #pd-overlay { background:rgba(0,0,0,0.62); }
 .fz-pill.assigned { background:#6363ff; color:#fff; border-color:#6363ff; }
 .fz-pill.assigned.active { box-shadow:0 0 0 2px var(--text); }
 .fz-row2 { display:flex; align-items:center; gap:12px; }
-#fz-remove, #fz-clear, #fz-export { font-family:monospace; font-size:11px; letter-spacing:.04em; padding:9px 13px;
+#fz-remove, #fz-clear { font-family:monospace; font-size:11px; letter-spacing:.04em; padding:9px 13px;
   border-radius:7px; cursor:pointer; border:0.5px solid var(--border-mid); background:var(--bg-alt); color:var(--text); }
-#fz-remove:hover, #fz-clear:hover, #fz-export:hover { filter:brightness(1.08); }
-#fz-export { background:#23242a; color:#fff; border-color:var(--border-strong); }
+#fz-remove:hover, #fz-clear:hover { filter:brightness(1.08); }
+#fz-export { font-family:monospace; font-size:10px; letter-spacing:.04em; padding:4px 10px; border-radius:6px; cursor:pointer;
+  border:0.5px solid var(--border-strong); background:#23242a; color:#fff; white-space:nowrap; }
+#fz-export:hover { filter:brightness(1.12); }
 body.night #fz-export { background:#2c2b28; }
 #fz-export:disabled { opacity:0.5; cursor:default; }
 #fz-clear { font-size:10px; padding:6px 0; background:none; border:none; color:var(--text-sub); text-transform:uppercase; }
@@ -417,7 +420,7 @@ body.night #filter-btn { background:#2c2b28; }
 
 <div id="pd-overlay">
 <aside id="punk-detail" role="dialog" aria-modal="true" aria-label="Customize punk">
-  <div class="pd-tbar"><span class="pd-title" id="pd-title">Trait fusing</span><button id="pd-close" title="close"></button></div>
+  <div class="pd-tbar"><span class="pd-title" id="pd-title">Trait fusing</span><span class="pd-tbar-actions"><button id="fz-export" type="button">↓ MP4</button><button id="pd-close" title="close"></button></span></div>
   <div class="pd-body">
     <div class="pd-links" id="pd-links"></div>
     <div id="pd-name"></div>
@@ -432,7 +435,6 @@ body.night #filter-btn { background:#2c2b28; }
       <div class="fz-row2">
         <button id="fz-remove" type="button">Remove</button>
         <button id="fz-clear" type="button">Clear all</button>
-        <button id="fz-export" type="button">↓ MP4 card</button>
         <div id="fz-status"></div>
       </div>
     </div>
