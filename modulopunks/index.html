@@ -330,9 +330,9 @@ body.night #fz-export { background:#2c2b28; }
 .pk-slot { position:relative; width:44px; height:44px; display:block; border-radius:4px; overflow:hidden;
   background:repeating-conic-gradient(var(--bg) 0% 25%, var(--bg-alt) 0% 50%) 0 / 8px 8px; }
 .pk-slot.pk-err { opacity:0.35; }
-.pk-spin { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:14px; height:14px;
+.pk-spin { position:absolute; top:50%; left:50%; margin:-7px 0 0 -7px; width:14px; height:14px;
   border:1.5px solid var(--border-mid); border-top-color:var(--text-sub); border-radius:50%;
-  animation:spin 0.8s linear infinite; pointer-events:none; }
+  animation:spin 0.8s linear infinite; pointer-events:none; }   /* center via margin, NOT transform (the spin keyframe owns transform) */
 .pk-cv { width:44px; height:44px; display:block; image-rendering:pixelated; }
 .pk-cap { font-size:10px; letter-spacing:.02em; color:var(--text-sub); }
 
@@ -1463,7 +1463,7 @@ function _extractComposition(decodedHtml) {
     if (!_pk.io) _pk.io = new IntersectionObserver(_pkIO, { root: detail, rootMargin: '100px 0px', threshold: 0.01 });
     else _pk.io.disconnect();
     var frag = document.createDocumentFragment();
-    for (var id = 0; id < _pk.total; id++) { var el = _pkMakeCell(id); _pk.cellEls.set(id, el); frag.appendChild(el); }
+    for (var id = 1; id <= _pk.total; id++) { var el = _pkMakeCell(id); _pk.cellEls.set(id, el); frag.appendChild(el); }   // artifacts are 1-indexed (#0 doesn't exist); total = highest id
     host.appendChild(frag);
     _pk.cellEls.forEach(function (el) { _pk.io.observe(el); });
     _pkHighlight();
