@@ -394,7 +394,7 @@ body.night #pd-overlay { background:rgba(0,0,0,0.62); }
     <div class="pd-links" id="pd-links"></div>
     <div id="pd-name"></div>
     <div class="pd-punk-wrap"><canvas id="pd-canvas" width="144" height="144"></canvas></div>
-    <div id="fuse-title">Fuse with Modulo</div>
+    <div id="fuse-title">Fuse with Modulo Artifacts</div>
     <div id="fz-panel">
       <p class="fz-k">Pick a trait, then pick a modulo to fill it. Several animate at once.</p>
       <div id="fz-traits"></div>
@@ -1263,8 +1263,8 @@ function _extractComposition(decodedHtml) {
   // ── Unified animation loop: assignment engines (60fps) + picker previews (~30fps) ──
   var _animRaf = 0, _animN = 0;
   function _animStop() { if (_animRaf) { cancelAnimationFrame(_animRaf); _animRaf = 0; } }
-  function _animStopIfIdle() { if (!_fz.assignments.size && !_pk.live.size) _animStop(); }
-  function _animKick() { if (!_animRaf && detail.classList.contains('open') && (_fz.assignments.size || _pk.live.size)) _animRaf = requestAnimationFrame(_animFrame); }
+  function _animStopIfIdle() { if (!_fz.assignments.size) _animStop(); }   // picker is static now — only assignments drive the rAF
+  function _animKick() { if (!_animRaf && detail.classList.contains('open') && _fz.assignments.size) _animRaf = requestAnimationFrame(_animFrame); }
   function _animFrame() {
     _animRaf = 0;
     if (!detail.classList.contains('open')) return;
@@ -1295,18 +1295,8 @@ function _extractComposition(decodedHtml) {
         pdCtx.drawImage(_fz.comCv, 0, 0);                               // 1:1 into the 144 pd-canvas
       } catch (_) {}
     }
-    // (2) Picker preview engines (throttled every other frame)
-    if (_pk.live.size && (_animN & 1) === 0) {
-      _pk.live.forEach(function (p) {
-        try {
-          p.engine.step(p.engine.dtOps); p.engine.applyRects(); p.engine.tickRects && p.engine.tickRects();
-          p.engine.paintToNative(p.off, p.offctx);
-          p.ctx.clearRect(0, 0, 24, 24); p.ctx.imageSmoothingEnabled = false;
-          p.ctx.drawImage(p.off, 213, 113, 24, 24, 0, 0, 24, 24);   // centered 24×24 crop (no squish)
-        } catch (_) {}
-      });
-    }
-    if (_fz.assignments.size || _pk.live.size) _animRaf = requestAnimationFrame(_animFrame);
+    // (Picker previews are STATIC — rendered once on mount, NOT driven by this loop.)
+    if (_fz.assignments.size) _animRaf = requestAnimationFrame(_animFrame);
   }
   function _fzTeardown() { _fz.assignments.clear(); _fz.pending.clear(); _fz.selected = null; _fz.punkId = null; _fz.caCv = null; _fz.comCv = null; _animStopIfIdle(); }
   function _resetFusion() { _punkBg = PUNK_BG; _pkTeardown(); _fzTeardown(); var p = document.getElementById('fz-panel'); if (p) p.style.display = 'none'; var p2 = document.getElementById('fz-pick'); if (p2) p2.style.display = 'none'; _fzStatus(''); }
@@ -1369,11 +1359,15 @@ function _extractComposition(decodedHtml) {
     else _fzStatus(_fz.assignments.size + ' animating');
   }
 
-  // ── Modulo picker (virtualized animated previews; all settled artifacts) ──
-  var PREVIEW_CAP = (window.matchMedia && window.matchMedia('(pointer:coarse)').matches) ? 6 : 12;
+  // ── Modulo picker (virtualized STATIC previews; ALL settled artifacts) ──
+  // Each visible cell renders ONE frame (no rAF) so EVERY artifact shows a preview
+  // (not just a capped few). Rendered 24×24 thumbnails are cached as ImageData so
+  // re-scroll is instant; IO unmounts off-screen canvases to bound the DOM while the
+  // cache survives. _pk.cache worst case ≈ 10k × 24×24×4 B ≈ 22 MB (acceptable).
+  var STATIC_STEPS = 20;   // CA steps to evolve each artifact to a representative frame
   var _hasOSC = (typeof OffscreenCanvas !== 'undefined');
   function _pkOff(w, h) { if (_hasOSC) return new OffscreenCanvas(w, h); var c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
-  var _pk = { active: false, total: 0, io: null, cellEls: new Map(), live: new Map(), pending: new Set(), dwell: new Map() };
+  var _pk = { active: false, total: 0, io: null, cellEls: new Map(), live: new Map(), pending: new Set(), dwell: new Map(), cache: new Map() };
   function _pkCellClick(e) {
     var id = +e.currentTarget.dataset.art; if (!(id >= 0)) return;
     var cur = (_fz.selected != null) ? _fz.assignments.get(_fz.selected) : null;
@@ -1397,40 +1391,38 @@ function _extractComposition(decodedHtml) {
   function _pkUnmount(id) {
     var p = _pk.live.get(id); if (!p) return;
     _pk.live.delete(id);
-    if (p.cv && p.cv.parentNode) p.cv.parentNode.removeChild(p.cv);
-    p.engine = null; p.off = null; p.offctx = null; p.ctx = null;
+    if (p.cv && p.cv.parentNode) p.cv.parentNode.removeChild(p.cv);   // canvas out of DOM; ImageData stays in _pk.cache
   }
-  function _pkEvict(exceptId) {
-    if (!_pk.live.size) return;
-    var r = detail.getBoundingClientRect(), mid = r.top + r.height / 2, far = -1, farD = -1;
-    _pk.live.forEach(function (p, id) {
-      if (id === exceptId) return;
-      var el = _pk.cellEls.get(id); if (!el) { far = id; farD = 1e9; return; }
-      var cr = el.getBoundingClientRect(), d = Math.abs((cr.top + cr.height / 2) - mid);
-      if (d > farD) { farD = d; far = id; }
-    });
-    if (far >= 0) _pkUnmount(far);
+  function _pkDraw(id, imgData) {                                       // build an in-DOM thumbnail from cached/fresh ImageData
+    var el = _pk.cellEls.get(id); if (!el || _pk.live.has(id)) return;
+    var cv = document.createElement('canvas'); cv.width = 24; cv.height = 24; cv.className = 'pk-cv';
+    var ctx = cv.getContext('2d'); ctx.imageSmoothingEnabled = false;
+    ctx.putImageData(imgData, 0, 0);
+    var slot = el.querySelector('.pk-slot'); (slot || el).appendChild(cv);
+    _pk.live.set(id, { cv: cv });
   }
   function _pkMount(id) {
     if (!_pk.active) return;
     if (_pk.live.has(id) || _pk.pending.has(id)) return;
-    if (_pk.live.size + _pk.pending.size >= PREVIEW_CAP) return;    // enough already live/in-flight
+    if (_pk.cache.has(id)) { _pkDraw(id, _pk.cache.get(id)); return; }   // instant from cache (no fetch / no steps)
     if (!_ensureOnChain()) return;
     _pk.pending.add(id);
     _fetchArtifactComposition(id).then(function (comp) {
       _pk.pending.delete(id);
-      if (!_pk.active) return;                                       // teardown raced
-      var el = _pk.cellEls.get(id); if (!el || _pk.live.has(id)) return;
-      if (_pk.live.size >= PREVIEW_CAP) _pkEvict(id);                // re-check cap AFTER await
-      if (_pk.live.size >= PREVIEW_CAP) return;
-      var off = _pkOff(450, 250), offctx = off.getContext('2d'); offctx.imageSmoothingEnabled = false;
-      var engine;
-      try { engine = _createArtifactEngine(off, comp); } catch (e) { return; }
-      var cv = document.createElement('canvas'); cv.width = 24; cv.height = 24; cv.className = 'pk-cv';
-      var ctx = cv.getContext('2d'); ctx.imageSmoothingEnabled = false;
-      var slot = el.querySelector('.pk-slot'); (slot || el).appendChild(cv);
-      _pk.live.set(id, { engine: engine, off: off, offctx: offctx, cv: cv, ctx: ctx });
-      _animKick();
+      if (!_pk.active || !_pk.cellEls.has(id) || _pk.live.has(id)) return;   // teardown raced / cell gone / already drawn
+      var off = _pkOff(450, 250), octx = off.getContext('2d'); octx.imageSmoothingEnabled = false;
+      var eng;
+      try { eng = _createArtifactEngine(off, comp); } catch (e) { return; }
+      try {
+        for (var s = 0; s < STATIC_STEPS; s++) { eng.step(eng.dtOps); eng.applyRects(); eng.tickRects && eng.tickRects(); }
+        eng.paintToNative(off, octx);
+      } catch (e) { return; }
+      var tmp = _pkOff(24, 24), tctx = tmp.getContext('2d'); tctx.imageSmoothingEnabled = false;
+      tctx.drawImage(off, 213, 113, 24, 24, 0, 0, 24, 24);              // centered 24×24 crop (no squish)
+      var imgData; try { imgData = tctx.getImageData(0, 0, 24, 24); } catch (e) { return; }
+      _pk.cache.set(id, imgData);
+      _pkDraw(id, imgData);
+      // eng / off / tmp are local → GC'd (no rAF, no stored engine ref)
     }).catch(function () { _pk.pending.delete(id); });
   }
   function _pkIO(entries) {
@@ -1446,12 +1438,11 @@ function _extractComposition(decodedHtml) {
         if (_pk.live.has(id)) _pkUnmount(id);
       }
     });
-    _animStopIfIdle();
   }
   function _pkBuildGrid() {
     var host = document.getElementById('fz-picker'); if (!host) return;
     _pk.dwell.forEach(function (t) { clearTimeout(t); }); _pk.dwell.clear();
-    _pk.live.forEach(function (p) { p.engine = null; p.off = null; }); _pk.live.clear(); _pk.pending.clear();
+    _pk.live.clear(); _pk.pending.clear();          // canvases removed by host.textContent='' below; cache kept
     host.textContent = ''; _pk.cellEls.clear();
     if (!_pk.io) _pk.io = new IntersectionObserver(_pkIO, { root: detail, rootMargin: '100px 0px', threshold: 0.01 });
     else _pk.io.disconnect();
