@@ -424,7 +424,7 @@ body.night #pd-overlay { background:rgba(0,0,0,0.62); }
   try { if (localStorage.getItem('tc-night') === '1') _setNight(true); } catch (_) {}
 
   // ── Constants ──
-  var COLS = 7, SRC = 24, ATLAS_COLS = 100, TOTAL = 10000, STICKY = 34;
+  var COLS = 7, GRID_FIT = 8, SRC = 24, ATLAS_COLS = 100, TOTAL = 10000, STICKY = 34;  // cells sized for 8/row, only 7 drawn → empty column on the right
   // CryptoPunks market-status background colours (cryptopunks.app convention). Blue is the
   // canonical default; red/purple/green are approximations — tweak to taste.
   var PUNK_BG = '#638596';          // blue  = not for sale (default)
@@ -506,7 +506,7 @@ body.night #pd-overlay { background:rgba(0,0,0,0.62); }
   function layout() {
     cssW = section.clientWidth;
     cssH = Math.max(1, window.innerHeight - STICKY);
-    cellPx = cssW / COLS;
+    cellPx = cssW / GRID_FIT;   // size per 8-col fit; COLS(7) are drawn → right column stays empty
     canvas.style.width = cssW + 'px';
     canvas.style.height = cssH + 'px';
     canvas.width = Math.round(cssW * DPR);
