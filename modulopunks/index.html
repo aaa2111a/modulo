@@ -456,6 +456,18 @@ body.night #pd-overlay { background:rgba(0,0,0,0.62); }
   var canvas = document.getElementById('punk-canvas');
   var ctx = canvas.getContext('2d');
   var section = document.getElementById('grid-section');
+  // Atlas has NO gutter between 24×24 cells → non-integer upscaling bleeds the
+  // neighbour cell's edge. Isolate the cell to a temp via a 1:1 (exact) copy, then
+  // scale the isolated temp → no neighbour to bleed. (Modal/fusion use exact 6× → fine.)
+  var _cellTmp = document.createElement('canvas'); _cellTmp.width = SRC; _cellTmp.height = SRC;
+  var _cellTmpCtx = _cellTmp.getContext('2d'); _cellTmpCtx.imageSmoothingEnabled = false;
+  function _blitPunk(id, dx, dy, size) {
+    var sx = (id % ATLAS_COLS) * SRC, sy = Math.floor(id / ATLAS_COLS) * SRC;
+    _cellTmpCtx.imageSmoothingEnabled = false;
+    _cellTmpCtx.clearRect(0, 0, SRC, SRC);
+    _cellTmpCtx.drawImage(atlasBmp, sx, sy, SRC, SRC, 0, 0, SRC, SRC);   // 1:1 exact copy, isolates the cell
+    ctx.drawImage(_cellTmp, 0, 0, SRC, SRC, dx, dy, size, size);          // scale isolated cell → no bleed
+  }
   var cellPx = 48, cssW = 0, cssH = 0, gridTopDoc = 0;
   var hoverId = -1, dirty = true, rafOn = true;
 
@@ -546,18 +558,15 @@ body.night #pd-overlay { background:rgba(0,0,0,0.62); }
         var idx = row * COLS + col;
         if (idx >= filteredIds.length) { row = 1e9; break; }
         var id = filteredIds[idx];
-        var sx = (id % ATLAS_COLS) * SRC, sy = Math.floor(id / ATLAS_COLS) * SRC;
         var dx = col * cellPx;
-        ctx.drawImage(atlasBmp, sx, sy, SRC, SRC, dx, yBase, cellPx, cellPx);
+        _blitPunk(id, dx, yBase, cellPx);
         if (id === hoverId) { hx = dx; hy = yBase; }
       }
     }
     // Hover "pop": redraw the hovered punk scaled up, on top of its neighbours (no shadow → no frame-like halo)
     if (hoverId >= 0 && hx !== null) {
-      var hsx = (hoverId % ATLAS_COLS) * SRC, hsy = Math.floor(hoverId / ATLAS_COLS) * SRC;
       var sc = 1.12, sz = cellPx * sc, o = (cellPx - sz) / 2;
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(atlasBmp, hsx, hsy, SRC, SRC, hx + o, hy + o, sz, sz);
+      _blitPunk(hoverId, hx + o, hy + o, sz);
     }
   }
   function tick() { if (!rafOn) return; if (dirty) { dirty = false; redraw(); } requestAnimationFrame(tick); }
