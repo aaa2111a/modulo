@@ -327,8 +327,12 @@ body.night #fz-export { background:#2c2b28; }
   font-family:monospace; -webkit-appearance:none; appearance:none; }
 .pk-cell:hover { border-color:var(--border-strong); }
 .pk-cell.pk-active { border-color:#6363ff; box-shadow:0 0 0 2px #6363ff; }
-.pk-slot { width:44px; height:44px; display:block; border-radius:4px; overflow:hidden;
+.pk-slot { position:relative; width:44px; height:44px; display:block; border-radius:4px; overflow:hidden;
   background:repeating-conic-gradient(var(--bg) 0% 25%, var(--bg-alt) 0% 50%) 0 / 8px 8px; }
+.pk-slot.pk-err { opacity:0.35; }
+.pk-spin { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:14px; height:14px;
+  border:1.5px solid var(--border-mid); border-top-color:var(--text-sub); border-radius:50%;
+  animation:spin 0.8s linear infinite; pointer-events:none; }
 .pk-cv { width:44px; height:44px; display:block; image-rendering:pixelated; }
 .pk-cap { font-size:10px; letter-spacing:.02em; color:var(--text-sub); }
 
@@ -1357,7 +1361,8 @@ function _extractComposition(decodedHtml) {
   var STATIC_STEPS = 20;   // CA steps to evolve each artifact to a representative frame
   var _hasOSC = (typeof OffscreenCanvas !== 'undefined');
   function _pkOff(w, h) { if (_hasOSC) return new OffscreenCanvas(w, h); var c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
-  var _pk = { active: false, total: 0, io: null, cellEls: new Map(), live: new Map(), pending: new Set(), dwell: new Map(), cache: new Map() };
+  var PK_MAX_RETRY = 3, PK_DELAYS = [1000, 3000, 8000];   // bounded retry for flaky preview loads (RPC burst-throttle)
+  var _pk = { active: false, total: 0, io: null, cellEls: new Map(), live: new Map(), pending: new Set(), dwell: new Map(), cache: new Map(), failures: new Map() };
   function _pkCellClick(e) {
     var id = +e.currentTarget.dataset.art; if (!(id >= 0)) return;
     var cur = (_fz.selected != null) ? _fz.assignments.get(_fz.selected) : null;
@@ -1389,7 +1394,24 @@ function _extractComposition(decodedHtml) {
     var ctx = cv.getContext('2d'); ctx.imageSmoothingEnabled = false;
     ctx.putImageData(imgData, 0, 0);
     var slot = el.querySelector('.pk-slot'); (slot || el).appendChild(cv);
+    if (slot) slot.classList.remove('pk-err');                          // recovered → drop the dim "failed" placeholder
     _pk.live.set(id, { cv: cv });
+  }
+  // ── Per-cell loading spinner + bounded retry (flaky preview loads under RPC burst-throttle) ──
+  function _pkSpinStart(id) { var el = _pk.cellEls.get(id); if (!el) return; var slot = el.querySelector('.pk-slot'); if (!slot || slot.querySelector('.pk-spin')) return; var s = document.createElement('span'); s.className = 'pk-spin'; slot.appendChild(s); }
+  function _pkSpinStop(id) { var el = _pk.cellEls.get(id); if (!el) return; var slot = el.querySelector('.pk-slot'); if (!slot) return; var s = slot.querySelector('.pk-spin'); if (s) s.parentNode.removeChild(s); }
+  function _pkShowErr(id) { var el = _pk.cellEls.get(id); if (!el) return; var slot = el.querySelector('.pk-slot'); if (slot) slot.classList.add('pk-err'); }
+  function _pkFail(id, deterministic) {
+    if (!_pk.active || !_pk.cellEls.has(id)) return;
+    var rec = _pk.failures.get(id) || { count: 0, timer: null };
+    if (deterministic || rec.count >= PK_MAX_RETRY) {                   // give up: dim placeholder, spinner off, no more retries
+      rec.count = PK_MAX_RETRY; rec.timer = null; _pk.failures.set(id, rec); _pkSpinStop(id); _pkShowErr(id); return;
+    }
+    rec.count++;                                                        // transient (RPC) → retry with backoff; spinner stays on
+    var base = PK_DELAYS[Math.min(rec.count - 1, PK_DELAYS.length - 1)];
+    var delay = Math.round(base * (0.8 + Math.random() * 0.4));         // ±20% jitter to de-sync burst retries
+    rec.timer = setTimeout(function () { rec.timer = null; if (!_pk.active || !_pk.cellEls.has(id) || _pk.live.has(id)) return; _pkMount(id); }, delay);
+    _pk.failures.set(id, rec);
   }
   function _pkMount(id) {
     if (!_pk.active) return;
@@ -1397,30 +1419,33 @@ function _extractComposition(decodedHtml) {
     if (_pk.cache.has(id)) { _pkDraw(id, _pk.cache.get(id)); return; }   // instant from cache (no fetch / no steps)
     if (!_ensureOnChain()) return;
     _pk.pending.add(id);
+    _pkSpinStart(id);                                                    // loading spinner on while the preview fetches/renders
     _fetchArtifactComposition(id).then(function (comp) {
       _pk.pending.delete(id);
       if (!_pk.active || !_pk.cellEls.has(id) || _pk.live.has(id)) return;   // teardown raced / cell gone / already drawn
       var off = _pkOff(450, 250), octx = off.getContext('2d'); octx.imageSmoothingEnabled = false;
       var eng;
-      try { eng = _createArtifactEngine(off, comp); } catch (e) { return; }
+      try { eng = _createArtifactEngine(off, comp); } catch (e) { _pkFail(id, true); return; }   // bad composition → deterministic, no retry
       try {
         for (var s = 0; s < STATIC_STEPS; s++) { eng.step(eng.dtOps); eng.applyRects(); eng.tickRects && eng.tickRects(); }
         eng.paintToNative(off, octx);
-      } catch (e) { return; }
+      } catch (e) { _pkFail(id, true); return; }
       var tmp = _pkOff(24, 24), tctx = tmp.getContext('2d'); tctx.imageSmoothingEnabled = false;
       tctx.drawImage(off, 213, 113, 24, 24, 0, 0, 24, 24);              // centered 24×24 crop (no squish)
-      var imgData; try { imgData = tctx.getImageData(0, 0, 24, 24); } catch (e) { return; }
+      var imgData; try { imgData = tctx.getImageData(0, 0, 24, 24); } catch (e) { _pkFail(id, true); return; }
+      _pk.failures.delete(id);                                          // success → reset failure record + clear spinner
       _pk.cache.set(id, imgData);
+      _pkSpinStop(id);
       _pkDraw(id, imgData);
       // eng / off / tmp are local → GC'd (no rAF, no stored engine ref)
-    }).catch(function () { _pk.pending.delete(id); });
+    }).catch(function () { _pk.pending.delete(id); _pkFail(id, false); });   // fetch failed (transient) → retry, spinner stays
   }
   function _pkIO(entries) {
     if (!_pk.active) return;                                         // teardown raced
     entries.forEach(function (e) {
       var id = +e.target.dataset.art;
       if (e.isIntersecting) {
-        if (_pk.dwell.has(id) || _pk.live.has(id) || _pk.pending.has(id)) return;
+        if (_pk.dwell.has(id) || _pk.live.has(id) || _pk.pending.has(id) || (_pk.failures.get(id) && _pk.failures.get(id).timer)) return;   // also skip if a retry is already scheduled
         var t = setTimeout(function () { _pk.dwell.delete(id); _pkMount(id); }, 60);   // dwell debounce
         _pk.dwell.set(id, t);
       } else {
@@ -1432,6 +1457,7 @@ function _extractComposition(decodedHtml) {
   function _pkBuildGrid() {
     var host = document.getElementById('fz-picker'); if (!host) return;
     _pk.dwell.forEach(function (t) { clearTimeout(t); }); _pk.dwell.clear();
+    _pk.failures.forEach(function (rec) { if (rec.timer) clearTimeout(rec.timer); }); _pk.failures.clear();   // drop stale retry timers from a prior open
     _pk.live.clear(); _pk.pending.clear();          // canvases removed by host.textContent='' below; cache kept
     host.textContent = ''; _pk.cellEls.clear();
     if (!_pk.io) _pk.io = new IntersectionObserver(_pkIO, { root: detail, rootMargin: '100px 0px', threshold: 0.01 });
@@ -1447,6 +1473,7 @@ function _extractComposition(decodedHtml) {
     if (!_ensureOnChain()) { _fzStatus('on-chain unavailable — reload'); return; }
     _pk.active = true;
     if (_pk.total > 0) { _pkBuildGrid(); return; }
+    if (layerBmp) _fzStatus('loading modulos…');                    // global hint while the artifact count loads (grid not built yet)
     _settleArtifact.totalArtifacts().then(function (n) {
       _pk.total = Number(n) || 0;
       if (!_pk.active) return;
@@ -1457,6 +1484,7 @@ function _extractComposition(decodedHtml) {
     _pk.active = false;                                              // set FIRST so queued callbacks bail
     if (_pk.io) _pk.io.disconnect();
     _pk.dwell.forEach(function (t) { clearTimeout(t); }); _pk.dwell.clear();
+    _pk.failures.forEach(function (rec) { if (rec.timer) clearTimeout(rec.timer); }); _pk.failures.clear();   // cancel pending retries on close
     _pk.live.forEach(function (p) { if (p.cv && p.cv.parentNode) p.cv.parentNode.removeChild(p.cv); });
     _pk.live.clear(); _pk.pending.clear(); _pk.cellEls.clear();
     var host = document.getElementById('fz-picker'); if (host) host.textContent = '';
