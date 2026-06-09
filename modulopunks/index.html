@@ -192,11 +192,18 @@ body.night .display-title { color:rgba(255,255,255,1.0); }
      extra width becomes symmetric lateral gap. Below 1600px it's full-width (unchanged). */
   .punks-main { padding-right:220px; max-width:1600px; margin-left:auto; margin-right:auto; }
   #filter-sidebar {
-    flex:0 0 220px; width:220px; align-self:flex-start; visibility:hidden;
+    flex:0 0 220px; width:220px; align-self:flex-start;
     position:sticky; top:34px; max-height:calc(100vh - 34px); overflow-y:auto;
-    border-right:0.5px solid var(--border-mid); padding:18px 16px 60px; background:var(--bg);
+    padding:18px 16px 60px; background:var(--bg);
+    /* Collapsed: invisible + nudged up; pressing Filters slides it down from the header + fades in.
+       Slot width stays reserved (grid doesn't move). visibility delayed on close so it fades out first. */
+    visibility:hidden; opacity:0; transform:translateY(-24px);
+    transition: opacity 0.26s ease, transform 0.26s ease, visibility 0s linear 0.26s;
   }
-  body.filters-open #filter-sidebar { visibility:visible; }
+  body.filters-open #filter-sidebar {
+    visibility:visible; opacity:1; transform:translateY(0);
+    transition: opacity 0.26s ease, transform 0.26s ease;
+  }
 }
 .fs-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
 .fs-title { font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--text-sub); }
