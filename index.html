@@ -10,12 +10,12 @@
      SHA-256 hashes of the 3 inline blocks. See collection/index.html for
      full rationale + recompute command.
 
-     Hashes (recomputed 2026-05-25 — Brief #6 homepage audit fixes: WX-1 window
-     clamp + CT-1 CTA mobile bump):
+     Hashes (recomputed 2026-06-10 — Modulo Punks window: topAlign + compact
+     padding + tightened gap to Collection):
        script L36  frame-buster sha256-cooyBZAlZu1T3HOVT2HZ2IZLls6JoUhfWkQASjIzBck=  (unchanged)
        script L67  favicon      sha256-sJrvXijSCIizqGtBssKayf/JcGhbabJZUlW+iEKkXIE=  (unchanged)
-       script L539 main         sha256-5cr24DHhdmzu/GvDIIq3ZZXKfIGDW1k7G76yFgssCsM=  (os-row opens with windows + CTA "Explore the project")
-       style  L136 main CSS     sha256-cqwSrYF8YPcZEFP7demn36BArvVHsdl4orDzawMScgQ=  (#intro-canvas 100% + #os-row OpenSea window)
+       script L539 main         sha256-ICIP4yJ+QHbD88NLSZtbFLMPt+XwhpcZkQ+ufnIq2/A=  (Modulo Punks window: top-aligned + compact + y anchored px-relative to Collection)
+       style  L136 main CSS     sha256-cqwSrYF8YPcZEFP7demn36BArvVHsdl4orDzawMScgQ=  (unchanged)
 
      KNOWN LIMITATION: frame-buster fallback (~L33) builds replacement HTML
      with style="..." attrs via DOM element.style. cssText. Without 'unsafe-inline'
@@ -23,7 +23,7 @@
      iframe-bust scenario (rare; fallback text+link still readable). -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
-  script-src 'self' 'sha256-cooyBZAlZu1T3HOVT2HZ2IZLls6JoUhfWkQASjIzBck=' 'sha256-sJrvXijSCIizqGtBssKayf/JcGhbabJZUlW+iEKkXIE=' 'sha256-5cr24DHhdmzu/GvDIIq3ZZXKfIGDW1k7G76yFgssCsM=';
+  script-src 'self' 'sha256-cooyBZAlZu1T3HOVT2HZ2IZLls6JoUhfWkQASjIzBck=' 'sha256-sJrvXijSCIizqGtBssKayf/JcGhbabJZUlW+iEKkXIE=' 'sha256-ICIP4yJ+QHbD88NLSZtbFLMPt+XwhpcZkQ+ufnIq2/A=';
   style-src 'self' 'sha256-cqwSrYF8YPcZEFP7demn36BArvVHsdl4orDzawMScgQ=';
   font-src 'self' data:;
   img-src 'self' data: blob:;
@@ -1888,10 +1888,17 @@ window.addEventListener('pageshow', e => {
 });
 
 const WIN_DATA = [
-  { label:'App',        href:'app/',        desc:'Be part and explore the desires\nof different consciousness', x:'19vw', y:'34vh', delay:0,   w:318, fDur:'3.8s', fDel:'0.3s' },
-  { label:'About',      href:'about/',      desc:'Know more about\nthe machine',                              x:'44vw', y:'44vh', delay:160, w:272, fDur:'4.4s', fDel:'1.6s' },
-  { label:'Collection', href:'collection/', desc:'Explore all the artifacts\nwhere desires collide',             x:'67vw', y:'28vh', delay:310, w:312, fDur:'3.5s', fDel:'0.9s' },
+  { label:'App',          href:'app/',          desc:'Be part and explore the desires\nof different consciousness', x:'19vw', y:'34vh', delay:0,   w:318, fDur:'3.8s', fDel:'0.3s' },
+  { label:'About',        href:'about/',        desc:'Know more about\nthe machine',                                  x:'44vw', y:'44vh', delay:160, w:272, fDur:'4.4s', fDel:'1.6s' },
+  { label:'Collection',   href:'collection/',   desc:'Explore all the artifacts\nwhere desires collide',             x:'67vw', y:'28vh', delay:310, w:312, fDur:'3.5s', fDel:'0.9s', topAlign:true },
+  { label:'Modulo Punks', href:'modulopunks/',  desc:'Fuse with a modulo artifact',                                  x:'67vw', y:'calc(28vh + 150px)', delay:460, w:312, fDur:'4.1s', fDel:'1.2s', topAlign:true, compact:true },
 ];
+// Modulo Punks y anchored in PX relative to Collection (28vh + Collection's
+// ~132px height + ~18px gap) so the gap stays constant across viewport heights
+// — a fixed vh would widen the gap on tall viewports (both share x:67vw).
+// topAlign → label sits at the TOP of .mod-content (flex-start) instead of the
+// default flex-end; Collection + Modulo Punks use it (App/About keep bottom-aligned).
+// compact → tighter vertical padding (shorter window); Modulo Punks only.
 
 let _windowsOpen = false;
 let _winLayer    = null;
@@ -2004,6 +2011,8 @@ function _openWindows() {
     titlebar.appendChild(closeBtn);
     const content = document.createElement('div');
     content.className = 'mod-content';
+    if (d.topAlign) content.style.alignItems = 'flex-start';  // CSSOM prop assign — not governed by style-src CSP
+    if (d.compact)  content.style.padding = '12px 18px 14px 14px';  // tighter vertical (default 20/24)
     const label = document.createElement('a');
     label.className = 'mod-label';
     label.href = d.href;
