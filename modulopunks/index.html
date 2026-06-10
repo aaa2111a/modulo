@@ -561,15 +561,27 @@ body.night #filter-btn { background:#2c2b28; }
     accList.sort(function (a, b) { return b[1] - a[1]; });
   }
 
-  // ── Filter (OR within a category, AND across) ──
+  // ── Filter ──
+  // Type + AccCount: OR within (a punk has exactly ONE type / ONE acc count, so
+  //   AND of two values there would always be empty — OR is the only useful semantic).
+  // Acc: AND within (a punk has 0-7 accessories; multi-select narrows to punks
+  //   having ALL selected accessories — Le directive 2026-06-09, was OR before).
+  // All facets: AND across each other.
   function applyFilter() {
     if (_punkQuery != null) { filteredIds = Int32Array.from([_punkQuery]); return; }   // punk-# search overrides
     var dims = [];
-    [['Type', state.Type], ['AccCount', state.AccCount], ['Acc', state.Acc]].forEach(function (d) {
+    [['Type', state.Type], ['AccCount', state.AccCount]].forEach(function (d) {
       var cat = d[0], sel = d[1];
       if (!sel.size) return;
       var u = new Set();
       sel.forEach(function (v) { var arr = IDX.get(cat + '::' + v); if (arr) for (var i = 0; i < arr.length; i++) u.add(arr[i]); });
+      dims.push(u);
+    });
+    // Acc: ONE dim per selected accessory → the intersect below ANDs them.
+    // Unknown key → empty dim → empty result (impossible combo shows 0 punks).
+    state.Acc.forEach(function (v) {
+      var arr = IDX.get('Acc::' + v), u = new Set();
+      if (arr) for (var i = 0; i < arr.length; i++) u.add(arr[i]);
       dims.push(u);
     });
     if (!dims.length) {
@@ -731,6 +743,9 @@ body.night #filter-btn { background:#2c2b28; }
       onFilterChange();
     });
     var lab = document.createElement('span'); lab.className = 'tlabel'; lab.textContent = label;
+    // Counts are GLOBAL totals (all 10k), not narrowed by the current filter — under
+    // the Acc AND-semantics a count can exceed the actual intersection. Intentional v1
+    // trade-off (dynamic narrowing = O(N·acc_list) recompute per click); OpenSea does the same.
     var cnt = document.createElement('span'); cnt.className = 'tcount'; cnt.textContent = count.toLocaleString();
     row.appendChild(cb); row.appendChild(lab); row.appendChild(cnt);
     row._cb = cb; row._cat = cat; row._value = value;
