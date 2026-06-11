@@ -679,7 +679,7 @@ body.night #filter-btn { background:#2c2b28; }
     canvas.style.cursor = id < 0 ? 'default' : 'pointer';
     if (id < 0) { tip.style.display = 'none'; return; }
     tip.textContent = '';
-    tip.appendChild(document.createTextNode('cryptopunk '));
+    tip.appendChild(document.createTextNode('ModuloPunk '));
     var s1 = document.createElement('span'); s1.className = 'tid'; s1.textContent = '#' + id;
     tip.appendChild(s1);
     var tw = tip.offsetWidth || 180;
@@ -701,7 +701,7 @@ body.night #filter-btn { background:#2c2b28; }
   function openDetail(id) {
     window._activePunkId = id;
     _punkBg = PUNK_BG;                          // instant blue; status read upgrades it async
-    document.getElementById('pd-name').textContent = 'CryptoPunk #' + id;
+    document.getElementById('pd-name').textContent = 'ModuloPunk #' + id;
     pdCtx.imageSmoothingEnabled = false;
     pdCtx.clearRect(0, 0, 144, 144);
     pdCtx.fillStyle = _punkBg; pdCtx.fillRect(0, 0, 144, 144);
@@ -1656,15 +1656,15 @@ function _extractComposition(decodedHtml) {
       cx.fillStyle = capBg; cx.fillRect(0, 0, W, H);
       var SERIF = "'Times New Roman', Times, serif";
       cx.textAlign = 'center'; cx.textBaseline = 'alphabetic'; cx.fillStyle = _cardTextColor(capBg);
-      var MAXW = W * 0.86, line1 = 'CryptoPunk #' + myPunk;
+      var MAXW = W * 0.86, line1 = 'ModuloPunk #' + myPunk;
       var sz1 = Math.round(W * 0.034); cx.font = sz1 + 'px ' + SERIF;
       var w1 = cx.measureText(line1).width;
       if (w1 > MAXW) { sz1 = Math.max(16, Math.floor(sz1 * MAXW / w1)); cx.font = sz1 + 'px ' + SERIF; }
       cx.fillText(line1, W / 2, Math.round(H * 0.867));
       var sz2 = Math.max(12, Math.round(sz1 * 0.55)); cx.font = sz2 + 'px ' + SERIF;
-      cx.save(); cx.globalAlpha = 0.55; cx.fillText('Modulo Punks', W / 2, Math.round(H * 0.905)); cx.restore();
+      cx.save(); cx.globalAlpha = 0.55; cx.fillText('This punk got fused with a Modulo Artifact', W / 2, Math.round(H * 0.905)); cx.restore();
 
-      var filename = 'cryptopunk-' + myPunk + '-modulo.mp4';
+      var filename = 'modulopunk-' + myPunk + '.mp4';
       var target;
       if (toDisk) {                                                   // desktop — native "Save As" dialog + stream to disk (like collection)
         var fh;
