@@ -1717,5 +1717,45 @@ function _extractComposition(decodedHtml) {
   init();
 })();
 </script>
+<script>
+// ── Header title scramble — ported from about/'s "desires" effect, title-only.
+//    The text NEVER swaps to another word: it scrambles momentarily and resolves
+//    back to "Modulo Punks". Cycle interval = about's 3200ms +30% = 4160ms.
+//    Same guards as about/: pauses when the header is off-screen or tab hidden.
+(function () {
+  var el = document.querySelector('.display-title');
+  if (!el) return;
+  var TEXT = el.textContent;
+  var CHARS = 'x+-/\\|_.';   // narrow ASCII only (width-stable, same set as about/)
+  var visible = true, queued = false;
+  requestAnimationFrame(function () { el.style.minWidth = el.offsetWidth + 'px'; });
+  function tryResume() {
+    if (!visible || document.hidden) return;
+    if (queued) { queued = false; setTimeout(cycle, 400); }
+  }
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function (en) { visible = en[0].isIntersecting; tryResume(); }, { threshold: 0 });
+    io.observe(el.closest('.page-header') || el);
+  }
+  document.addEventListener('visibilitychange', tryResume);
+  function cycle() {
+    if (!visible || document.hidden) { queued = true; return; }
+    var frame = 0, total = 9;
+    var iv = setInterval(function () {
+      var reveal = Math.max(0, frame - (total - 4));
+      var out = '';
+      for (var i = 0; i < TEXT.length; i++) {
+        var ch = TEXT.charAt(i);
+        if (ch === ' ' || i < reveal) out += ch;
+        else out += CHARS.charAt(Math.floor(Math.random() * CHARS.length));
+      }
+      el.textContent = out;
+      frame++;
+      if (frame > total) { clearInterval(iv); el.textContent = TEXT; setTimeout(cycle, 4160); }
+    }, 45);
+  }
+  setTimeout(cycle, 5000);
+})();
+</script>
 </body>
 </html>
