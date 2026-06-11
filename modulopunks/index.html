@@ -357,12 +357,28 @@ body.night #filter-btn { background:#2c2b28; }
    toggle). AFTER the base rules so the cascade wins (same specificity). */
 @media (min-width:769px) {
   #filter-btn { display:none; }
-  .fs-title { cursor:pointer; }
-  .fs-title:hover { color:var(--text); }
+  /* The FILTERS toggle takes the #cta-collection button shape (Le). */
+  #fs-title-btn {
+    cursor:pointer; padding:6px 14px;
+    color:rgba(0,0,0,0.78); background:rgba(0,0,0,0.05);
+    border:0.5px solid var(--border-mid); border-radius:9px; white-space:nowrap;
+    transition:background 0.15s, color 0.15s, border-color 0.15s;
+  }
+  #fs-title-btn:hover { background:rgba(0,0,0,0.10); color:rgba(0,0,0,0.92); }
+  body.night #fs-title-btn { color:rgba(255,255,255,0.82); background:rgba(255,255,255,0.06); border-color:rgba(255,255,255,0.18); }
+  body.night #fs-title-btn:hover { background:rgba(255,255,255,0.12); color:#fff; }
 }
 #filter-overlay { display:none; position:fixed; inset:0; z-index:605; background:rgba(0,0,0,0.45); }
 @media (max-width:768px) {
-  .page-header { padding:48px 20px 16px; }
+  /* Mobile header (Le 2026-06-11): side-nav becomes a horizontal row (the
+     3-link column overlapped the title) and its Collection link hides (dup of
+     the ← Collection button top-right); title shrinks so "Modulo Punks"+mark
+     fit ONE centered line (at 56px it wrapped → the scramble effect changed
+     the line count and shifted the whole grid); header clears the nav row. */
+  .page-header { padding:64px 20px 16px; }
+  .side-nav { flex-direction:row; gap:14px; }
+  .side-nav a[href="../collection/"] { display:none; }
+  .display-title { font-size:clamp(32px, 10vw, 56px); }
   #filter-sidebar {
     display:block; position:fixed; left:0; right:0; bottom:0; top:auto; width:100%; max-width:100%;
     max-height:82vh; z-index:610; overflow-y:auto; background:var(--bg); padding:18px 16px 60px;
@@ -1806,7 +1822,18 @@ function _extractComposition(decodedHtml) {
   var TEXT = el.textContent;
   var CHARS = 'x+-/\\|_.';   // narrow ASCII only (width-stable, same set as about/)
   var visible = true, queued = false;
-  requestAnimationFrame(function () { el.style.minWidth = el.offsetWidth + 'px'; });
+  // Lock BOTH dims so the scramble can never reflow the header (a height
+  // change shifted the whole grid on mobile); re-lock on resize/orientation.
+  function _lockDims() {
+    el.style.minWidth = ''; el.style.minHeight = '';
+    requestAnimationFrame(function () {
+      el.style.minWidth = el.offsetWidth + 'px';
+      el.style.minHeight = el.offsetHeight + 'px';
+    });
+  }
+  requestAnimationFrame(_lockDims);
+  var _relockT = 0;
+  window.addEventListener('resize', function () { clearTimeout(_relockT); _relockT = setTimeout(_lockDims, 150); });
   function tryResume() {
     if (!visible || document.hidden) return;
     if (queued) { queued = false; setTimeout(cycle, 400); }
