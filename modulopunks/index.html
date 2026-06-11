@@ -194,12 +194,14 @@ body.night .display-title { color:rgba(255,255,255,1.0); }
 /* ── Layout: sidebar + grid ── */
 .punks-main { display:flex; align-items:flex-start; gap:0; }
 /* Desktop (≥769px): the filter sidebar is ALWAYS OPEN (Le 2026-06-11 — no
-   toggle, no floating button; mobile keeps the pill + bottom sheet). Punks sit
-   equidistant from both laterals: [sidebar 220][24px][punks][24px][right edge]. */
+   toggle, no floating button; mobile keeps the pill + bottom sheet). The PUNKS
+   mark the viewport center: padding-right mirrors sidebar+gap (220+24 = 244)
+   so the punk block sits at exactly [244 | punks | 244] inside the centered
+   main → centered in the viewport. */
 @media (min-width:769px) {
-  /* Cap the grid area on wide screens (27"): beyond ~1600px the punks stop growing and the
-     extra width becomes symmetric lateral gap. Below 1600px it's full-width (unchanged). */
-  .punks-main { gap:24px; padding-right:24px; max-width:1600px; margin-left:auto; margin-right:auto; }
+  /* Wide-screen cap (27"): 1820 = the old 1600 grid cap + the 220px the
+     centering equation moved into padding — punk area unchanged at the cap. */
+  .punks-main { gap:24px; padding-right:244px; max-width:1820px; margin-left:auto; margin-right:auto; }
   #filter-sidebar {
     flex:0 0 220px; width:220px; align-self:flex-start;
     position:sticky; top:34px; max-height:calc(100vh - 34px); overflow-y:auto;
