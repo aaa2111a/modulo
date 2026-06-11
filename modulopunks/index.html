@@ -1720,7 +1720,7 @@ function _extractComposition(decodedHtml) {
 <script>
 // ── Header title scramble — ported from about/'s "desires" effect, title-only.
 //    The text NEVER swaps to another word: it scrambles momentarily and resolves
-//    back to "Modulo Punks". Cycle interval = about's 3200ms +30% = 4160ms.
+//    back to "Modulo Punks". Cycle interval = about's original 3200ms.
 //    Same guards as about/: pauses when the header is off-screen or tab hidden.
 (function () {
   var el = document.querySelector('.display-title');
@@ -1751,7 +1751,7 @@ function _extractComposition(decodedHtml) {
       }
       el.textContent = out;
       frame++;
-      if (frame > total) { clearInterval(iv); el.textContent = TEXT; setTimeout(cycle, 4160); }
+      if (frame > total) { clearInterval(iv); el.textContent = TEXT; setTimeout(cycle, 3200); }
     }, 45);
   }
   setTimeout(cycle, 5000);
