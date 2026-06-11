@@ -63,19 +63,25 @@
   }
   const link = document.getElementById('favicon');
   if (!link) return;
+  // Perf (mobile): browsers don't render favicons on phones, and 20 image
+  // decodes/s competed with the grid raster during scroll → on coarse pointers
+  // skip the favicon href and animate only the header mark at 150ms; pause
+  // entirely while the tab is hidden.
+  const _coarse = !!(window.matchMedia && window.matchMedia('(pointer:coarse)').matches);
   let step = 0, mark = null;
   setInterval(() => {
+    if (document.hidden) return;
     const inCycle = step % ANGLES.length;
     const cycleNum = Math.floor(step / ANGLES.length);
     const baseAngle = cycleNum * 180;
     const angle = (baseAngle + ANGLES[inCycle]) % 360;
     const pair = PAIRS[cycleNum % PAIRS.length];
     const uri = genSVG(angle, pair[0], pair[1]);
-    link.href = uri;
+    if (!_coarse) link.href = uri;
     if (!mark) mark = document.getElementById('header-mark');
     if (mark) mark.src = uri;
     step++;
-  }, 50);
+  }, _coarse ? 150 : 50);
 })();
 </script>
 <!-- ethers v6 UMD — SELF-HOSTED (same file + SRI as collection/) for the fusion
@@ -139,8 +145,9 @@ html, body {
   grid-template-columns:1fr auto minmax(0,1fr);
   align-items:center;
   padding:0 24px;
-  backdrop-filter:blur(12px);
-  -webkit-backdrop-filter:blur(12px);
+  /* backdrop-filter:blur removed (perf audit 2026-06-11): --tbar-bg is fully
+     opaque in both themes so the blur was invisible, yet it forced a per-frame
+     GPU re-blur over the 60fps canvas on iOS Safari. */
 }
 .tbar-left { font-size:11px; letter-spacing:.05em; color:rgba(0,0,0,0.45); }
 body.night .tbar-left { color:rgba(255,255,255,0.40); }
@@ -186,12 +193,14 @@ body.night .display-title { color:rgba(255,255,255,1.0); }
 
 /* ── Layout: sidebar + grid ── */
 .punks-main { display:flex; align-items:flex-start; gap:0; }
-/* Desktop (≥769px): in-flow PUSH drawer — collapsed by default, #filter-btn reveals it and
-   it reserves 280px (the grid shrinks; no punks under it). No dim overlay (it sits beside). */
+/* Desktop (≥769px): in-flow PUSH drawer — the sidebar SHELL (its "FILTERS" head)
+   is always visible and IS the toggle (Le 2026-06-11 — replaces the old floating
+   #filter-btn on desktop); the drawer CONTENT collapses below it. The 220px slot
+   stays reserved (grid doesn't move). */
 @media (min-width:769px) {
-  /* Symmetric lateral gaps: the 220px filter slot on the LEFT (empty when closed, the bar
-     fills it when active) is mirrored by a 220px gap on the RIGHT (.punks-main padding-right).
-     Grid stays centered + same size whether filters are open or closed (no reflow). */
+  /* Symmetric lateral gaps: the 220px filter slot on the LEFT is mirrored by a
+     220px gap on the RIGHT (.punks-main padding-right). Grid stays centered +
+     same size whether filters are open or closed (no reflow). */
   /* Cap the grid area on wide screens (27"): beyond ~1600px the punks stop growing and the
      extra width becomes symmetric lateral gap. Below 1600px it's full-width (unchanged). */
   .punks-main { padding-right:220px; max-width:1600px; margin-left:auto; margin-right:auto; }
@@ -199,18 +208,18 @@ body.night .display-title { color:rgba(255,255,255,1.0); }
     flex:0 0 220px; width:220px; align-self:flex-start;
     position:sticky; top:34px; max-height:calc(100vh - 34px); overflow-y:auto;
     padding:18px 16px 60px; background:var(--bg);
-    /* Collapsed: invisible + nudged up; pressing Filters slides it down from the header + fades in.
-       Slot width stays reserved (grid doesn't move). visibility delayed on close so it fades out first. */
-    visibility:hidden; opacity:0; transform:translateY(-24px);
-    transition: opacity 0.26s ease, transform 0.26s ease, visibility 0s linear 0.26s;
   }
-  body.filters-open #filter-sidebar {
-    visibility:visible; opacity:1; transform:translateY(0);
-    transition: opacity 0.26s ease, transform 0.26s ease;
-  }
+  /* Collapsed: only the fs-head row stays (the FILTERS toggle); Clear all hides
+     but keeps its slot so the row height is stable. */
+  body:not(.filters-open) #filter-sidebar > :not(.fs-head) { display:none; }
+  body:not(.filters-open) #clear-all { visibility:hidden; }
+  /* NOTE: #filter-btn{display:none} + .fs-title cursor live AFTER their base
+     rules (see the media block under "Filter drawer toggle") — placing them
+     here loses the cascade (same specificity, earlier in source). */
 }
 .fs-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
-.fs-title { font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--text-sub); }
+.fs-title { font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--text-sub);
+  font-family:monospace; background:none; border:none; padding:0; cursor:default; }
 #clear-all { font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--text-sub);
   background:none; border:none; cursor:pointer; padding:0; }
 #clear-all:hover { color:var(--text); }
@@ -251,7 +260,9 @@ body.night .display-title { color:rgba(255,255,255,1.0); }
 .trait-row.hidden { display:none; }
 
 #grid-section { flex:1 1 auto; position:relative; min-width:0; background:var(--bg); }
-#punk-canvas { position:sticky; top:34px; display:block; width:100%; height:calc(100vh - 34px); }
+#punk-canvas { position:sticky; top:34px; display:block; width:100%; height:calc(100vh - 34px);
+  image-rendering:pixelated;   /* keeps the 24px pixel art crisp when the compositor upscales the DPR-capped backing (mobile DPR cap = 2) */
+}
 #empty-state { position:sticky; top:34px; height:calc(100vh - 34px); display:none;
   align-items:center; justify-content:center; flex-direction:column; gap:12px; text-align:center; color:var(--text-sub); font-size:13px; }
 #empty-state button { margin-top:6px; font-family:monospace; font-size:11px; padding:7px 14px;
@@ -342,6 +353,13 @@ body.night #fz-export { background:#2c2b28; }
   padding:13px 22px; min-height:44px; border-radius:24px; cursor:pointer;
   background:#23242a; color:#fff; border:none; box-shadow:0 6px 20px rgba(0,0,0,0.32); }
 body.night #filter-btn { background:#2c2b28; }
+/* Desktop: the floating pill is replaced by the sidebar's FILTERS head (the
+   toggle). AFTER the base rules so the cascade wins (same specificity). */
+@media (min-width:769px) {
+  #filter-btn { display:none; }
+  .fs-title { cursor:pointer; }
+  .fs-title:hover { color:var(--text); }
+}
 #filter-overlay { display:none; position:fixed; inset:0; z-index:605; background:rgba(0,0,0,0.45); }
 @media (max-width:768px) {
   .page-header { padding:48px 20px 16px; }
@@ -400,7 +418,7 @@ body.night #filter-btn { background:#2c2b28; }
 <main class="punks-main">
   <aside id="filter-sidebar">
     <div class="fs-head">
-      <span class="fs-title">Filters</span>
+      <button id="fs-title-btn" class="fs-title" type="button">Filters <span id="fs-title-count"></span></button>
       <button id="clear-all" disabled>Clear all</button>
     </div>
     <div id="chips"></div>
@@ -473,7 +491,11 @@ body.night #filter-btn { background:#2c2b28; }
   var PUNK_BG_PURPLE = '#8e7cc3';   // purple= has an active bid
   var PUNK_BG_GREEN = '#52a360';    // green = wrapped (ERC-721 markets)
   var _punkBg = PUNK_BG;            // current punk's live status colour (shown in the modal; grid stays transparent)
-  var DPR = Math.min(window.devicePixelRatio || 1, 3);
+  // DPR cap 2 on touch devices (perf audit 2026-06-11): a DPR3 phone ran a
+  // ~2.84MPx backing repainted per frame; DPR2 halves that — for 24px pixel
+  // art the difference is invisible (canvas has image-rendering:pixelated).
+  var _coarsePtr = !!(window.matchMedia && window.matchMedia('(pointer:coarse)').matches);
+  var DPR = Math.min(window.devicePixelRatio || 1, _coarsePtr ? 2 : 3);
   var ATLAS_URL = 'punks-atlas.png', TRAITS_URL = 'punks-traits.json';
   var LAYERS_URL = 'punks-layers.png', NAMES_URL = 'punks-layer-names.json';
 
@@ -537,13 +559,26 @@ body.night #filter-btn { background:#2c2b28; }
   var _cellTmpCtx = _cellTmp.getContext('2d'); _cellTmpCtx.imageSmoothingEnabled = false;
   function _blitPunk(id, dx, dy, size) {
     var sx = (id % ATLAS_COLS) * SRC, sy = Math.floor(id / ATLAS_COLS) * SRC;
-    _cellTmpCtx.imageSmoothingEnabled = false;
     _cellTmpCtx.clearRect(0, 0, SRC, SRC);
     _cellTmpCtx.drawImage(atlasBmp, sx, sy, SRC, SRC, 0, 0, SRC, SRC);   // 1:1 exact copy, isolates the cell
     ctx.drawImage(_cellTmp, 0, 0, SRC, SRC, dx, dy, size, size);          // scale isolated cell → no bleed
   }
   var cellPx = 48, cssW = 0, cssH = 0, gridTopDoc = 0;
   var hoverId = -1, dirty = true, rafOn = true, _gridRaf = 0;
+
+  // ── Float effect (homepage win-float, canvas edition) ──
+  // Each punk bobs ±3px on a sine wave; period (3.5-4.5s, like win-float's
+  // fDur range) and phase are seeded from the punk id (golden angle) so no two
+  // neighbours move in step. Drawn every frame (tick redraws continuously);
+  // pauses with the existing rafOn visibilitychange guard.
+  var FLOAT_AMP = 1.5;
+  var _reducedMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  function _floatDy(id, t) {
+    if (_reducedMotion) return 0;
+    var period = 3500 + (id % 7) * 160;
+    return Math.sin(t * 6.28318 / period + id * 2.39996) * FLOAT_AMP;
+  }
+  var _lastEmpty = null;   // guard: avoid 60fps same-value DOM display writes
 
   // ── Index build (single O(N) pass) ──
   function buildIndex() {
@@ -607,8 +642,18 @@ body.night #filter-btn { background:#2c2b28; }
 
   // ── Layout ──
   function layout() {
-    cssW = section.clientWidth;
-    cssH = Math.max(1, window.innerHeight - STICKY);
+    var newW = section.clientWidth;
+    var newH = Math.max(1, window.innerHeight - STICKY);
+    // Dims unchanged (drawer toggle, URL-bar resize echo) → skip the canvas
+    // backing realloc (a GPU buffer realloc + implicit clear = a visible hitch
+    // mid-scroll on phones). Spacer/dirty still refresh (perf audit 2026-06-11).
+    if (newW === cssW && newH === cssH) {
+      var r0 = section.getBoundingClientRect();
+      gridTopDoc = r0.top + window.scrollY;   // keep the scroll anchor fresh even on the cheap path (reviewer P2)
+      sizeSpacer(); dirty = true; return;
+    }
+    cssW = newW;
+    cssH = newH;
     cellPx = cssW / GRID_FIT;   // size per 8-col fit; COLS(7) are drawn → right column stays empty
     canvas.style.width = cssW + 'px';
     canvas.style.height = cssH + 'px';
@@ -630,14 +675,18 @@ body.night #filter-btn { background:#2c2b28; }
     ctx.clearRect(0, 0, cssW, cssH);
     if (!atlasBmp || !filteredIds) return;
     var empty = filteredIds.length === 0;
-    document.getElementById('empty-state').style.display = empty ? 'flex' : 'none';
-    canvas.style.display = empty ? 'none' : 'block';
+    if (empty !== _lastEmpty) {
+      document.getElementById('empty-state').style.display = empty ? 'flex' : 'none';
+      canvas.style.display = empty ? 'none' : 'block';
+      _lastEmpty = empty;
+    }
     if (empty) return;
     ctx.imageSmoothingEnabled = false;
     var gs = gridScroll();
     var first = Math.floor(gs / cellPx);
     var visRows = Math.ceil(cssH / cellPx) + 1;
     var hx = null, hy = 0;
+    var t = performance.now();
     for (var row = first; row < first + visRows; row++) {
       var yBase = row * cellPx - gs;
       if (yBase >= cssH) break;
@@ -646,8 +695,9 @@ body.night #filter-btn { background:#2c2b28; }
         if (idx >= filteredIds.length) { row = 1e9; break; }
         var id = filteredIds[idx];
         var dx = col * cellPx;
-        _blitPunk(id, dx, yBase, cellPx);
-        if (id === hoverId) { hx = dx; hy = yBase; }
+        var fy = yBase + _floatDy(id, t);
+        _blitPunk(id, dx, fy, cellPx);
+        if (id === hoverId) { hx = dx; hy = fy; }
       }
     }
     // Hover "pop": redraw the hovered punk scaled up, on top of its neighbours (no shadow → no frame-like halo)
@@ -656,7 +706,18 @@ body.night #filter-btn { background:#2c2b28; }
       _blitPunk(hoverId, hx + o, hy + o, sz);
     }
   }
-  function tick() { _gridRaf = 0; if (!rafOn) return; if (dirty) { dirty = false; redraw(); } _gridRaf = requestAnimationFrame(tick); }
+  // Frame budget (perf audit 2026-06-11): dirty frames (scroll/hover/filter)
+  // redraw at full rate; idle float frames are throttled to ~30fps (a ±3px
+  // 4s sine is identical at 30fps, halves the sustained raster); with
+  // prefers-reduced-motion only dirty frames draw (grid is static).
+  var _FLOAT_MS = 33, _lastFloat = 0;
+  function tick(ts) {
+    _gridRaf = 0; if (!rafOn) return;
+    ts = ts || performance.now();
+    if (dirty) { dirty = false; _lastFloat = ts; redraw(); }
+    else if (!_reducedMotion && ts - _lastFloat >= _FLOAT_MS) { _lastFloat = ts; redraw(); }
+    _gridRaf = requestAnimationFrame(tick);
+  }
   function _gridKick() { if (rafOn && !_gridRaf) _gridRaf = requestAnimationFrame(tick); }   // single-loop guard (no double rAF across visibilitychange)
 
   // ── Hit-test ──
@@ -699,6 +760,10 @@ body.night #filter-btn { background:#2c2b28; }
   function lockScroll() { _savedScrollY = window.scrollY || 0; document.body.style.top = '-' + _savedScrollY + 'px'; document.body.style.position = 'fixed'; document.body.style.width = '100%'; }
   function unlockScroll() { document.body.style.position = ''; document.body.style.top = ''; document.body.style.width = ''; window.scrollTo(0, _savedScrollY); }
   function openDetail(id) {
+    // Tap ghost-state reset: touch fires a synthetic mousemove but never
+    // mouseleave → without this the hover-pop kept blitting every frame and
+    // the tooltip lingered under/after the modal (perf audit 2026-06-11).
+    hoverId = -1; tip.style.display = 'none';
     window._activePunkId = id;
     _punkBg = PUNK_BG;                          // instant blue; status read upgrades it async
     document.getElementById('pd-name').textContent = 'ModuloPunk #' + id;
@@ -713,6 +778,9 @@ body.night #filter-btn { background:#2c2b28; }
     ll.target = '_blank'; ll.rel = 'noopener noreferrer'; ll.textContent = 'cryptopunks.app ↗'; links.appendChild(ll);
     if (!detail.classList.contains('open')) lockScroll();
     overlay.classList.add('open'); detail.classList.add('open');
+    // Pause the grid loop while the modal covers it (it was burning full-rate
+    // raster behind the overlay, concurrently with the fusion engines' rAF).
+    rafOn = false; if (_gridRaf) { cancelAnimationFrame(_gridRaf); _gridRaf = 0; }
     _openFusion();                                   // fuse menu is always visible (no button)
     _loadPunkStatusBg(id);                           // live market-status background
   }
@@ -720,6 +788,8 @@ body.night #filter-btn { background:#2c2b28; }
     if (!detail.classList.contains('open')) return;
     overlay.classList.remove('open'); detail.classList.remove('open');
     unlockScroll(); _resetFusion();
+    hoverId = -1; tip.style.display = 'none';
+    rafOn = true; dirty = true; _gridKick();         // resume the grid loop
   }
   document.getElementById('pd-close').addEventListener('click', closeDetail);
   overlay.addEventListener('click', function (e) { if (e.target === overlay) closeDetail(); });
@@ -819,6 +889,7 @@ body.night #filter-btn { background:#2c2b28; }
   function syncFilterBtn() {
     var n = activeCount();
     document.getElementById('filter-btn-count').textContent = n ? '(' + n + ')' : '';
+    document.getElementById('fs-title-count').textContent = n ? '(' + n + ')' : '';
   }
   function clearAll() {
     state.Type.clear(); state.AccCount.clear(); state.Acc.clear();
@@ -849,6 +920,12 @@ body.night #filter-btn { background:#2c2b28; }
 
   // ── Mobile drawer ──
   document.getElementById('filter-btn').addEventListener('click', function () { document.body.classList.toggle('filters-open'); layout(); });
+  // Desktop: the sidebar's "FILTERS" head is the toggle (the floating pill is
+  // hidden ≥769px). Gated so tapping the title inside the mobile sheet is inert.
+  document.getElementById('fs-title-btn').addEventListener('click', function () {
+    if (!(window.matchMedia && window.matchMedia('(min-width:769px)').matches)) return;
+    document.body.classList.toggle('filters-open'); layout();
+  });
   document.getElementById('filter-overlay').addEventListener('click', function () { document.body.classList.remove('filters-open'); layout(); });
 
   // ── Events ──
@@ -865,7 +942,8 @@ body.night #filter-btn { background:#2c2b28; }
   window.addEventListener('resize', function () { clearTimeout(rzT); rzT = setTimeout(layout, 120); });
   document.addEventListener('visibilitychange', function () {
     if (document.hidden) { rafOn = false; if (_gridRaf) { cancelAnimationFrame(_gridRaf); _gridRaf = 0; } }
-    else if (!rafOn) { rafOn = true; dirty = true; _gridKick(); }
+    // Don't resume while the detail modal is open — closeDetail() owns that resume.
+    else if (!rafOn && !detail.classList.contains('open')) { rafOn = true; dirty = true; _gridKick(); }
   });
 
   // ── Boot ──
@@ -1754,7 +1832,7 @@ function _extractComposition(decodedHtml) {
       if (frame > total) { clearInterval(iv); el.textContent = TEXT; setTimeout(cycle, 3200); }
     }, 45);
   }
-  setTimeout(cycle, 5000);
+  setTimeout(cycle, 3200);   // first cycle at the same cadence as the rest (about/ uses 5000)
 })();
 </script>
 </body>
