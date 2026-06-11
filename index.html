@@ -10,12 +10,13 @@
      SHA-256 hashes of the 3 inline blocks. See collection/index.html for
      full rationale + recompute command.
 
-     Hashes (recomputed 2026-06-10 — Modulo Punks window: topAlign + compact
-     padding + tightened gap to Collection):
-       script L36  frame-buster sha256-cooyBZAlZu1T3HOVT2HZ2IZLls6JoUhfWkQASjIzBck=  (unchanged)
-       script L67  favicon      sha256-sJrvXijSCIizqGtBssKayf/JcGhbabJZUlW+iEKkXIE=  (unchanged)
-       script L539 main         sha256-ICIP4yJ+QHbD88NLSZtbFLMPt+XwhpcZkQ+ufnIq2/A=  (Modulo Punks window: top-aligned + compact + y anchored px-relative to Collection)
-       style  L136 main CSS     sha256-cqwSrYF8YPcZEFP7demn36BArvVHsdl4orDzawMScgQ=  (unchanged)
+     Hashes (recomputed 2026-06-10 — Explore state refactored to FIXED layout:
+     dropped the floating/draggable window system → single #explore-panel
+     [os-row + diagram + window row]; both script AND style changed):
+       script L37  frame-buster sha256-cooyBZAlZu1T3HOVT2HZ2IZLls6JoUhfWkQASjIzBck=  (unchanged)
+       script L68  favicon      sha256-sJrvXijSCIizqGtBssKayf/JcGhbabJZUlW+iEKkXIE=  (unchanged)
+       script main              sha256-czVQC5EWxuwrz0hBaXsvwzHfGJePDQf/UXPayItcQCA=  (mocks drawn at uniform y=24 [tight tbar gap] + .hiw-cvw wrapper)
+       style  main CSS          sha256-udMXkvS8EV4xRKvEK0SQ9p4ThPbJ89GbvkGAVljFUqk=  (mobile: hero padding 14px + title -5px [optical align with sub/CTA])
 
      KNOWN LIMITATION: frame-buster fallback (~L33) builds replacement HTML
      with style="..." attrs via DOM element.style. cssText. Without 'unsafe-inline'
@@ -23,8 +24,8 @@
      iframe-bust scenario (rare; fallback text+link still readable). -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
-  script-src 'self' 'sha256-cooyBZAlZu1T3HOVT2HZ2IZLls6JoUhfWkQASjIzBck=' 'sha256-sJrvXijSCIizqGtBssKayf/JcGhbabJZUlW+iEKkXIE=' 'sha256-ICIP4yJ+QHbD88NLSZtbFLMPt+XwhpcZkQ+ufnIq2/A=';
-  style-src 'self' 'sha256-cqwSrYF8YPcZEFP7demn36BArvVHsdl4orDzawMScgQ=';
+  script-src 'self' 'sha256-cooyBZAlZu1T3HOVT2HZ2IZLls6JoUhfWkQASjIzBck=' 'sha256-sJrvXijSCIizqGtBssKayf/JcGhbabJZUlW+iEKkXIE=' 'sha256-czVQC5EWxuwrz0hBaXsvwzHfGJePDQf/UXPayItcQCA=';
+  style-src 'self' 'sha256-udMXkvS8EV4xRKvEK0SQ9p4ThPbJ89GbvkGAVljFUqk=';
   font-src 'self' data:;
   img-src 'self' data: blob:;
   connect-src 'self';
@@ -303,6 +304,13 @@ html, body { width:100%; margin:0; padding:0; height:100%; overflow:hidden; back
   color:var(--hero-sub);
   margin-bottom:34px;
 }
+/* Hide the MODULO title + byline + divider + sub while the Explore panel is open.
+   !important so it beats the intro reveal's INLINE opacity (and its pending
+   setTimeout fade, which would otherwise re-show MODULO over the panel). The
+   .hero-cta "← back" stays. Toggled via #root.explore-open in _openWindows/_closeWindows. */
+.explore-open .hero-title,
+.explore-open .hero-divider,
+.explore-open .hero-sub { opacity:0 !important; pointer-events:none; }
 
 .hero-cta {
   display:inline-flex; align-items:center;
@@ -397,28 +405,41 @@ html, body { width:100%; margin:0; padding:0; height:100%; overflow:hidden; back
   cursor:pointer;
 }
 
-/* ── Module windows ── */
-#windows-layer {
-  position:fixed; inset:0; z-index:600;
-  pointer-events:none;
+/* ── Module windows (Explore state) ──
+   Fixed layout (2026-06-10): the old floating/draggable system (absolute
+   .mod-wrapper + win-float + drag + dodge + vw/vh positions + x-clamp) was
+   DROPPED. Everything now lives in a single centered, scrollable panel:
+   OpenSea (top) → how-it-works diagram → the window row. */
+#explore-panel {
+  position:fixed; top:7vh; left:50%; transform:translateX(-50%);
+  z-index:600;
+  display:flex; flex-direction:column; align-items:center; gap:16px;
+  width:min(1500px, calc(100vw - 24px));
+  /* Desktop: NO scroll. The content stays viewport-bounded because the diagram
+     is height-capped (.hiw-step canvas max-height in vh), so it fits without a
+     panel scrollbar — and overflow:visible lets the edge windows' shadows show
+     fully (an overflow:auto panel clips them on the x-axis). Mobile (below)
+     switches to a scrollable panel since the stacked column exceeds the viewport. */
 }
+/* os-row, while a child of the panel, drops its own fixed positioning and just
+   flows at the top of the column (restored to body + hidden on close). */
+#explore-panel #os-row { position:static; transform:none; top:auto; left:auto; }
+/* Inside the panel the os-window's big drop shadow (0 24px 64px) cast a dark
+   band onto the diagram window sitting 16px below — tone it down to the small
+   contact shadow while it's a panel child. */
+#explore-panel .os-window { box-shadow:0 2px 8px rgba(0,0,0,0.10); }
+#windows-row {
+  display:flex; flex-wrap:wrap; justify-content:center; gap:24px 56px;  /* row-gap 24 only matters when wrapped; one-row desktop keeps the 56px column gap */
+  width:100%; pointer-events:none;
+}
+#windows-row .mod-window { pointer-events:auto; flex-shrink:0; width:fit-content; max-width:min(360px, 100%); }
 
 @keyframes win-in {
-  0%   { opacity:0; transform:scale(0.88) translateY(12px); }
-  100% { opacity:1; transform:scale(1)    translateY(0);    }
+  0%   { opacity:0; transform:scale(0.94); }
+  100% { opacity:1; transform:scale(1);    }
 }
 @keyframes win-out {
   to   { opacity:0; transform:scale(0.92) translateY(6px); }
-}
-
-.mod-wrapper {
-  position:absolute;
-  pointer-events:none;
-}
-
-@keyframes win-float {
-  0%, 100% { transform:translateY(0); }
-  50%       { transform:translateY(-4px); }
 }
 
 .mod-window {
@@ -491,6 +512,177 @@ html, body { width:100%; margin:0; padding:0; height:100%; overflow:hidden; back
   transition:color 0.3s;
 }
 
+/* ── How-it-works diagram window (Explore state) ──
+   No red dot, NOT draggable. In-flow inside #explore-panel (second in the
+   column, between os-row and the window row). Built + drawn on _openWindows,
+   torn down on _closeWindows. Styling lives here (not CSSOM) because the mobile
+   stepper needs a real @media query. */
+#hiw-window {
+  width:min(1440px, calc(100vw - 32px)); flex-shrink:0;
+  opacity:0; pointer-events:none;
+  transition:opacity 0.5s ease;
+  border-radius:10px;
+  box-shadow:0 24px 64px rgba(0,0,0,0.22), 0 2px 8px rgba(0,0,0,0.10);
+  overflow:hidden; background:#dbd8d1;
+  animation:win-in 1.1s cubic-bezier(0.16,1,0.3,1) forwards;
+}
+#hiw-window.open { opacity:1; pointer-events:auto; }
+.hiw-titlebar {
+  height:30px; background:#c9c6c0;
+  display:flex; align-items:center; justify-content:center; user-select:none;
+}
+.hiw-win-label {
+  font-size:10px; font-family:monospace;
+  letter-spacing:.12em; color:rgba(0,0,0,0.42);
+}
+/* padding-bottom sets the diagram window's vertical size (content sits at the
+   top, tight under the tbar; the slack lives below the step texts). History:
+   84 = pre-crop height; 240 = +30%; 100 = that −20% (Le, ~560px at 1080). */
+.hiw-steps { display:flex; padding:12px 24px 100px; overflow:hidden; }
+.hiw-steps-track { display:flex; gap:20px; flex:1 1 auto; min-width:0; }
+.hiw-step {
+  display:flex; flex-direction:column; align-items:center;
+  gap:6px; flex:1 1 0; min-width:0; text-align:center;
+}
+/* .hiw-cvw crops the canvas buffer's blank bottom strip (the mocks end at
+   y≈452 of the 612 buffer) so the step text sits right under the mock at every
+   viewport — a px negative margin couldn't track the responsive canvas height.
+   width 34.5vh ≡ the previous 44vh canvas height (×480/612) → mock size UNCHANGED. */
+.hiw-cvw {
+  width:min(480px, 34.5vh);
+  max-width:100%;   /* respect the flex step width on narrow+tall viewports (tablet portrait) — aspect-ratio recomputes height from the clamped width */
+  aspect-ratio:480 / 452;
+  overflow:hidden; border-radius:5px; pointer-events:none;
+}
+.hiw-cvw canvas { width:100%; height:auto; display:block; }
+.hiw-step-num {
+  font-family:monospace; font-size:9px; letter-spacing:.16em;
+  color:rgba(0,0,0,0.30); text-transform:uppercase;
+}
+.hiw-step-title {
+  font-family:'Times New Roman',Times,serif; font-size:22px;
+  font-weight:400; color:rgba(0,0,0,0.74); line-height:1.1;
+}
+.hiw-step-desc {
+  font-family:monospace; font-size:10px; letter-spacing:.04em;
+  color:rgba(0,0,0,0.42); line-height:1.55;
+}
+.hiw-nav { display:none; }
+@media (max-width:600px) {
+  #explore-panel { top:5vh; max-height:calc(100vh - 5vh - 104px); gap:12px; padding:14px 20px; box-sizing:border-box; overflow-y:auto; overflow-x:hidden; overscroll-behavior:contain; }
+  #hiw-window { width:100%; }
+  .hiw-steps { padding:10px 0 0; }
+  .hiw-steps-track { gap:0; transform:translateX(var(--hiw-x,0)); transition:transform 0.32s cubic-bezier(0.2,0,0.4,1); }
+  .hiw-step { min-width:100%; padding:0 20px 6px; box-sizing:border-box; }
+  .hiw-cvw { width:min(100%, 30vh); }  /* as big as the no-scroll budget allows on 390×844-class phones (width-bound on narrow, 30vh on tall) */
+  .hiw-nav {
+    display:flex; justify-content:center; align-items:center;
+    gap:16px; padding:2px 16px 16px;
+  }
+  .hiw-nav-btn {
+    min-width:44px; min-height:44px; padding:0;
+    background:#c9c6c0; border:0.5px solid rgba(0,0,0,0.14);
+    border-radius:6px; cursor:pointer;
+    font-family:monospace; font-size:15px; color:rgba(0,0,0,0.6);
+    display:flex; align-items:center; justify-content:center;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .hiw-nav-btn:disabled { opacity:0.32; cursor:default; }
+  .hiw-dots { display:flex; gap:7px; align-items:center; }
+  .hiw-dot {
+    width:6px; height:6px; border-radius:50%;
+    background:rgba(0,0,0,0.20); transition:background 0.2s;
+  }
+  .hiw-dot.active { background:rgba(0,0,0,0.62); }
+  /* Scroll container clips the big 0 24px 64px shadows at the padding edge →
+     visible cut-off halo around the windows. Use the small contact shadow
+     inside the mobile panel (same call as the in-panel os-window). */
+  #windows-row .mod-window, #hiw-window { box-shadow:0 2px 10px rgba(0,0,0,0.12); }
+  /* Mobile windows: ONE row of 4 mini-buttons (Le) — no titlebar, title-only,
+     equal widths (flex:1), label wraps to 2 lines when needed ("Modulo Punks"). */
+  #windows-row .mod-desc { display:none; }
+  #windows-row .mod-titlebar { display:none; }
+  #windows-row { gap:8px; flex-wrap:nowrap; }
+  #windows-row .mod-window { flex:1 1 0; min-width:0; max-width:none; }
+  /* height:100% so the content box fills the stretched window → the 1-line
+     labels (App/About/Collection) center vertically next to the 2-line Punks.
+     align-items needs !important: Collection's desktop topAlign is an INLINE
+     style (flex-start) that otherwise wins and left it ~11px off-center. */
+  #windows-row .mod-content { padding:10px 4px; justify-content:center; align-items:center !important; height:100%; box-sizing:border-box; }
+  #windows-row .mod-label { font-size:clamp(11px, 3.4vw, 15px); text-align:center; line-height:1.15; }
+  /* "Modulo Punks" always breaks into its 2 words (one per line) — width:
+     min-content shrinks the label box to the widest word so the text wraps.
+     (word-spacing:100vw pushed the words outside the clipped window — broken.) */
+  #windows-row .mod-window:nth-child(4) .mod-label { width:min-content; }
+  /* In-panel os-row: the body-level -32px inset double-counts with the panel
+     padding → the ARTIFACTS box text bled out ≤375px. 100% = panel content width. */
+  #explore-panel #os-row { width:100%; }
+  /* Hero text + CTA hug the LEFT on phones: the desktop 52px side padding read
+     as pushed-right — 14px leaves just a small left gap. The title's negative
+     margin cancels the Times "M" left side-bearing so its ink aligns with the
+     monospace sub + CTA. */
+  .hero-overlay { padding:0 14px 56px; }
+  .hero-title { margin-left:-5px; }
+}
+/* Short desktop/laptop viewports: shrink the diagram more so the whole Explore
+   stack still fits above the CTA without scrolling. (min-width guard keeps it off
+   mobile, which has its own canvas sizing + scrollable panel.) */
+/* ── No-scroll small-screen layout (Le: "no scroll to see the 4 link windows —
+   shrink them instead"). Strategy: shrink the windows + kill the diagram's dead
+   padding so the whole Explore stack fits the viewport; the scrollable panel
+   remains ONLY for landscape phones (≤500px tall) where fitting is physically
+   impossible. 1920-class screens match none of these → untouched.
+   Divergent-design: independent reviewer a1119e08e5e1b06e2 (height budgets per
+   viewport) synthesized with main; live-verified. ORDER MATTERS: narrow (56px
+   pad) before short (42px pad) so short wins when both apply. */
+
+/* Narrow desktop 601-1430px: 4 full windows can't share a row → shrink them so
+   they stay ONE row below the diagram (desc kept; flex-shrink absorbs width). */
+@media (min-width:601px) and (max-width:1430px) {
+  .hiw-steps { padding-bottom:56px; }
+  #windows-row { flex-wrap:nowrap; gap:12px 20px; }
+  #windows-row .mod-window { flex-shrink:1; min-width:0; max-width:clamp(160px, 22vw, 280px); }
+  /* align-items:flex-start: on small screens ALL labels sit at the TOP (the
+     desktop-only bottom-align of App/About reads misaligned once the stretched
+     windows share one height with wrapping descs). */
+  #windows-row .mod-content { padding:14px 12px 18px 10px; align-items:flex-start; }
+  #windows-row .mod-label { font-size:clamp(22px, 2.2vw, 34px); }
+}
+/* Very narrow desktop 601-700px: 2×2 beats 4 crushed windows. min-width forces
+   the wrap (fit-content windows are otherwise too narrow to ever overflow). */
+@media (min-width:601px) and (max-width:700px) {
+  #windows-row { flex-wrap:wrap; }
+  #windows-row .mod-window { min-width:calc(50% - 10px); max-width:calc(50% - 10px); }
+}
+/* Short viewports ≤960px tall (laptops 720/768/900): smaller diagram canvas +
+   minimal dead padding. (Was ≤860 — extended to cover the 861-960 band where
+   the windows-row used to land on the CTA.) */
+@media (max-height:960px) and (min-width:601px) {
+  .hiw-cvw { width:min(480px, 20.4vh); }  /* ≡ a 26vh-tall canvas (×480/612) */
+  .hiw-steps { padding-bottom:42px; }
+}
+/* Narrow AND short: title-only windows (the desc's ~40px is the difference). */
+@media (min-width:601px) and (max-width:1430px) and (max-height:960px) {
+  #windows-row .mod-desc { display:none; }
+  #windows-row .mod-content { padding:10px 12px; justify-content:center; }
+  #windows-row .mod-label { font-size:clamp(20px, 2.2vw, 30px); }
+}
+/* Shorter phones (≤760px tall): trim the mobile diagram so the stack still
+   fits without scroll (at 30vh a 360×740 overflowed by 35px). */
+@media (max-width:600px) and (max-height:760px) {
+  .hiw-cvw { width:min(100%, 24vh); }
+}
+/* Landscape phones ≤500px tall: the stack can NEVER fit (~460px min vs ~260px
+   available) → the scrollable panel is the only option here. */
+@media (min-width:601px) and (max-height:500px) {
+  #explore-panel {
+    max-height:calc(100vh - 7vh - 104px);
+    overflow-y:auto; overflow-x:hidden; overscroll-behavior:contain;
+    padding:14px 24px; box-sizing:border-box;
+  }
+  /* Scroll container clips the big shadows at the padding edge → contact shadow. */
+  #windows-row .mod-window, #hiw-window { box-shadow:0 2px 10px rgba(0,0,0,0.12); }
+}
 
 </style>
 </head>
@@ -1888,180 +2080,291 @@ window.addEventListener('pageshow', e => {
 });
 
 const WIN_DATA = [
-  { label:'App',          href:'app/',          desc:'Be part and explore the desires\nof different consciousness', x:'19vw', y:'34vh', delay:0,   w:318, fDur:'3.8s', fDel:'0.3s' },
-  { label:'About',        href:'about/',        desc:'Know more about\nthe machine',                                  x:'44vw', y:'44vh', delay:160, w:272, fDur:'4.4s', fDel:'1.6s' },
-  { label:'Collection',   href:'collection/',   desc:'Explore all the artifacts\nwhere desires collide',             x:'67vw', y:'28vh', delay:310, w:312, fDur:'3.5s', fDel:'0.9s', topAlign:true },
-  { label:'Modulo Punks', href:'modulopunks/',  desc:'Fuse with a modulo artifact',                                  x:'67vw', y:'calc(28vh + 150px)', delay:460, w:312, fDur:'4.1s', fDel:'1.2s', topAlign:true, compact:true },
+  { label:'App',          href:'app/',          desc:'Be part and explore the desires\nof different consciousness', delay:0,   w:318 },
+  { label:'About',        href:'about/',        desc:'Know more about\nthe machine',                                  delay:120, w:272 },
+  { label:'Collection',   href:'collection/',   desc:'Explore all the artifacts\nwhere desires collide',             delay:240, w:312, topAlign:true },
+  { label:'Modulo Punks', href:'modulopunks/',  desc:'Fuse with a modulo artifact',                                  delay:360, w:312, topAlign:true, compact:true },
 ];
-// Modulo Punks y anchored in PX relative to Collection (28vh + Collection's
-// ~132px height + ~18px gap) so the gap stays constant across viewport heights
-// — a fixed vh would widen the gap on tall viewports (both share x:67vw).
-// topAlign → label sits at the TOP of .mod-content (flex-start) instead of the
-// default flex-end; Collection + Modulo Punks use it (App/About keep bottom-aligned).
-// compact → tighter vertical padding (shorter window); Modulo Punks only.
+// Fixed Explore layout (2026-06-10): windows render into a centered #windows-row
+// (flex-wrap), no drag/dodge/float. `delay` → staggered win-in entrance; `w` →
+// window width; topAlign → label at top of .mod-content; compact → tighter pad.
 
-let _windowsOpen = false;
-let _winLayer    = null;
-let _drag        = null;
-let _navigating  = false;   // guard: prevent queued setTimeout on rapid-click (P3 debounce)
-
-// Pointer position helper — handles both mouse and touch events. Touch events
-// expose coordinates via `touches[0]` (start/move) or `changedTouches[0]` (end).
-function _ptCoords(e) {
-  if (e.touches && e.touches.length) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
-  if (e.changedTouches && e.changedTouches.length) return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
-  return { x: e.clientX, y: e.clientY };
-}
-
-function _onDragMove(e) {
-  if (!_drag) return;
-  const p = _ptCoords(e);
-  _drag.el.style.left = (_drag.sx + p.x - _drag.mx) + 'px';
-  _drag.el.style.top  = (_drag.sy + p.y - _drag.my) + 'px';
-  // Prevent page scroll while dragging on touch devices
-  if (e.cancelable) e.preventDefault();
-}
-function _onDragUp() { _drag = null; }
+let _windowsOpen  = false;
+let _explorePanel = null;
+let _navigating   = false;   // guard: prevent queued setTimeout on rapid-click (P3 debounce)
+let _hiwEl       = null;    // how-it-works diagram window (Explore state)
+let _hiwStep     = 0;       // mobile stepper index
+let _hiwRafId    = 0;       // open-transition rAF (cancelled on close)
+let _hiwCv       = [];      // [{cv, draw}] step canvases to draw on open
 
 function _closeWindows() {
   _windowsOpen = false;
-  if (_elOsRow) { _elOsRow.style.opacity = '0'; _elOsRow.style.pointerEvents = 'none'; }
   document.getElementById('canvas-blur').classList.remove('active');
   canvas.classList.remove('zoomed');
-  if (_winLayer) { _winLayer.remove(); _winLayer = null; }
-  document.removeEventListener('mousemove',  _onDragMove);
-  document.removeEventListener('mouseup',    _onDragUp);
-  document.removeEventListener('touchmove',  _onDragMove);
-  document.removeEventListener('touchend',   _onDragUp);
-  document.removeEventListener('touchcancel', _onDragUp);
+  document.getElementById('root').classList.remove('explore-open');  // restore MODULO title/sub
+  if (_elByline) _elByline.style.pointerEvents = 'auto';
+  cancelAnimationFrame(_hiwRafId);
+  // Return os-row to the body in its hidden/fixed state (it was moved into the panel).
+  if (_elOsRow) {
+    _elOsRow.style.opacity = '0'; _elOsRow.style.pointerEvents = 'none';
+    document.body.appendChild(_elOsRow);
+  }
+  if (_explorePanel) { _explorePanel.remove(); _explorePanel = null; }
+  _hiwEl = null; _hiwStep = 0; _hiwCv = [];
 }
 
-function _dodgeWindow(wrap) {
-  const allWraps = _winLayer ? Array.from(_winLayer.querySelectorAll('.mod-wrapper')) : [];
-  const others   = allWraps.filter(w => w !== wrap);
-  const vw = window.innerWidth, vh = window.innerHeight;
-  const r  = wrap.getBoundingClientRect();
-
-  let nx = r.left, ny = r.top;
-  for (let i = 0; i < 30; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const dist  = 100 + Math.random() * 180;
-    const cx    = r.left + Math.cos(angle) * dist;
-    const cy    = r.top  + Math.sin(angle) * dist;
-    const bx    = Math.max(10, Math.min(vw - r.width  - 10, cx));
-    const by    = Math.max(44, Math.min(vh - r.height - 10, cy));
-    const hits  = others.some(o => {
-      const or = o.getBoundingClientRect();
-      return !(bx + r.width < or.left - 8 || bx > or.right + 8 || by + r.height < or.top - 8 || by > or.bottom + 8);
-    });
-    if (!hits) { nx = bx; ny = by; break; }
-  }
-
-  wrap.style.animation  = 'none';
-  wrap.style.transition = 'left 0.14s cubic-bezier(0.2,0,0.4,1), top 0.14s cubic-bezier(0.2,0,0.4,1)';
-  wrap.style.left = nx + 'px';
-  wrap.style.top  = ny + 'px';
-  setTimeout(() => {
-    wrap.style.transition = '';
-    const idx = allWraps.indexOf(wrap);
-    if (idx >= 0) wrap.style.animation = `win-float ${WIN_DATA[idx].fDur} ease-in-out ${WIN_DATA[idx].fDel} infinite`;
-  }, 160);
+// Build one fixed (non-draggable) Explore window. The red dot is decorative now
+// (drag + dodge removed); the label still navigates.
+function _buildModWindow(d) {
+  const win = document.createElement('div');
+  win.className = 'mod-window';
+  win.style.animationDelay = d.delay + 'ms';   // width is fit-content (CSS) — windows hug their content
+  const titlebar = document.createElement('div');
+  titlebar.className = 'mod-titlebar';
+  const dot = document.createElement('span');
+  dot.className = 'mod-close';   // decorative only
+  titlebar.appendChild(dot);
+  const content = document.createElement('div');
+  content.className = 'mod-content';
+  if (d.topAlign) content.style.alignItems = 'flex-start';  // CSSOM — not governed by style-src CSP
+  if (d.compact)  content.style.padding = '12px 18px 14px 14px';
+  const label = document.createElement('a');
+  label.className = 'mod-label';
+  label.href = d.href;
+  label.textContent = d.label;
+  content.appendChild(label);
+  const desc = document.createElement('span');
+  desc.className = 'mod-desc';
+  d.desc.split('\n').forEach((line, idx) => {
+    if (idx > 0) desc.appendChild(document.createElement('br'));
+    desc.appendChild(document.createTextNode(line));
+  });
+  content.appendChild(desc);
+  win.append(titlebar, content);
+  label.addEventListener('click', e => {
+    if (!d.href || d.href === '#') return;
+    e.preventDefault();
+    _navigateTo(d.href);
+  });
+  return win;
 }
 
 function _openWindows() {
   if (_windowsOpen) return;
   _windowsOpen = true;
-  // OpenSea window appears together with the option windows (not at intro reveal).
-  if (_elOsRow) { _elOsRow.style.opacity = '1'; _elOsRow.style.pointerEvents = 'auto'; }
 
   document.getElementById('canvas-blur').classList.add('active');
   canvas.classList.add('zoomed');
+  // Hide the MODULO title + divider + sub while Explore is open. Use a class with
+  // !important CSS so it beats the reveal's inline opacity AND its pending setTimeout
+  // fade (which would otherwise re-show MODULO over the open panel).
+  document.getElementById('root').classList.add('explore-open');
+  if (_elByline) _elByline.style.pointerEvents = 'none';
 
-  _winLayer = document.createElement('div');
-  _winLayer.id = 'windows-layer';
-  document.body.appendChild(_winLayer);
+  // One fixed, centered, scrollable panel: OpenSea (top) → diagram → window row.
+  _explorePanel = document.createElement('div');
+  _explorePanel.id = 'explore-panel';
 
-  WIN_DATA.forEach(d => {
-    const wrap = document.createElement('div');
-    wrap.className = 'mod-wrapper';
-    // Clamp initial x position so windows always fit inside the viewport.
-    // Without this, Collection (x:'67vw', w:312) overflows by 188px at 375px
-    // viewport — its .mod-label link sits off-screen with no scroll fallback
-    // (body { overflow:hidden }). Mirrors the same Math.max/min bound that
-    // _dodgeWindow already applies on window close (L1857+). Brief #6 audit
-    // 2026-05-25, security-auditor abda576e GO.
-    const _vw = window.innerWidth;
-    const _rawX = parseFloat(d.x) / 100 * _vw;   // 'NNvw' → px
-    const _clampedX = Math.max(10, Math.min(_vw - d.w - 10, _rawX));
-    wrap.style.left            = _clampedX + 'px';
-    wrap.style.top             = d.y;
-    wrap.style.animation       = `win-float ${d.fDur} ease-in-out ${d.fDel} infinite`;
+  // Move the existing #os-row into the panel (CSS neutralizes its fixed
+  // positioning while it's a child) → it flows at the top of the column.
+  if (_elOsRow) {
+    _explorePanel.appendChild(_elOsRow);
+    _elOsRow.style.opacity = '1'; _elOsRow.style.pointerEvents = 'auto';
+  }
 
-    const win = document.createElement('div');
-    win.className = 'mod-window';
-    win.style.width          = d.w + 'px';
-    win.style.animationDelay = d.delay + 'ms';
-    // DOM construction via createElement (refactored 2026-05-10 from innerHTML
-    // template literal — defense-in-depth, see CHANGELOG).
-    const titlebar = document.createElement('div');
-    titlebar.className = 'mod-titlebar';
-    const closeBtn = document.createElement('button');
-    closeBtn.className = 'mod-close';
-    closeBtn.type = 'button'; // P3 pre-emptive — prevents form submit semantics
-    titlebar.appendChild(closeBtn);
-    const content = document.createElement('div');
-    content.className = 'mod-content';
-    if (d.topAlign) content.style.alignItems = 'flex-start';  // CSSOM prop assign — not governed by style-src CSP
-    if (d.compact)  content.style.padding = '12px 18px 14px 14px';  // tighter vertical (default 20/24)
-    const label = document.createElement('a');
-    label.className = 'mod-label';
-    label.href = d.href;
-    label.textContent = d.label;
-    content.appendChild(label);
-    const desc = document.createElement('span');
-    desc.className = 'mod-desc';
-    // \n→<br> conversion via split + createElement('br') (no innerHTML).
-    // WIN_DATA descs are hardcoded constants → no \r\n handling needed.
-    d.desc.split('\n').forEach((line, idx) => {
-      if (idx > 0) desc.appendChild(document.createElement('br'));
+  // How-it-works diagram (in-flow, second in the column).
+  _hiwEl = _buildHiwWindow();
+  _explorePanel.appendChild(_hiwEl);
+
+  // Window row — App / About / Collection / Modulo Punks (fixed, no drag).
+  const row = document.createElement('div');
+  row.id = 'windows-row';
+  WIN_DATA.forEach(d => row.appendChild(_buildModWindow(d)));
+  _explorePanel.appendChild(row);
+
+  document.body.appendChild(_explorePanel);
+
+  // Draw the diagram canvases AFTER append (Safari getContext non-null), then
+  // reveal next frame for the opacity transition.
+  _hiwDraw();
+  _hiwRafId = requestAnimationFrame(() => { if (_hiwEl && _hiwEl.isConnected) _hiwEl.classList.add('open'); });
+}
+
+// ── How-it-works diagram (Explore state) ────────────────────────────────────
+// Reuses the app/ info-modal canvas mocks (token card / modulo card / settle),
+// ported here day-palette-only. Static (drawn once on open, no rAF loop).
+function _hiwP() {
+  return {
+    bgPanel:'#d8d4c9', fg:'rgba(20,20,20,0.92)', fgMid:'rgba(20,20,20,0.55)',
+    fgFaint:'rgba(20,20,20,0.10)', border:'rgba(0,0,0,0.12)',
+    divider:'rgba(0,0,0,0.07)', tbar:'#c9c6c0', green:'#28c840', red:'#ff5f57',
+  };
+}
+function _hiwFillBg(ctx) { ctx.fillStyle = '#dbd8d1'; ctx.fillRect(0, 0, 320, 408); }
+function _hiwRR(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.arcTo(x+w,y,x+w,y+r,r);
+  ctx.lineTo(x+w,y+h-r); ctx.arcTo(x+w,y+h,x+w-r,y+h,r);
+  ctx.lineTo(x+r,y+h); ctx.arcTo(x,y+h,x,y+h-r,r);
+  ctx.lineTo(x,y+r); ctx.arcTo(x,y,x+r,y,r);
+  ctx.closePath();
+}
+function _hiwDot(ctx, x, y, r, fill) { ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fillStyle=fill; ctx.fill(); }
+function _hiwNoise(seed) { let s=seed|0||1; return () => { s^=s<<13; s^=s>>>17; s^=s<<5; return ((s>>>0)/0xffffffff); }; }
+
+// Step 1 — single token card
+function _hiwDrawTokens(c) {
+  const ctx = c.getContext('2d'); if (!ctx) return; const p = _hiwP();
+  ctx.setTransform(c.width / 320, 0, 0, c.height / 408, 0, 0);  // map the 320×408 draw coords onto the (larger) buffer
+  _hiwFillBg(ctx);
+  const cx=50, cy=24, cw=220, ch=270;   // cy 70→24: mocks start near the buffer top (uniform tight gap under the tbar)
+  ctx.fillStyle='rgba(0,0,0,0.15)'; _hiwRR(ctx,cx,cy+2,cw,ch,8); ctx.fill();
+  ctx.fillStyle=p.bgPanel; _hiwRR(ctx,cx,cy,cw,ch,8); ctx.fill();
+  ctx.strokeStyle=p.border; ctx.lineWidth=0.5; _hiwRR(ctx,cx,cy,cw,ch,8); ctx.stroke();
+  const tbarH=26;
+  ctx.fillStyle=p.tbar; _hiwRR(ctx,cx,cy,cw,tbarH,8); ctx.fill(); ctx.fillRect(cx,cy+tbarH-8,cw,8);
+  ctx.fillStyle=p.divider; ctx.fillRect(cx,cy+tbarH,cw,0.5);
+  _hiwDot(ctx,cx+14,cy+tbarH/2,5,p.green);
+  ctx.fillStyle=p.fgMid; ctx.font='10px monospace'; ctx.textAlign='left'; ctx.textBaseline='middle';
+  ctx.fillText('TOKEN #042',cx+28,cy+tbarH/2);
+  const swY=cy+tbarH+16, swSize=100;
+  ctx.fillStyle='#ff003a'; ctx.fillRect(cx+(cw-swSize)/2,swY,swSize,swSize);
+  const spY=swY+swSize+22;
+  ctx.fillStyle=p.fgMid; ctx.font='9px monospace'; ctx.textBaseline='middle';
+  ctx.fillText('S.',cx+18,spY);
+  const barX=cx+40, barW=cw-60, barH=6;
+  ctx.fillStyle=p.fgFaint; ctx.fillRect(barX,spY-barH/2,barW,barH);
+  ctx.fillStyle=p.fg; ctx.fillRect(barX,spY-barH/2,barW*0.56,barH);
+  const rows=[['C.','red'],['M.','feedback'],['Sz.','md'],['RS.','lg · RD. hi'],['BIOS','ON'],['DX.','#']];
+  let rowY=spY+22; ctx.font='9px monospace';
+  for (const [lbl,val] of rows) {
+    ctx.fillStyle=p.fgMid; ctx.fillText(lbl,cx+18,rowY);
+    ctx.fillStyle=p.fg; ctx.fillText(val,cx+58,rowY);
+    rowY+=14;
+  }
+}
+
+// Step 2 — single modulo card (the small "modulo")
+function _hiwDrawModulos(c) {
+  const ctx = c.getContext('2d'); if (!ctx) return; const p = _hiwP();
+  ctx.setTransform(c.width / 320, 0, 0, c.height / 408, 0, 0);  // map the 320×408 draw coords onto the (larger) buffer
+  _hiwFillBg(ctx);
+  const cx=30, cy=24, cw=260, ch=190;   // cy 109→24: uniform top start across the 3 mocks
+  ctx.fillStyle='rgba(0,0,0,0.15)'; _hiwRR(ctx,cx,cy+2,cw,ch,8); ctx.fill();
+  ctx.fillStyle=p.bgPanel; _hiwRR(ctx,cx,cy,cw,ch,8); ctx.fill();
+  ctx.strokeStyle=p.border; ctx.lineWidth=0.5; _hiwRR(ctx,cx,cy,cw,ch,8); ctx.stroke();
+  const tbarH=26;
+  ctx.fillStyle=p.tbar; _hiwRR(ctx,cx,cy,cw,tbarH,8); ctx.fill(); ctx.fillRect(cx,cy+tbarH-8,cw,8);
+  ctx.fillStyle=p.divider; ctx.fillRect(cx,cy+tbarH,cw,0.5);
+  _hiwDot(ctx,cx+14,cy+tbarH/2,5,p.red);
+  _hiwDot(ctx,cx+30,cy+tbarH/2,5,p.green);
+  ctx.fillStyle=p.fgMid; ctx.font='10px monospace'; ctx.textAlign='left'; ctx.textBaseline='middle';
+  ctx.fillText('modulo_05',cx+46,cy+tbarH/2);
+  const canX=cx, canY=cy+tbarH, canW=cw, canH=ch-tbarH;
+  const px=8, cols=Math.floor(canW/px), rows=Math.floor(canH/px);
+  const nrnd=_hiwNoise(1234);
+  for (let r=0;r<rows;r++) for (let cc=0;cc<cols;cc++) {
+    const v=nrnd();
+    if (v<0.22) { ctx.fillStyle=p.fg; ctx.fillRect(canX+cc*px,canY+r*px,px,px); }
+    else if (v<0.27) { ctx.fillStyle='#ff003a'; ctx.fillRect(canX+cc*px,canY+r*px,px,px); }
+    else if (v<0.30) { ctx.fillStyle='#ffbd2e'; ctx.fillRect(canX+cc*px,canY+r*px,px,px); }
+  }
+}
+
+// Step 3 — settle (tokens → SETTLE → artifact)
+function _hiwDrawSettle(c) {
+  const ctx = c.getContext('2d'); if (!ctx) return; const p = _hiwP();
+  ctx.setTransform(c.width / 320, 0, 0, c.height / 408, 0, 0);  // map the 320×408 draw coords onto the (larger) buffer
+  _hiwFillBg(ctx);
+  const tokSize=36, tokGap=8, totalW=3*tokSize+2*tokGap, tokY=24, tokStartX=(320-totalW)/2;
+  const tokColors=['#ff003a','#28c840','#ffbd2e'];
+  for (let i=0;i<3;i++) { ctx.fillStyle=tokColors[i]; ctx.fillRect(tokStartX+i*(tokSize+tokGap),tokY,tokSize,tokSize); }
+  ctx.fillStyle=p.fgMid; ctx.font='22px monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText('↓',160,tokY+tokSize+22);
+  const btnW=200, btnH=46, btnX=(320-btnW)/2, btnY=tokY+tokSize+44;
+  ctx.fillStyle=p.bgPanel; _hiwRR(ctx,btnX,btnY,btnW,btnH,6); ctx.fill();
+  ctx.strokeStyle=p.fgMid; ctx.lineWidth=0.5; _hiwRR(ctx,btnX,btnY,btnW,btnH,6); ctx.stroke();
+  ctx.fillStyle=p.fg; ctx.font='14px monospace'; ctx.textAlign='left'; ctx.textBaseline='middle';
+  ctx.fillText('SETTLE',btnX+40,btnY+btnH/2);
+  ctx.fillStyle=p.green; ctx.fillRect(btnX+btnW-38,btnY+btnH/2-7,14,14);
+  ctx.fillStyle=p.fgMid; ctx.font='22px monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText('↓',160,btnY+btnH+22);
+  const artSize=64, artX=(320-artSize)/2, artY=btnY+btnH+44;
+  ctx.fillStyle=p.bgPanel; ctx.fillRect(artX,artY,artSize,artSize);
+  const apx=8, arCols=Math.floor(artSize/apx), arRows=Math.floor(artSize/apx);
+  const nrnd=_hiwNoise(2025);
+  for (let r=0;r<arRows;r++) for (let cc=0;cc<arCols;cc++) {
+    const v=nrnd();
+    if (v<0.30) { ctx.fillStyle=tokColors[(r+cc)%3]; ctx.fillRect(artX+cc*apx,artY+r*apx,apx,apx); }
+    else if (v<0.45) { ctx.fillStyle=p.fg; ctx.fillRect(artX+cc*apx,artY+r*apx,apx,apx); }
+  }
+  ctx.strokeStyle=p.border; ctx.lineWidth=0.5; ctx.strokeRect(artX,artY,artSize,artSize);
+  ctx.fillStyle=p.fgMid; ctx.font='9px monospace'; ctx.textAlign='center'; ctx.textBaseline='top';
+  ctx.fillText('ARTIFACT',160,artY+artSize+6);
+}
+
+const _HIW_STEPS = [
+  { n:'01', title:'Get your token',     desc:'Collect a modulo token\non OpenSea',             draw:_hiwDrawTokens },
+  { n:'02', title:'Use it in the app',  desc:'Connect your wallet and\nexplore your token',    draw:_hiwDrawModulos },
+  { n:'03', title:'Create an artifact', desc:'Settle desires into a\nfully on-chain artifact', draw:_hiwDrawSettle },
+];
+
+// Build the diagram window (createElement only — same CSP discipline as the
+// floating windows). Wires the mobile stepper; returns the detached element.
+function _buildHiwWindow() {
+  const win = document.createElement('div'); win.id = 'hiw-window';
+  const tbar = document.createElement('div'); tbar.className = 'hiw-titlebar';
+  const lbl = document.createElement('span'); lbl.className = 'hiw-win-label';
+  lbl.textContent = 'how modulo works'; tbar.appendChild(lbl);
+
+  const steps = document.createElement('div'); steps.className = 'hiw-steps';
+  const track = document.createElement('div'); track.className = 'hiw-steps-track';
+  _hiwCv = [];
+  _HIW_STEPS.forEach(s => {
+    const step = document.createElement('div'); step.className = 'hiw-step';
+    const cv = document.createElement('canvas'); cv.width = 480; cv.height = 612;  // 1.5× buffer → crisp at larger sizes (draw fns scale to it)
+    _hiwCv.push({ cv, draw: s.draw });
+    const num = document.createElement('div'); num.className = 'hiw-step-num'; num.textContent = s.n;
+    const title = document.createElement('div'); title.className = 'hiw-step-title'; title.textContent = s.title;
+    const desc = document.createElement('div'); desc.className = 'hiw-step-desc';
+    s.desc.split('\n').forEach((line, i) => {
+      if (i > 0) desc.appendChild(document.createElement('br'));
       desc.appendChild(document.createTextNode(line));
     });
-    content.appendChild(desc);
-    win.append(titlebar, content);
-
-    win.querySelector('.mod-label').addEventListener('click', e => {
-      if (!d.href || d.href === '#') return;
-      e.preventDefault();
-      _navigateTo(d.href);
-    });
-
-    win.querySelector('.mod-close').addEventListener('click', () => {
-      _dodgeWindow(wrap);
-    });
-
-    // Drag start — supports mouse + touch. Same handler reads coords via _ptCoords.
-    const _onDragStart = e => {
-      if (e.target.classList.contains('mod-close')) return;
-      const r = wrap.getBoundingClientRect();
-      const p = _ptCoords(e);
-      wrap.style.left      = r.left + 'px';
-      wrap.style.top       = r.top  + 'px';
-      wrap.style.animation = 'none';
-      _drag = { el:wrap, mx:p.x, my:p.y, sx:r.left, sy:r.top };
-    };
-    win.querySelector('.mod-titlebar').addEventListener('mousedown',  _onDragStart);
-    win.querySelector('.mod-titlebar').addEventListener('touchstart', _onDragStart, { passive: true });
-
-    wrap.appendChild(win);
-    _winLayer.appendChild(wrap);
+    const cvw = document.createElement('div'); cvw.className = 'hiw-cvw';  // crops the buffer's blank bottom strip (see CSS)
+    cvw.appendChild(cv);
+    step.append(cvw, num, title, desc);
+    track.appendChild(step);
   });
+  steps.appendChild(track);
 
-  document.addEventListener('mousemove',  _onDragMove);
-  document.addEventListener('mouseup',    _onDragUp);
-  document.addEventListener('touchmove',  _onDragMove, { passive: false });
-  document.addEventListener('touchend',   _onDragUp);
-  document.addEventListener('touchcancel', _onDragUp);
+  const nav = document.createElement('div'); nav.className = 'hiw-nav';
+  const prev = document.createElement('button');
+  prev.className = 'hiw-nav-btn'; prev.type = 'button';
+  prev.setAttribute('aria-label', 'Previous step'); prev.textContent = '‹';
+  const dots = document.createElement('div'); dots.className = 'hiw-dots';
+  const dotEls = _HIW_STEPS.map(() => { const d = document.createElement('span'); d.className = 'hiw-dot'; dots.appendChild(d); return d; });
+  const next = document.createElement('button');
+  next.className = 'hiw-nav-btn'; next.type = 'button';
+  next.setAttribute('aria-label', 'Next step'); next.textContent = '›';
+  nav.append(prev, dots, next);
+
+  function go(idx) {
+    _hiwStep = Math.max(0, Math.min(_HIW_STEPS.length - 1, idx));
+    track.style.setProperty('--hiw-x', (-_hiwStep * 100) + '%');  // only used under the mobile @media
+    dotEls.forEach((d, i) => d.classList.toggle('active', i === _hiwStep));
+    prev.disabled = _hiwStep === 0;
+    next.disabled = _hiwStep === _HIW_STEPS.length - 1;
+  }
+  prev.addEventListener('click', () => go(_hiwStep - 1));
+  next.addEventListener('click', () => go(_hiwStep + 1));
+  go(0);
+
+  win.append(tbar, steps, nav);
+  return win;
 }
+
+function _hiwDraw() { _hiwCv.forEach(o => o.draw(o.cv)); }
 
 const _ctaBtn = document.querySelector('.hero-cta');
 _ctaBtn.addEventListener('click', e => {
