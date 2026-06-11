@@ -551,12 +551,49 @@ body.night #filter-btn { background:#2c2b28; }
   var canvas = document.getElementById('punk-canvas');
   var ctx = canvas.getContext('2d');
   var section = document.getElementById('grid-section');
+  // iOS URL-bar fix (2026-06-11): size the canvas to the LARGE viewport (100lvh)
+  // on touch devices so the bar's collapse at scroll-start never changes the
+  // height → no GPU backing realloc mid-scroll (the scroll-start hitch).
+  // Permanent zero-width probe; read per layout() call. No-lvh fallback: a
+  // ratchet in layout() ignores height-only URL-bar shrinks.
+  var _lvhProbe = null;
+  if (_coarsePtr && window.CSS && CSS.supports && CSS.supports('height', '100lvh')) {
+    _lvhProbe = document.createElement('div');
+    _lvhProbe.style.cssText = 'position:fixed;top:0;left:0;width:0;height:100lvh;visibility:hidden;pointer-events:none;';
+    document.body.appendChild(_lvhProbe);
+  }
   // Atlas has NO gutter between 24×24 cells → non-integer upscaling bleeds the
-  // neighbour cell's edge. Isolate the cell to a temp via a 1:1 (exact) copy, then
-  // scale the isolated temp → no neighbour to bleed. (Modal/fusion use exact 6× → fine.)
+  // neighbour cell's edge. Two protections, same class:
+  //  - FAST PATH (perf reserve, 2026-06-11): a GUTTER ATLAS rebuilt once after
+  //    load — same 100×100 cells at a 26px pitch with a 1px TRANSPARENT gutter.
+  //    Edge-rounding at non-integer scales samples the transparent gutter
+  //    instead of the neighbour → invisible. ONE drawImage per cell (the
+  //    per-cell temp write-then-read serialized the GPU pipeline on iOS Safari
+  //    — the remaining scroll-lag suspect). Built async post-first-paint,
+  //    fail-soft → the temp path below keeps working until/if it's ready.
+  //  - FALLBACK: isolate the cell to a temp via a 1:1 copy, then scale.
+  //  (Modal/fusion use exact 6× from the ORIGINAL atlas → unchanged.)
+  var gutterBmp = null, GUT = 26;   // 24px cell + 1px gutter each side (pitch 26)
+  function buildGutterAtlas() {
+    try {
+      var c = document.createElement('canvas');
+      c.width = ATLAS_COLS * GUT; c.height = ATLAS_COLS * GUT;   // 2600×2600
+      var g = c.getContext('2d'); g.imageSmoothingEnabled = false;
+      for (var row = 0; row < ATLAS_COLS; row++)
+        for (var col = 0; col < ATLAS_COLS; col++)
+          g.drawImage(atlasBmp, col * SRC, row * SRC, SRC, SRC, col * GUT + 1, row * GUT + 1, SRC, SRC);
+      if (typeof createImageBitmap === 'function') {
+        createImageBitmap(c).then(function (bmp) { gutterBmp = bmp; }, function () { gutterBmp = c; });
+      } else gutterBmp = c;
+    } catch (e) { gutterBmp = null; }
+  }
   var _cellTmp = document.createElement('canvas'); _cellTmp.width = SRC; _cellTmp.height = SRC;
   var _cellTmpCtx = _cellTmp.getContext('2d'); _cellTmpCtx.imageSmoothingEnabled = false;
   function _blitPunk(id, dx, dy, size) {
+    if (gutterBmp) {
+      ctx.drawImage(gutterBmp, (id % ATLAS_COLS) * GUT + 1, Math.floor(id / ATLAS_COLS) * GUT + 1, SRC, SRC, dx, dy, size, size);
+      return;
+    }
     var sx = (id % ATLAS_COLS) * SRC, sy = Math.floor(id / ATLAS_COLS) * SRC;
     _cellTmpCtx.clearRect(0, 0, SRC, SRC);
     _cellTmpCtx.drawImage(atlasBmp, sx, sy, SRC, SRC, 0, 0, SRC, SRC);   // 1:1 exact copy, isolates the cell
@@ -642,7 +679,15 @@ body.night #filter-btn { background:#2c2b28; }
   // ── Layout ──
   function layout() {
     var newW = section.clientWidth;
-    var newH = Math.max(1, window.innerHeight - STICKY);
+    var newH;
+    if (_lvhProbe) {
+      newH = Math.max(1, Math.round(_lvhProbe.getBoundingClientRect().height) - STICKY);
+    } else {
+      newH = Math.max(1, window.innerHeight - STICKY);
+      // No-lvh fallback ratchet: ignore height-only URL-bar shrinks on touch
+      // (≤160px, width unchanged) → at most ONE grow-realloc per session.
+      if (_coarsePtr && newW === cssW && newH < cssH && cssH - newH <= 160) newH = cssH;
+    }
     // Dims unchanged (drawer toggle, URL-bar resize echo) → skip the canvas
     // backing realloc (a GPU buffer realloc + implicit clear = a visible hitch
     // mid-scroll on phones). Spacer/dirty still refresh (perf audit 2026-06-11).
@@ -664,7 +709,10 @@ body.night #filter-btn { background:#2c2b28; }
     dirty = true;
   }
   function rowsCount() { return filteredIds ? Math.ceil(filteredIds.length / COLS) : 0; }
-  function sizeSpacer() { section.style.minHeight = (rowsCount() * cellPx) + 'px'; }
+  // +gridTopDoc: the header sits above the grid and ate exactly that much
+  // scrollable range — without it the last ~3 rows (punks #9982-9999) were
+  // unreachable by scroll (pre-existing, surfaced by the 2026-06-11 GO pass).
+  function sizeSpacer() { section.style.minHeight = (rowsCount() * cellPx + gridTopDoc) + 'px'; }
   function maxScroll() { return Math.max(0, rowsCount() * cellPx - cssH); }
   function gridScroll() { return Math.max(0, Math.min(window.scrollY - gridTopDoc + STICKY, maxScroll())); }
 
@@ -1036,6 +1084,7 @@ body.night #filter-btn { background:#2c2b28; }
       document.getElementById('clear-all').disabled = activeCount() === 0;
       document.getElementById('boot').classList.add('hide');
       _gridKick();
+      setTimeout(buildGutterAtlas, 50);   // off the first-paint path; _blitPunk switches over when ready
     }).catch(function (err) {
       console.error('[punks] init failed:', err);
       bootError('Could not load punk data (' + (err && err.message || 'error') + ').');
