@@ -358,6 +358,17 @@ body.night #fz-export { background:#2c2b28; }
 #punk-detail::before { content:''; position:absolute; inset:0; z-index:0; pointer-events:none; opacity:0; border-radius:14px;
   background-image:var(--fz-check-tile); background-size:32px 32px; transition:opacity 0.3s ease; }
 #punk-detail.fz-check-bg::before { opacity:1; animation:fzDiagScroll 2.5s linear infinite; }
+/* Tier-3 GOLD STARS button (mirrors #fz-check) */
+#fz-gold { display:inline-flex; align-items:center; padding:0 2px; background:none; border:none; cursor:pointer; opacity:0.55; transition:opacity 0.15s, transform 0.15s ease; }
+#fz-gold:hover, #fz-gold:focus-visible, #fz-gold.fz-check-on { opacity:1; }
+#fz-gold:hover, #fz-gold:focus-visible { transform:scale(1.14); }
+#fz-gold:active { transform:scale(0.9); }
+#fz-gold:disabled { opacity:0.3; cursor:default; }
+.fz-star-icon { position:relative; display:block; width:28px; height:28px; }
+.fz-star-cv { display:block; width:28px; height:28px; transform-origin:50% 50%; }
+#fz-gold:hover .fz-star-cv, #fz-gold:focus-visible .fz-star-cv { animation:fzBadgeSpin 1.3s linear infinite; }   /* spin on hover/focus only */
+/* fx modes (check/gold) = vector glyphs → smooth scaling; normal CA stays pixelated */
+#punk-detail.fz-fx-smooth #pd-canvas, #punk-detail.fz-fx-smooth .pk-cv { image-rendering:auto; }
 .pd-tbar { position:relative; z-index:2; }   /* opaque → hides the field at the top of the modal */
 .pd-body { position:relative; z-index:1; }   /* all body content above the field */
 /* flip-card: each picker thumbnail flips when its mode content swaps in (toggle) */
@@ -365,6 +376,7 @@ body.night #fz-export { background:#2c2b28; }
 .pk-slot.pk-flip { animation:pkFlip 0.5s ease; }
 @media (prefers-reduced-motion: reduce) {
   #fz-check:hover .fz-check-seal, #fz-check:focus-visible .fz-check-seal { animation:none; }
+  #fz-gold:hover .fz-star-cv, #fz-gold:focus-visible .fz-star-cv { animation:none; }
   #punk-detail.fz-check-bg::before { animation:none; }
   .pk-slot.pk-flip { animation:none; }
 }
@@ -478,7 +490,7 @@ body.night #filter-btn { background:#2c2b28; }
     <div id="fuse-title">Fuse with Modulo Artifacts</div>
     <div id="fz-panel">
       <p class="fz-k">Pick a trait, then pick a modulo to fill it. Several animate at once.</p>
-      <div id="fz-traits"><button id="fz-check" type="button" aria-pressed="false" aria-label="check it — toggle badge mode" title="check it"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><span class="fz-cdot" aria-hidden="true">·</span></div>
+      <div id="fz-traits"><button id="fz-check" type="button" aria-pressed="false" aria-label="check it — toggle badge mode" title="check it"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-gold" type="button" aria-pressed="false" aria-label="gold stars — toggle tier 3" title="gold stars"><span class="fz-star-icon"><canvas class="fz-star-cv" width="28" height="28"></canvas></span></button><span class="fz-cdot" aria-hidden="true">·</span></div>
     </div>
     <div id="fz-pick">
       <div id="fz-picker"></div>
@@ -1298,6 +1310,20 @@ function _extractComposition(decodedHtml) {
   // centered 24-cell crop paintTo uses); picker thumbnail -> bigger cells, fewer checks
   // (Le: "pocas checks grandes y nítidas" — a legible zoomed badge, not the full crop).
   const FZ_BADGE_CELL = 12, PK_BADGE_CELL = 8, PK_BADGE_W = 48;
+  // ── Tier-3 GOLD STARS glyph + palette (5-point star, vector; palette-INDEPENDENT → module-level sprite cache keyed by CELL) ──
+  const GOLD_BODY = '#ffe600', GOLD_HI = '#fffbc8', GOLD_EDGE = '#e6b400', GOLD_LIT = '#f3c212', GOLD_SH = '#ce9f1c', GOLD_STAR_SZ = 0.75;
+  function _gLerp(a, b, f) { a = a.replace('#', ''); b = b.replace('#', ''); function h(s, o) { return parseInt(s.substr(o, 2), 16); } var ar = h(a, 0), ag = h(a, 2), ab = h(a, 4), br = h(b, 0), bg = h(b, 2), bb = h(b, 4); return 'rgb(' + ((ar + (br - ar) * f) | 0) + ',' + ((ag + (bg - ag) * f) | 0) + ',' + ((ab + (bb - ab) * f) | 0) + ')'; }
+  function _gStarPath(x, cx, cy, RO) { var RI = RO * 0.42; x.beginPath(); for (var i = 0; i < 10; i++) { var a = -Math.PI / 2 + i * Math.PI / 5, R = (i % 2 === 0) ? RO : RI, px = cx + R * Math.cos(a), py = cy + R * Math.sin(a); i ? x.lineTo(px, py) : x.moveTo(px, py); } x.closePath(); }
+  var _starSpriteCache = new Map();   // CELL -> canvas (one gold star; gold is fixed → no PAL key, no thrash; Map (not 1-slot) so the 720-compose CELL and any other CELL coexist)
+  function _starSprite(CELL) {
+    var c = _starSpriteCache.get(CELL); if (c) return c;
+    var cv; if (typeof OffscreenCanvas !== 'undefined') { cv = new OffscreenCanvas(CELL, CELL); } else { cv = document.createElement('canvas'); cv.width = cv.height = CELL; }
+    var x = cv.getContext('2d'), cc = CELL / 2, RO = (CELL / 2) * GOLD_STAR_SZ;
+    x.fillStyle = GOLD_EDGE; _gStarPath(x, cc, cc, RO * 1.06); x.fill();
+    x.fillStyle = GOLD_BODY; _gStarPath(x, cc, cc, RO); x.fill();
+    x.fillStyle = GOLD_HI; _gStarPath(x, cc, cc, RO * 0.5); x.fill();
+    _starSpriteCache.set(CELL, cv); return cv;
+  }
 
 // Engine factory — direct port of html-placeholders/artifact-render.html.
 // Differences from the placeholder:
@@ -1541,16 +1567,39 @@ function _extractComposition(decodedHtml) {
     }
   }
 
+  // ── Tier-3 GOLD STARS render (binary 4-state from the CA, button-bevel; same centered 24-cell
+  //    crop the badge uses; composed at PD=720 via _composeGoldHR for crisp vector stars) ──
+  function paintToStars(target, tctx, opts) {
+    opts = opts || {};
+    var W = target.width, H = target.height, CELL = Math.floor(W / 24), offC = 213, offR = 113;
+    var star = _starSprite(CELL);
+    var beHi = _gLerp(GOLD_LIT, '#ffffff', 0.33), beSh = _gLerp(GOLD_LIT, '#000000', 0.42), lw = Math.max(1, Math.round(CELL * 0.1));
+    var gW = 24 * CELL, px0 = Math.floor((W - gW) / 2), py0 = Math.floor((H - gW) / 2);
+    tctx.fillStyle = GOLD_SH; tctx.fillRect(0, 0, W, H);
+    for (var r = 0; r < 24; r++) for (var c = 0; c < 24; c++) {
+      var v = grid[(offR + r) * 450 + (offC + c)];
+      var bgOn = (v & 2) === 0, starOn = (v & 1) === 0;          // bit1 → fondo LIT/SHADOW · bit0 → estrella on/off (independientes; invertido → el dominante v=0 prende)
+      var dx = px0 + c * CELL, dy = py0 + r * CELL;
+      tctx.fillStyle = bgOn ? GOLD_LIT : GOLD_SH; tctx.fillRect(dx, dy, CELL, CELL);
+      if (bgOn) {                                                // bisel tipo botón: luz arriba-izq, sombra abajo-der
+        tctx.fillStyle = beHi; tctx.fillRect(dx, dy, CELL, lw); tctx.fillRect(dx, dy, lw, CELL);
+        tctx.fillStyle = beSh; tctx.fillRect(dx + CELL - lw, dy, lw, CELL); tctx.fillRect(dx, dy + CELL - lw, CELL, lw);
+      }
+      if (starOn) tctx.drawImage(star, dx, dy);
+    }
+  }
+
   // ===== ENGINE END =====
 
-  return {step, render, paintTo, paintToNative, paintToNativeCrop, paintToBadge, applyRects: applyRectShifts, tickRects, dtOps: _sumTokenOps};
+  return {step, render, paintTo, paintToNative, paintToNativeCrop, paintToBadge, paintToStars, applyRects: applyRectShifts, tickRects, dtOps: _sumTokenOps};
 }
 
   // ── Fusion state + MULTI-engine compose loop (Phase 3: N traits at once) ──
   var FUSE_CAP = (window.matchMedia && window.matchMedia('(pointer:coarse)').matches) ? 2 : 6;
   var BG_ID = -1;   // synthetic "Background" pseudo-trait id — never in _fz.L, never indexes layerBmp
   var _fz = { raf: 0, punkId: null, L: null, selected: null, tokenSeq: 0,
-              checkMode: false,         // "check it" render mode (badge texture instead of normal CA)
+              checkMode: false,         // fx render mode ON (check OR gold) — true = any tier>1 active (was "check it" only; kept as the single fx-on flag → picker/blit/export gating unchanged)
+              fx: 'check',              // WHICH fx when checkMode: 'check' (Tier 2 badge) | 'gold' (Tier 3 stars). Single discriminator → no "both active" phantom state
               assignments: new Map(),  // layerId -> { engine, off, offctx, artifactId } (off = 144×144)
               pending: new Map(),       // layerId -> token (in-flight fetch guard)
               caCv: null, caCtx: null, comCv: null, comCtx: null,
@@ -1584,7 +1633,7 @@ function _extractComposition(decodedHtml) {
   // layer (masked CA if fused, else static). Single source of truth for preview + MP4 export.
   function _composeFusionFrame() {
     _fz.assignments.forEach(function (a) { a.engine.step(a.engine.dtOps); a.engine.applyRects(); a.engine.tickRects && a.engine.tickRects(); });
-    if (_fz.checkMode) { _composeCheckHR(); return; }               // crisp badge path composes at PD (720) via _fzAllocHR — skips the 144² _fzAlloc
+    if (_fz.checkMode) { (_fz.fx === 'gold' ? _composeGoldHR : _composeCheckHR)(); return; }   // crisp fx path composes at PD (720) via _fzAllocHR — skips the 144² _fzAlloc
     _fzAlloc();
     _fz.comCtx.clearRect(0, 0, 144, 144);
     var bgA = _fz.assignments.get(BG_ID);
@@ -1633,6 +1682,30 @@ function _extractComposition(decodedHtml) {
       }
     }
   }
+  // Gold mode = check's HR path verbatim, paintToStars instead of paintToBadge (same z-order/masks/720 compose, lazy _fzAllocHR + static-layer fallback).
+  function _composeGoldHR() {
+    _fzAllocHR();
+    var S = PD, off = _fz.offHR, offc = _fz.offHRctx, ca = _fz.caHR, cac = _fz.caHRctx, com = _fz.comHRctx;
+    com.clearRect(0, 0, S, S);
+    var bgA = _fz.assignments.get(BG_ID);
+    if (bgA) { bgA.engine.paintToStars(off, offc, { full: true }); com.drawImage(off, 0, 0); }
+    for (var i = 0; i < _fz.L.length; i++) {
+      var li = _fz.L[i], a = _fz.assignments.get(li);
+      if (a && layerBmp) {
+        var intr = interiorBmp && INTERIOR_DEF[li];
+        if (intr) com.drawImage(layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, S, S);
+        a.engine.paintToStars(off, offc, { full: true });
+        cac.globalCompositeOperation = 'source-over'; cac.clearRect(0, 0, S, S);
+        cac.drawImage(off, 0, 0);
+        cac.globalCompositeOperation = 'destination-in';
+        cac.drawImage(intr ? interiorBmp : (maskBmp || layerBmp), (li - 1) * 24, 0, 24, 24, 0, 0, S, S);
+        cac.globalCompositeOperation = 'source-over';
+        com.drawImage(ca, 0, 0);
+      } else if (layerBmp) {
+        com.drawImage(layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, S, S);
+      }
+    }
+  }
   function _animFrame() {
     _animRaf = 0;
     if (!detail.classList.contains('open')) return;
@@ -1657,23 +1730,36 @@ function _extractComposition(decodedHtml) {
   function _resetFusion() { _punkBg = PUNK_BG; _pkTeardown(); _fzTeardown(); _resetCheckModeUI(); var p = document.getElementById('fz-panel'); if (p) p.style.display = 'none'; var p2 = document.getElementById('fz-pick'); if (p2) p2.style.display = 'none'; _fzStatus(''); }
   function _clearAllFusion() { if (_exportInFlight) return; _fz.assignments.clear(); _fz.pending.clear(); _pkRedrawLive(); _animStopIfIdle(); _refreshPills(); _drawStaticPunk(); _fzStatus('cleared'); }   // keep check mode sticky across Clear-all (view setting, orthogonal to assignments); _pkRedrawLive honors the current mode
   // ── "check it" mode (badge texture) toggle ──
-  function _resetCheckModeUI() {                                    // force mode OFF + button/indicator OFF (does NOT redraw the live picker)
-    _fz.checkMode = false;
-    var b = document.getElementById('fz-check'); if (b) { b.setAttribute('aria-pressed', 'false'); b.classList.remove('fz-check-on'); }
-    detail.classList.remove('fz-check-bg');                          // check field is a backdrop on the whole modal (minus tbar)
+  function _fzCurMode() { return _fz.checkMode ? _fz.fx : 'normal'; }   // 'normal' | 'check' | 'gold'
+  function _syncFxUI() {                                            // paint BOTH buttons from the single source → impossible "both active" phantom
+    var m = _fzCurMode();
+    var bc = document.getElementById('fz-check'); if (bc) { var onc = m === 'check'; bc.setAttribute('aria-pressed', String(onc)); bc.classList.toggle('fz-check-on', onc); }
+    var bg = document.getElementById('fz-gold'); if (bg) { var ong = m === 'gold'; bg.setAttribute('aria-pressed', String(ong)); bg.classList.toggle('fz-check-on', ong); }
   }
-  function _toggleCheckMode() {
-    _fz.checkMode = !_fz.checkMode;
-    var b = document.getElementById('fz-check'); if (b) { b.setAttribute('aria-pressed', String(_fz.checkMode)); b.classList.toggle('fz-check-on', _fz.checkMode); }
-    detail.classList.toggle('fz-check-bg', _fz.checkMode);           // check field backdrop on the whole modal (minus tbar)
-    _pkRedrawLive();                                                // swap picker thumbnails to the active mode (lazy-renders the badge variant)
+  function _resetCheckModeUI() {                                    // force fx OFF + both buttons OFF + backdrops/scaling OFF (does NOT redraw the live picker)
+    _fz.checkMode = false;
+    _syncFxUI();
+    detail.classList.remove('fz-check-bg');                          // fx field backdrop on the whole modal (minus tbar)
+    detail.classList.remove('fz-fx-smooth');                         // revert to pixelated for the normal pixel-art CA
+  }
+  function _setRenderMode(target) {                                  // 'normal' | 'check' | 'gold' — mutually exclusive tri-state
+    var on = target !== 'normal';
+    _fz.checkMode = on; if (on) _fz.fx = target;
+    _syncFxUI();
+    detail.classList.toggle('fz-check-bg', on);                      // fx field backdrop (reuse the check field for both tiers)
+    detail.classList.toggle('fz-fx-smooth', on);                     // smooth scaling for vector glyphs (star/badge); pixelated for normal CA
+    _pkRedrawLive();                                                // picker treats ANY fx as check thumbnails (gold reuses check at 44px — indistinguishable)
     if (_fz.assignments.size) _animKick();                          // re-render the fused preview in the new mode
-    else _drawStaticPunk();                                         // 0 assignments: nothing to badge-ify; keep the punk square consistent
+    else _drawStaticPunk();                                         // 0 assignments: keep the punk square consistent
   }
   function _drawFzBadgeIcon() {                                     // static icon: blue seal (CSS-spins) + beige check on top
     var sc = document.querySelector('#fz-check .fz-check-seal'), tc = document.querySelector('#fz-check .fz-check-tick');
     if (sc) try { _badgeFillSeal(sc.getContext('2d'), 28, '#6363ff'); } catch (e) {}
     if (tc) try { _badgeFillCheck(tc.getContext('2d'), 28, '#dbd8d1'); } catch (e) {}
+  }
+  function _drawFzStarIcon() {                                      // static icon: the gold star sprite (CSS-spins on hover)
+    var sc = document.querySelector('#fz-gold .fz-star-cv'); if (!sc) return;
+    try { var x = sc.getContext('2d'); x.clearRect(0, 0, 28, 28); x.drawImage(_starSprite(28), 0, 0); } catch (e) {}
   }
   function _refreshPills() {
     var host = document.getElementById('fz-traits'); if (!host) return;
@@ -1989,9 +2075,10 @@ function _extractComposition(decodedHtml) {
     _exportInFlight = true; _animStop();
     var pkWasActive = _pk.active; _pk.active = false;                 // pause the picker (IO/dwell/mount/render all bail on !_pk.active) so its heavy 20-step engine builds don't compete with the export compose → no encoder stall (esp. scrolled to a freshly-mounting region — the "fails if scroll is at the bottom" bug)
     var btn = document.getElementById('fz-export'), origText = btn ? btn.textContent : '↓ MP4';
-    var btnCheck = document.getElementById('fz-check');
+    var btnCheck = document.getElementById('fz-check'), btnGold = document.getElementById('fz-gold');
     if (btn) btn.disabled = true;
     if (btnCheck) btnCheck.disabled = true;   // freeze the mode during export so the MP4 can't switch mid-stream
+    if (btnGold) btnGold.disabled = true;     // both fx buttons frozen → renderMode can't change under the frozen isCheck
     var encoder = null, muxer = null, fileStream = null, _encoderError = null;
     var toDisk = !!window.showSaveFilePicker;   // desktop: native "Save As" + stream (like collection); else mobile share/blob banner
     try {
@@ -2037,8 +2124,8 @@ function _extractComposition(decodedHtml) {
         if (_fz.punkId !== myPunk || !detail.classList.contains('open')) throw new Error('modal changed mid-export');
         _composeFusionFrame();
         cx.fillStyle = punkBg; cx.fillRect(pX, pY, S, S);            // punk-square bg = the modal's bg (status colour); BG modulo overdraws it
-        cx.imageSmoothingEnabled = false;
-        var _eSrc = isCheck ? _fz.comHR : _fz.comCv, _eS = isCheck ? PD : 144;   // check mode = crisp 720 source
+        cx.imageSmoothingEnabled = isCheck;                          // fx (check/gold) = vector glyphs → smooth the 720→832 blit; normal pixel-art CA = nearest
+        var _eSrc = isCheck ? _fz.comHR : _fz.comCv, _eS = isCheck ? PD : 144;   // fx = crisp 720 source
         cx.drawImage(_eSrc, 0, 0, _eS, _eS, pX, pY, S, S);           // fused punk upscaled (nearest)
         var frame = new VideoFrame(card, { timestamp: Math.round(f * 1000000 / FPS), duration: Math.round(1000000 / FPS) });
         encoder.encode(frame, { keyFrame: f % (FPS * 2) === 0 });    // ~2s GOP in both modes
@@ -2060,6 +2147,7 @@ function _extractComposition(decodedHtml) {
       _exportInFlight = false;
       if (btn) { btn.disabled = false; btn.textContent = origText; }
       if (btnCheck) btnCheck.disabled = false;
+      if (btnGold) btnGold.disabled = false;
       if (encoder) { try { encoder.close(); } catch (_) {} }
       if (fileStream) { try { await fileStream.abort(); } catch (_) {} }
       if (detail.classList.contains('open')) {
@@ -2072,8 +2160,9 @@ function _extractComposition(decodedHtml) {
   document.getElementById('fz-export').addEventListener('click', _exportPunkCard);
   document.getElementById('fz-remove').addEventListener('click', _removeSelected);
   document.getElementById('fz-clear').addEventListener('click', _clearAllFusion);
-  document.getElementById('fz-check').addEventListener('click', _toggleCheckMode);   // "check it" mode toggle (static tbar button, wired once)
-  _drawFzBadgeIcon();                                                                 // draw the seal+check icon (button is in static HTML, present at eval)
+  document.getElementById('fz-check').addEventListener('click', function () { _setRenderMode(_fzCurMode() === 'check' ? 'normal' : 'check'); });   // Tier 2 toggle (mutually exclusive with gold)
+  document.getElementById('fz-gold').addEventListener('click', function () { _setRenderMode(_fzCurMode() === 'gold' ? 'normal' : 'gold'); });      // Tier 3 toggle (mutually exclusive with check)
+  _drawFzBadgeIcon(); _drawFzStarIcon();                                              // draw both static button icons (buttons are in static HTML, present at eval)
   (function _injectFzCheckTile() {                                                    // diagonal check-field tile behind the picker; data: URL-encoded (mirrors the L62 favicon pattern)
     var svg = "<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32'><path d='M8 17 l5 6 l11 -14' fill='none' stroke='rgba(99,99,255,0.22)' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/></svg>";
     document.documentElement.style.setProperty('--fz-check-tile', 'url("data:image/svg+xml,' + encodeURIComponent(svg) + '")');
