@@ -821,6 +821,8 @@ body.night #filter-btn { background:#2c2b28; }
   var detail = document.getElementById('punk-detail');
   var overlay = document.getElementById('pd-overlay');
   var pdCanvas = document.getElementById('pd-canvas');
+  var PD = 720;                                   // pd-canvas BACKING = max CSS display (min(720,60vw)). Normal pixel-art blits 144→720 nearest (same blocky look); check mode composes badges at 720 so the vector checks render 1:1 crisp (no pixelated upscale).
+  pdCanvas.width = PD; pdCanvas.height = PD;
   var pdCtx = pdCanvas.getContext('2d');
   var _savedScrollY = 0;
   function lockScroll() { _savedScrollY = window.scrollY || 0; document.body.style.top = '-' + _savedScrollY + 'px'; document.body.style.position = 'fixed'; document.body.style.width = '100%'; }
@@ -834,9 +836,9 @@ body.night #filter-btn { background:#2c2b28; }
     _punkBg = PUNK_BG;                          // instant blue; status read upgrades it async
     document.getElementById('pd-name').textContent = 'ModuloPunk #' + id;
     pdCtx.imageSmoothingEnabled = false;
-    pdCtx.clearRect(0, 0, 144, 144);
-    pdCtx.fillStyle = _punkBg; pdCtx.fillRect(0, 0, 144, 144);
-    if (atlasBmp) pdCtx.drawImage(atlasBmp, (id % ATLAS_COLS) * SRC, Math.floor(id / ATLAS_COLS) * SRC, SRC, SRC, 0, 0, 144, 144);
+    pdCtx.clearRect(0, 0, PD, PD);
+    pdCtx.fillStyle = _punkBg; pdCtx.fillRect(0, 0, PD, PD);
+    if (atlasBmp) pdCtx.drawImage(atlasBmp, (id % ATLAS_COLS) * SRC, Math.floor(id / ATLAS_COLS) * SRC, SRC, SRC, 0, 0, PD, PD);
     var links = document.getElementById('pd-links'); links.textContent = '';
     var os = document.createElement('a'); os.href = 'https://opensea.io/assets/ethereum/0xb47e3cd837ddf8e4c57f05d70ab865de6e193bbb/' + id;
     os.target = '_blank'; os.rel = 'noopener noreferrer'; os.textContent = 'OpenSea ↗'; links.appendChild(os);
@@ -1494,10 +1496,16 @@ function _extractComposition(decodedHtml) {
   // Same centered crop window as paintTo (offC=213/offR=113 for the 144 buffer at CELL=12,
   // subsampled by stride=round(CELL/6)). Fills bg beige then one badge sprite per visible cell.
   function paintToBadge(target, tctx, opts) {
-    const CELL = (opts && opts.cell) || FZ_BADGE_CELL, BG = (opts && opts.bg) || BADGE_BG, W = target.width, H = target.height;
-    const stride = Math.max(1, Math.round(CELL / 6));
-    const visCols = Math.floor(W / CELL), visRows = Math.floor(H / CELL);
-    const offC = Math.floor((450 - visCols * stride) / 2), offR = Math.floor((250 - visRows * stride) / 2);
+    opts = opts || {};
+    const BG = opts.bg || BADGE_BG, W = target.width, H = target.height;
+    let CELL, stride, visCols, visRows, offC, offR;
+    if (opts.full) {                                                 // 1 cell = 1 check over the SAME centered 24-cell window paintTo uses; crispness scales with the buffer W (e.g. 720→CELL 30)
+      visCols = 24; visRows = 24; stride = 1; offC = 213; offR = 113; CELL = Math.floor(W / 24);
+    } else {                                                         // zoomed sub-sample (picker thumbnail): fewer, bigger checks
+      CELL = opts.cell || FZ_BADGE_CELL; stride = Math.max(1, Math.round(CELL / 6));
+      visCols = Math.floor(W / CELL); visRows = Math.floor(H / CELL);
+      offC = Math.floor((450 - visCols * stride) / 2); offR = Math.floor((250 - visRows * stride) / 2);
+    }
     tctx.fillStyle = BG; tctx.fillRect(0, 0, W, H);
     if (visCols <= 0 || visRows <= 0) return;
     const sig = CELL + '|' + BG + '|' + PAL.map(p => p[0] + ',' + p[1] + ',' + p[2]).join(';');
@@ -1521,20 +1529,27 @@ function _extractComposition(decodedHtml) {
               checkMode: false,         // "check it" render mode (badge texture instead of normal CA)
               assignments: new Map(),  // layerId -> { engine, off, offctx, artifactId } (off = 144×144)
               pending: new Map(),       // layerId -> token (in-flight fetch guard)
-              caCv: null, caCtx: null, comCv: null, comCtx: null };
+              caCv: null, caCtx: null, comCv: null, comCtx: null,
+              offHR: null, offHRctx: null, caHR: null, caHRctx: null, comHR: null, comHRctx: null };   // PD-sized scratch for crisp check-mode compose (lazy)
   // Compose at 6px/cell (144×144 = 24 cells × 6) so the artifact's dx glyphs render.
   function _fzAlloc() {
     if (_fz.caCv) return;
     _fz.caCv = _pkOff(144, 144);  _fz.caCtx = _fz.caCv.getContext('2d');   _fz.caCtx.imageSmoothingEnabled = false;
     _fz.comCv = _pkOff(144, 144); _fz.comCtx = _fz.comCv.getContext('2d'); _fz.comCtx.imageSmoothingEnabled = false;
   }
+  function _fzAllocHR() {   // PD-sized scratch (lazy; only when check mode first composes)
+    if (_fz.comHR) return;
+    _fz.offHR = _pkOff(PD, PD); _fz.offHRctx = _fz.offHR.getContext('2d'); _fz.offHRctx.imageSmoothingEnabled = false;
+    _fz.caHR  = _pkOff(PD, PD); _fz.caHRctx  = _fz.caHR.getContext('2d');  _fz.caHRctx.imageSmoothingEnabled  = false;
+    _fz.comHR = _pkOff(PD, PD); _fz.comHRctx = _fz.comHR.getContext('2d'); _fz.comHRctx.imageSmoothingEnabled = false;
+  }
   function _fzStatus(t) { var e = document.getElementById('fz-status'); if (e) e.textContent = t || ''; }
   function _labelFor(li, i) { if (li === BG_ID) return 'Background'; return i === 0 ? 'Body' : (layerNames[String(li)] || ('#' + li)); }
   function _drawStaticPunk() {
     if (_fz.punkId == null || !atlasBmp) return;
-    pdCtx.clearRect(0, 0, 144, 144); pdCtx.imageSmoothingEnabled = false;
-    pdCtx.fillStyle = _punkBg; pdCtx.fillRect(0, 0, 144, 144);
-    pdCtx.drawImage(atlasBmp, (_fz.punkId % ATLAS_COLS) * 24, Math.floor(_fz.punkId / ATLAS_COLS) * 24, 24, 24, 0, 0, 144, 144);
+    pdCtx.clearRect(0, 0, PD, PD); pdCtx.imageSmoothingEnabled = false;
+    pdCtx.fillStyle = _punkBg; pdCtx.fillRect(0, 0, PD, PD);
+    pdCtx.drawImage(atlasBmp, (_fz.punkId % ATLAS_COLS) * 24, Math.floor(_fz.punkId / ATLAS_COLS) * 24, 24, 24, 0, 0, PD, PD);
   }
   // ── Unified animation loop: assignment engines (60fps) + picker previews (~30fps) ──
   var _animRaf = 0, _animN = 0, _exportInFlight = false;
@@ -1545,18 +1560,17 @@ function _extractComposition(decodedHtml) {
   // layer (masked CA if fused, else static). Single source of truth for preview + MP4 export.
   function _composeFusionFrame() {
     _fzAlloc();
-    var pf = _fz.checkMode ? 'paintToBadge' : 'paintTo';            // "check it" mode -> badge texture; pipeline/masks unchanged
-    var po = _fz.checkMode ? { cell: FZ_BADGE_CELL } : undefined;
     _fz.assignments.forEach(function (a) { a.engine.step(a.engine.dtOps); a.engine.applyRects(); a.engine.tickRects && a.engine.tickRects(); });
+    if (_fz.checkMode) { _composeCheckHR(); return; }               // crisp badge path composes at PD (720) into _fz.comHR
     _fz.comCtx.clearRect(0, 0, 144, 144);
     var bgA = _fz.assignments.get(BG_ID);
-    if (bgA) { bgA.engine[pf](bgA.off, bgA.offctx, po); _fz.comCtx.drawImage(bgA.off, 0, 0); }  // full-frame base = background
+    if (bgA) { bgA.engine.paintTo(bgA.off, bgA.offctx); _fz.comCtx.drawImage(bgA.off, 0, 0); }  // full-frame base = background
     for (var i = 0; i < _fz.L.length; i++) {
       var li = _fz.L[i], a = _fz.assignments.get(li);
       if (a && layerBmp) {
         var intr = interiorBmp && INTERIOR_DEF[li];                 // interior-only trait (eyewear): static frame stays, CA fills the lens/screen
         if (intr) _fz.comCtx.drawImage(layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, 144, 144);  // static frame UNDER the interior CA
-        a.engine[pf](a.off, a.offctx, po);                          // 144×144 = centered 24-cell crop @6px/cell (or badge in check mode)
+        a.engine.paintTo(a.off, a.offctx);                          // 144×144 = centered 24-cell crop @6px/cell, WITH dx
         _fz.caCtx.globalCompositeOperation = 'source-over';
         _fz.caCtx.clearRect(0, 0, 144, 144);
         _fz.caCtx.drawImage(a.off, 0, 0);                           // 1:1
@@ -1569,23 +1583,51 @@ function _extractComposition(decodedHtml) {
       }
     }
   }
+  // Check mode: same z-order/masking as the normal path but composed at PD (720) so the vector
+  // badge glyphs render crisp & 1-cell-=-1-check (paintToBadge {full:true} = the same centered
+  // 24-cell window, 1:1). Masks/static layers upscale 24→PD nearest = correct blocky silhouette.
+  function _composeCheckHR() {
+    _fzAllocHR();
+    var S = PD, off = _fz.offHR, offc = _fz.offHRctx, ca = _fz.caHR, cac = _fz.caHRctx, com = _fz.comHRctx;
+    com.clearRect(0, 0, S, S);
+    var bgA = _fz.assignments.get(BG_ID);
+    if (bgA) { bgA.engine.paintToBadge(off, offc, { full: true }); com.drawImage(off, 0, 0); }
+    for (var i = 0; i < _fz.L.length; i++) {
+      var li = _fz.L[i], a = _fz.assignments.get(li);
+      if (a && layerBmp) {
+        var intr = interiorBmp && INTERIOR_DEF[li];
+        if (intr) com.drawImage(layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, S, S);
+        a.engine.paintToBadge(off, offc, { full: true });
+        cac.globalCompositeOperation = 'source-over'; cac.clearRect(0, 0, S, S);
+        cac.drawImage(off, 0, 0);
+        cac.globalCompositeOperation = 'destination-in';
+        cac.drawImage(intr ? interiorBmp : (maskBmp || layerBmp), (li - 1) * 24, 0, 24, 24, 0, 0, S, S);
+        cac.globalCompositeOperation = 'source-over';
+        com.drawImage(ca, 0, 0);
+      } else if (layerBmp) {
+        com.drawImage(layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, S, S);
+      }
+    }
+  }
   function _animFrame() {
     _animRaf = 0;
     if (!detail.classList.contains('open')) return;
     _animN++;
-    if (_fz.assignments.size) {
+    var _skip = _fz.checkMode && (_animN & 1);                        // check mode → ~30fps: the HR (720) compose is heavy and badge colours don't change perceptibly at 60 vs 30 (export renders separately at full rate)
+    if (_fz.assignments.size && !_skip) {
       try {
         _composeFusionFrame();
-        pdCtx.clearRect(0, 0, 144, 144); pdCtx.imageSmoothingEnabled = false;
-        pdCtx.fillStyle = _punkBg; pdCtx.fillRect(0, 0, 144, 144);     // live status background behind the fused layers
-        pdCtx.drawImage(_fz.comCv, 0, 0);                               // 1:1 into the 144 pd-canvas
+        pdCtx.clearRect(0, 0, PD, PD); pdCtx.imageSmoothingEnabled = false;
+        pdCtx.fillStyle = _punkBg; pdCtx.fillRect(0, 0, PD, PD);        // live status background behind the fused layers
+        if (_fz.checkMode) pdCtx.drawImage(_fz.comHR, 0, 0);            // 720→720 1:1 (crisp badges)
+        else pdCtx.drawImage(_fz.comCv, 0, 0, 144, 144, 0, 0, PD, PD);  // 144→720 nearest (pixel-art CA)
       } catch (_) {}
     }
     if (_fz.assignments.size) _animRaf = requestAnimationFrame(_animFrame);
   }
-  function _fzTeardown() { _fz.assignments.clear(); _fz.pending.clear(); _fz.selected = null; _fz.punkId = null; _resetCheckModeUI(); _fz.caCv = null; _fz.comCv = null; _animStopIfIdle(); }   // _resetCheckModeUI = flag OFF + button/field classes OFF (never let the UI outlive checkMode, incl. any future in-modal punk switch)
+  function _fzTeardown() { _fz.assignments.clear(); _fz.pending.clear(); _fz.selected = null; _fz.punkId = null; _resetCheckModeUI(); _fz.caCv = null; _fz.comCv = null; _fz.offHR = null; _fz.caHR = null; _fz.comHR = null; _animStopIfIdle(); }   // _resetCheckModeUI = flag OFF + button/field classes OFF (never let the UI outlive checkMode, incl. any future in-modal punk switch)
   function _resetFusion() { _punkBg = PUNK_BG; _pkTeardown(); _fzTeardown(); _resetCheckModeUI(); var p = document.getElementById('fz-panel'); if (p) p.style.display = 'none'; var p2 = document.getElementById('fz-pick'); if (p2) p2.style.display = 'none'; _fzStatus(''); }
-  function _clearAllFusion() { _fz.assignments.clear(); _fz.pending.clear(); _pkRedrawLive(); _animStopIfIdle(); _refreshPills(); _drawStaticPunk(); _fzStatus('cleared'); }   // keep check mode sticky across Clear-all (view setting, orthogonal to assignments); _pkRedrawLive honors the current mode
+  function _clearAllFusion() { if (_exportInFlight) return; _fz.assignments.clear(); _fz.pending.clear(); _pkRedrawLive(); _animStopIfIdle(); _refreshPills(); _drawStaticPunk(); _fzStatus('cleared'); }   // keep check mode sticky across Clear-all (view setting, orthogonal to assignments); _pkRedrawLive honors the current mode
   // ── "check it" mode (badge texture) toggle ──
   function _resetCheckModeUI() {                                    // force mode OFF + button/indicator OFF (does NOT redraw the live picker)
     _fz.checkMode = false;
@@ -1930,7 +1972,8 @@ function _extractComposition(decodedHtml) {
         _composeFusionFrame();
         cx.fillStyle = punkBg; cx.fillRect(pX, pY, S, S);            // punk-square bg = the modal's bg (status colour); BG modulo overdraws it
         cx.imageSmoothingEnabled = false;
-        cx.drawImage(_fz.comCv, 0, 0, 144, 144, pX, pY, S, S);       // fused punk upscaled (nearest)
+        var _eSrc = _fz.checkMode ? _fz.comHR : _fz.comCv, _eS = _fz.checkMode ? PD : 144;   // check mode = crisp 720 source
+        cx.drawImage(_eSrc, 0, 0, _eS, _eS, pX, pY, S, S);           // fused punk upscaled (nearest)
         var frame = new VideoFrame(card, { timestamp: Math.round(f * 1000000 / FPS), duration: Math.round(1000000 / FPS) });
         encoder.encode(frame, { keyFrame: f % 120 === 0 });
         frame.close();
