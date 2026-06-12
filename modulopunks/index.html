@@ -1961,6 +1961,7 @@ function _extractComposition(decodedHtml) {
     if (!window.VideoEncoder || !window.Mp4Muxer) { alert('Video export not supported by this browser (try Chrome/Edge).'); return; }
     var myPunk = _fz.punkId; if (myPunk == null) return;
     _exportInFlight = true; _animStop();
+    var pkWasActive = _pk.active; _pk.active = false;                 // pause the picker (IO/dwell/mount/render all bail on !_pk.active) so its heavy 20-step engine builds don't compete with the export compose → no encoder stall (esp. scrolled to a freshly-mounting region — the "fails if scroll is at the bottom" bug)
     var btn = document.getElementById('fz-export'), origText = btn ? btn.textContent : '↓ MP4';
     var btnCheck = document.getElementById('fz-check');
     if (btn) btn.disabled = true;
@@ -1996,7 +1997,7 @@ function _extractComposition(decodedHtml) {
       if (toDisk) {                                                   // desktop — native "Save As" dialog + stream to disk (like collection)
         var fh;
         try { fh = await window.showSaveFilePicker({ suggestedName: filename, types: [{ description: 'MP4 video', accept: { 'video/mp4': ['.mp4'] } }] }); }
-        catch (e) { if (e && e.name === 'AbortError') return; throw e; }   // user cancelled the dialog → finally cleans up
+        catch (e) { if (e && (e.name === 'AbortError' || e.name === 'NotAllowedError')) return; throw e; }   // user cancelled OR transient activation lapsed → silent, finally cleans up
         fileStream = await fh.createWritable();
         target = new Mp4Muxer.FileSystemWritableFileStreamTarget(fileStream);
       } else {                                                        // mobile (no File System API) — ArrayBuffer + share/blob banner
@@ -2035,6 +2036,7 @@ function _extractComposition(decodedHtml) {
       if (btnCheck) btnCheck.disabled = false;
       if (encoder) { try { encoder.close(); } catch (_) {} }
       if (fileStream) { try { await fileStream.abort(); } catch (_) {} }
+      if (detail.classList.contains('open')) _pk.active = pkWasActive;   // resume the picker (skip if the modal closed mid-export — _pkTeardown already set it false)
       _animKick();
     }
   }
