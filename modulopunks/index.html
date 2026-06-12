@@ -351,7 +351,8 @@ body.night #fz-export { background:#2c2b28; }
 .fz-check-icon { position:relative; display:block; width:28px; height:28px; }   /* a couple px taller than the ~26px trait pills (canvas backing is 28 → 1:1 crisp) */
 .fz-check-seal, .fz-check-tick { position:absolute; inset:0; display:block; width:28px; height:28px; }
 .fz-check-seal { transform-origin:50% 50%; }
-#fz-check:hover .fz-check-seal, #fz-check:focus-visible .fz-check-seal { animation:fzBadgeSpin 1.3s linear infinite; }   /* spin ONLY on hover/focus — NOT while active (.fz-check-on) */
+#fz-check:hover .fz-check-seal, #fz-check:focus-visible .fz-check-seal,
+#fz-gold:hover .fz-check-seal, #fz-gold:focus-visible .fz-check-seal { animation:fzBadgeSpin 1.3s linear infinite; }   /* spin ONLY on hover/focus — NOT while active (.fz-check-on) */
 /* diagonal check field behind the WHOLE modal body (not the tbar): a fixed backdrop on #punk-detail,
    below the content (z-index 0). The opaque tbar (z-index 2) covers its top; .pd-body (z-index 1)
    holds the content above it. pointer-events:none → never overlaps/blocks anything. */
@@ -364,9 +365,8 @@ body.night #fz-export { background:#2c2b28; }
 #fz-gold:hover, #fz-gold:focus-visible { transform:scale(1.14); }
 #fz-gold:active { transform:scale(0.9); }
 #fz-gold:disabled { opacity:0.3; cursor:default; }
-.fz-star-icon { position:relative; display:block; width:28px; height:28px; }
-.fz-star-cv { display:block; width:28px; height:28px; transform-origin:50% 50%; }
-#fz-gold:hover .fz-star-cv, #fz-gold:focus-visible .fz-star-cv { animation:fzBadgeSpin 1.3s linear infinite; }   /* spin on hover/focus only */
+/* gold backdrop: a solid yellow 5-point-star tile (separate from the check field) */
+#punk-detail.fz-gold-bg::before { background-image:var(--fz-gold-tile); opacity:1; animation:fzDiagScroll 2.5s linear infinite; }
 /* fx modes (check/gold) = vector glyphs → smooth scaling; normal CA stays pixelated */
 #punk-detail.fz-fx-smooth #pd-canvas, #punk-detail.fz-fx-smooth .pk-cv { image-rendering:auto; }
 .pd-tbar { position:relative; z-index:2; }   /* opaque → hides the field at the top of the modal */
@@ -375,8 +375,8 @@ body.night #fz-export { background:#2c2b28; }
 @keyframes pkFlip { 0% { transform:perspective(240px) rotateY(0); } 50% { transform:perspective(240px) rotateY(90deg); } 100% { transform:perspective(240px) rotateY(0); } }
 .pk-slot.pk-flip { animation:pkFlip 0.5s ease; }
 @media (prefers-reduced-motion: reduce) {
-  #fz-check:hover .fz-check-seal, #fz-check:focus-visible .fz-check-seal { animation:none; }
-  #fz-gold:hover .fz-star-cv, #fz-gold:focus-visible .fz-star-cv { animation:none; }
+  #fz-check:hover .fz-check-seal, #fz-check:focus-visible .fz-check-seal,
+  #fz-gold:hover .fz-check-seal, #fz-gold:focus-visible .fz-check-seal { animation:none; }
   #punk-detail.fz-check-bg::before { animation:none; }
   .pk-slot.pk-flip { animation:none; }
 }
@@ -490,7 +490,7 @@ body.night #filter-btn { background:#2c2b28; }
     <div id="fuse-title">Fuse with Modulo Artifacts</div>
     <div id="fz-panel">
       <p class="fz-k">Pick a trait, then pick a modulo to fill it. Several animate at once.</p>
-      <div id="fz-traits"><button id="fz-check" type="button" aria-pressed="false" aria-label="check it — toggle badge mode" title="check it"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-gold" type="button" aria-pressed="false" aria-label="gold stars — toggle tier 3" title="gold stars"><span class="fz-star-icon"><canvas class="fz-star-cv" width="28" height="28"></canvas></span></button><span class="fz-cdot" aria-hidden="true">·</span></div>
+      <div id="fz-traits"><button id="fz-check" type="button" aria-pressed="false" aria-label="check it — toggle badge mode" title="check it"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-gold" type="button" aria-pressed="false" aria-label="gold stars — toggle tier 3" title="gold stars"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><span class="fz-cdot" aria-hidden="true">·</span></div>
     </div>
     <div id="fz-pick">
       <div id="fz-picker"></div>
@@ -1314,6 +1314,7 @@ function _extractComposition(decodedHtml) {
   const GOLD_BODY = '#ffe600', GOLD_HI = '#fffbc8', GOLD_EDGE = '#e6b400', GOLD_LIT = '#f3c212', GOLD_SH = '#ce9f1c', GOLD_STAR_SZ = 0.75;
   function _gLerp(a, b, f) { a = a.replace('#', ''); b = b.replace('#', ''); function h(s, o) { return parseInt(s.substr(o, 2), 16); } var ar = h(a, 0), ag = h(a, 2), ab = h(a, 4), br = h(b, 0), bg = h(b, 2), bb = h(b, 4); return 'rgb(' + ((ar + (br - ar) * f) | 0) + ',' + ((ag + (bg - ag) * f) | 0) + ',' + ((ab + (bb - ab) * f) | 0) + ')'; }
   function _gStarPath(x, cx, cy, RO) { var RI = RO * 0.42; x.beginPath(); for (var i = 0; i < 10; i++) { var a = -Math.PI / 2 + i * Math.PI / 5, R = (i % 2 === 0) ? RO : RI, px = cx + R * Math.cos(a), py = cy + R * Math.sin(a); i ? x.lineTo(px, py) : x.moveTo(px, py); } x.closePath(); }
+  function _gStarStroke(x, cx, cy, RO, color, lw) { x.save(); x.lineJoin = 'round'; x.lineCap = 'round'; x.lineWidth = lw; x.strokeStyle = color; _gStarPath(x, cx, cy, RO); x.stroke(); x.restore(); }   // hollow (outline-only) star for the button glyph
   var _starSpriteCache = new Map();   // CELL -> canvas (one gold star; gold is fixed → no PAL key, no thrash; Map (not 1-slot) so the 720-compose CELL and any other CELL coexist)
   function _starSprite(CELL) {
     var c = _starSpriteCache.get(CELL); if (c) return c;
@@ -1739,14 +1740,16 @@ function _extractComposition(decodedHtml) {
   function _resetCheckModeUI() {                                    // force fx OFF + both buttons OFF + backdrops/scaling OFF (does NOT redraw the live picker)
     _fz.checkMode = false;
     _syncFxUI();
-    detail.classList.remove('fz-check-bg');                          // fx field backdrop on the whole modal (minus tbar)
+    detail.classList.remove('fz-check-bg');                          // fx field backdrops on the whole modal (minus tbar)
+    detail.classList.remove('fz-gold-bg');
     detail.classList.remove('fz-fx-smooth');                         // revert to pixelated for the normal pixel-art CA
   }
   function _setRenderMode(target) {                                  // 'normal' | 'check' | 'gold' — mutually exclusive tri-state
     var on = target !== 'normal';
     _fz.checkMode = on; if (on) _fz.fx = target;
     _syncFxUI();
-    detail.classList.toggle('fz-check-bg', on);                      // fx field backdrop (reuse the check field for both tiers)
+    detail.classList.toggle('fz-check-bg', target === 'check');      // check field backdrop (blue checks)
+    detail.classList.toggle('fz-gold-bg', target === 'gold');        // gold field backdrop (yellow stars) — mutually exclusive with check
     detail.classList.toggle('fz-fx-smooth', on);                     // smooth scaling for vector glyphs (star/badge); pixelated for normal CA
     _pkRedrawLive();                                                // picker treats ANY fx as check thumbnails (gold reuses check at 44px — indistinguishable)
     if (_fz.assignments.size) _animKick();                          // re-render the fused preview in the new mode
@@ -1757,9 +1760,10 @@ function _extractComposition(decodedHtml) {
     if (sc) try { _badgeFillSeal(sc.getContext('2d'), 28, '#6363ff'); } catch (e) {}
     if (tc) try { _badgeFillCheck(tc.getContext('2d'), 28, '#dbd8d1'); } catch (e) {}
   }
-  function _drawFzStarIcon() {                                      // static icon: the gold star sprite (CSS-spins on hover)
-    var sc = document.querySelector('#fz-gold .fz-star-cv'); if (!sc) return;
-    try { var x = sc.getContext('2d'); x.clearRect(0, 0, 28, 28); x.drawImage(_starSprite(28), 0, 0); } catch (e) {}
+  function _drawFzStarIcon() {                                      // static icon: blue seal (CSS-spins) + a HOLLOW beige star on top (mirrors _drawFzBadgeIcon)
+    var sc = document.querySelector('#fz-gold .fz-check-seal'), tc = document.querySelector('#fz-gold .fz-check-tick');
+    if (sc) try { _badgeFillSeal(sc.getContext('2d'), 28, '#6363ff'); } catch (e) {}
+    if (tc) try { var x = tc.getContext('2d'); x.clearRect(0, 0, 28, 28); _gStarStroke(x, 14, 14, 9, '#dbd8d1', 2.4); } catch (e) {}
   }
   function _refreshPills() {
     var host = document.getElementById('fz-traits'); if (!host) return;
@@ -2163,9 +2167,11 @@ function _extractComposition(decodedHtml) {
   document.getElementById('fz-check').addEventListener('click', function () { _setRenderMode(_fzCurMode() === 'check' ? 'normal' : 'check'); });   // Tier 2 toggle (mutually exclusive with gold)
   document.getElementById('fz-gold').addEventListener('click', function () { _setRenderMode(_fzCurMode() === 'gold' ? 'normal' : 'gold'); });      // Tier 3 toggle (mutually exclusive with check)
   _drawFzBadgeIcon(); _drawFzStarIcon();                                              // draw both static button icons (buttons are in static HTML, present at eval)
-  (function _injectFzCheckTile() {                                                    // diagonal check-field tile behind the picker; data: URL-encoded (mirrors the L62 favicon pattern)
-    var svg = "<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32'><path d='M8 17 l5 6 l11 -14' fill='none' stroke='rgba(99,99,255,0.22)' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/></svg>";
-    document.documentElement.style.setProperty('--fz-check-tile', 'url("data:image/svg+xml,' + encodeURIComponent(svg) + '")');
+  (function _injectFzFieldTiles() {                                                   // diagonal fx-field tiles behind the modal; data: URL-encoded (mirrors the L62 favicon pattern)
+    var check = "<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32'><path d='M8 17 l5 6 l11 -14' fill='none' stroke='rgba(99,99,255,0.22)' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/></svg>";
+    document.documentElement.style.setProperty('--fz-check-tile', 'url("data:image/svg+xml,' + encodeURIComponent(check) + '")');
+    var gold = "<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32'><path d='M16 5 L18.7 12.28 L26.46 12.6 L20.37 17.42 L22.47 24.9 L16 20.6 L9.53 24.9 L11.63 17.42 L5.54 12.6 L13.3 12.28 Z' fill='rgba(255,214,0,0.18)'/></svg>";   // solid single-colour yellow 5-point star (RO=11, RI=4.62, centre 16,16)
+    document.documentElement.style.setProperty('--fz-gold-tile', 'url("data:image/svg+xml,' + encodeURIComponent(gold) + '")');
   })();
   // The modal opens the fuse menu automatically (openDetail → _openFusion, which drops a
   // previous punk's assignments via its own pid-changed _fzTeardown). Every close path
