@@ -1491,7 +1491,7 @@ function _extractComposition(decodedHtml) {
   const BADGE_BG = '#dbd8d1';
   let _badgeSprites = null, _badgeSig = '';
   function _bNewCanvas(w, h) { if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(w, h); const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
-  function _bBadgeSprite(CELL, col, bg) { const cv = _bNewCanvas(CELL, CELL), x = cv.getContext('2d'); _badgeFillCheck(x, CELL, col); return cv; }   // check glyph ONLY, in the cell's palette colour (no seal disc); rest stays transparent so the status bg shows through. (bg param unused now — kept for call-site compat.)
+  function _bBadgeSprite(CELL, col, bg) { const cv = _bNewCanvas(CELL, CELL), x = cv.getContext('2d'); _badgeFillSeal(x, CELL, col); _badgeFillCheck(x, CELL, bg); return cv; }   // full badge: seal disc (palette colour) + check (beige) — intact. Only the buffer BACKGROUND around the discs is made transparent (see paintToBadge full branch).
   function _bBuildSprites(CELL, bg) { const normal = []; for (let i = 0; i < PAL.length; i++) normal.push(_bBadgeSprite(CELL, 'rgb(' + PAL[i][0] + ',' + PAL[i][1] + ',' + PAL[i][2] + ')', bg)); if (!PAL.length) normal.push(_bBadgeSprite(CELL, '#000', bg)); return { normal: normal, dither: null }; }
   // Same centered crop window as paintTo (offC=213/offR=113 for the 144 buffer at CELL=12,
   // subsampled by stride=round(CELL/6)). Fills bg beige then one badge sprite per visible cell.
