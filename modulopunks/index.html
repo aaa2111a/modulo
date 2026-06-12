@@ -1763,7 +1763,7 @@ function _extractComposition(decodedHtml) {
   function _drawFzStarIcon() {                                      // static icon: blue seal (CSS-spins) + a HOLLOW beige star on top (mirrors _drawFzBadgeIcon)
     var sc = document.querySelector('#fz-gold .fz-check-seal'), tc = document.querySelector('#fz-gold .fz-check-tick');
     if (sc) try { _badgeFillSeal(sc.getContext('2d'), 28, '#6363ff'); } catch (e) {}
-    if (tc) try { var x = tc.getContext('2d'); x.clearRect(0, 0, 28, 28); _gStarStroke(x, 14, 14, 9, '#dbd8d1', 2.4); } catch (e) {}
+    if (tc) try { var x = tc.getContext('2d'); x.clearRect(0, 0, 28, 28); _gStarStroke(x, 14, 14, 9, GOLD_BODY, 2.4); } catch (e) {}
   }
   function _refreshPills() {
     var host = document.getElementById('fz-traits'); if (!host) return;
