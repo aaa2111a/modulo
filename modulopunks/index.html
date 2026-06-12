@@ -1506,8 +1506,8 @@ function _extractComposition(decodedHtml) {
       visCols = Math.floor(W / CELL); visRows = Math.floor(H / CELL);
       offC = Math.floor((450 - visCols * stride) / 2); offR = Math.floor((250 - visRows * stride) / 2);
     }
-    if (opts.full) tctx.clearRect(0, 0, W, H);                      // fused preview: transparent base → the punk's status bg shows around each check (no fixed beige)
-    else { tctx.fillStyle = BG; tctx.fillRect(0, 0, W, H); }        // picker thumbnail: opaque beige base (no checkerboard show-through)
+    tctx.fillStyle = (PAL.length ? 'rgb(' + PAL[0][0] + ',' + PAL[0][1] + ',' + PAL[0][2] + ')' : BG);   // fondo = PAL[0] (top colour in the artifact's hierarchy); the other colours fall on the discs via the grid's weighted distribution
+    tctx.fillRect(0, 0, W, H);
     if (visCols <= 0 || visRows <= 0) return;
     const sig = CELL + '|' + BG + '|' + PAL.map(p => p[0] + ',' + p[1] + ',' + p[2]).join(';');
     if (_badgeSig !== sig) { _badgeSprites = _bBuildSprites(CELL, BG); _badgeSig = sig; }
