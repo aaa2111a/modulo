@@ -339,6 +339,25 @@ body.night #fz-export { background:#2c2b28; }
   animation:spin 0.8s linear infinite; pointer-events:none; }   /* center via margin, NOT transform (the spin keyframe owns transform) */
 .pk-cv { width:44px; height:44px; display:block; image-rendering:pixelated; }
 .pk-cap { font-size:10px; letter-spacing:.02em; color:var(--text-sub); }
+/* ── "check it" mode: tbar icon (spins on hover) + diagonal check field behind the picker ── */
+@keyframes fzBadgeSpin { to { transform:rotate(360deg); } }   /* distinct from @keyframes spin (L387) */
+@keyframes fzDiagScroll { to { background-position:32px 32px; } }
+#fz-check { display:inline-flex; align-items:center; padding:0 2px; background:none; border:none; cursor:pointer; opacity:0.55; transition:opacity 0.15s; }
+#fz-check:hover, #fz-check:focus-visible, #fz-check.fz-check-on { opacity:1; }
+#fz-check:disabled { opacity:0.3; cursor:default; }
+.fz-check-icon { position:relative; display:block; width:28px; height:28px; }
+.fz-check-seal, .fz-check-tick { position:absolute; inset:0; display:block; width:28px; height:28px; }
+.fz-check-seal { transform-origin:50% 50%; }
+#fz-check:hover .fz-check-seal, #fz-check:focus-visible .fz-check-seal, #fz-check.fz-check-on .fz-check-seal { animation:fzBadgeSpin 1.3s linear infinite; }
+#fz-pick { position:relative; }
+#fz-pick::before { content:''; position:absolute; inset:0; z-index:0; pointer-events:none; opacity:0; border-radius:8px;
+  background-image:var(--fz-check-tile); background-size:32px 32px; transition:opacity 0.3s ease; }
+#fz-pick.fz-check-bg::before { opacity:1; animation:fzDiagScroll 2.5s linear infinite; }
+#fz-picker, .fz-row2 { position:relative; z-index:1; }   /* keep thumbnails + controls above the check field */
+@media (prefers-reduced-motion: reduce) {
+  #fz-check:hover .fz-check-seal, #fz-check:focus-visible .fz-check-seal, #fz-check.fz-check-on .fz-check-seal { animation:none; }
+  #fz-pick.fz-check-bg::before { animation:none; }
+}
 
 /* ── Filter drawer toggle (visible on all viewports) ── */
 #filter-btn { display:inline-flex; align-items:center; gap:7px; position:fixed; left:50%; bottom:20px;
@@ -441,7 +460,7 @@ body.night #filter-btn { background:#2c2b28; }
 
 <div id="pd-overlay">
 <aside id="punk-detail" role="dialog" aria-modal="true" aria-label="Customize punk">
-  <div class="pd-tbar"><span class="pd-title" id="pd-title">Trait fusing</span><span class="pd-tbar-actions"><button id="fz-export" type="button">↓ MP4</button><button id="pd-close" title="close"></button></span></div>
+  <div class="pd-tbar"><span class="pd-title" id="pd-title">Trait fusing</span><span class="pd-tbar-actions"><button id="fz-check" type="button" aria-pressed="false" aria-label="check it — toggle badge mode" title="check it"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-export" type="button">↓ MP4</button><button id="pd-close" title="close"></button></span></div>
   <div class="pd-body">
     <div class="pd-links" id="pd-links"></div>
     <div id="pd-name"></div>
@@ -1248,6 +1267,24 @@ function _extractComposition(decodedHtml) {
   }
 }
 
+  // ── "check it" badge glyph geometry — ported VERBATIM from collection/index.html
+  //    L3390-3404 (the verified-seal SVG). Seal + check are SEPARATE subpaths so the
+  //    tbar icon can spin only the seal. MODULE-level (inside this IIFE, BEFORE
+  //    _createArtifactEngine) so every engine instance shares them. 0..6000 raw coords;
+  //    _badgeXform maps raw->canvas size S and centers the seal.
+  const _BADGE_SEAL_D = 'M2826 5685 c-294 -61 -554 -256 -685 -514 -25 -48 -18 -47 -126 -17 -105 29 -235 38 -343 26 -410 -49 -737 -341 -850 -758 -23 -87 -26 -115 -25 -267 0 -152 3 -180 26 -265 14 -52 22 -96 16 -98 -5 -2 -44 -26 -86 -54 -154 -100 -308 -290 -374 -463 -63 -163 -72 -215 -73 -400 0 -153 3 -180 27 -270 31 -115 99 -262 161 -349 57 -81 162 -185 239 -237 l62 -42 1 -151 c1 -128 5 -166 27 -248 65 -245 223 -471 420 -601 74 -49 205 -110 282 -130 163 -44 363 -42 509 4 34 10 67 19 73 19 7 0 22 -19 34 -42 113 -222 341 -413 579 -486 161 -49 356 -54 515 -13 256 66 505 266 624 500 25 48 18 47 126 17 145 -39 331 -40 479 -1 258 68 485 249 619 495 83 152 135 377 125 548 l-5 89 46 29 c63 40 184 156 243 234 28 36 72 110 99 165 233 476 76 1063 -359 1343 -35 22 -68 42 -74 44 -6 2 -3 27 10 68 46 149 53 352 18 516 -92 433 -431 752 -855 803 -129 16 -290 -1 -408 -43 l-41 -14 -13 30 c-22 54 -103 171 -163 235 -120 130 -301 239 -471 284 -104 27 -310 35 -409 14z';
+  const _BADGE_CHECK_D = 'M3936 3994 c72 -41 108 -127 85 -204 -13 -45 -1131 -1729 -1172 -1767 -13 -12 -37 -26 -52 -32 -42 -16 -123 -13 -160 5 -45 23 -663 639 -695 694 -72 121 13 279 151 282 85 1 100 -9 352 -262 132 -132 243 -240 248 -240 4 0 228 332 498 738 270 405 500 748 512 760 60 65 149 74 233 26z';
+  let _badgeSealP = null, _badgeCheckP = null, _badgeSealOK = true, _badgeCheckOK = true;
+  function _badgeSeal() { if (!_badgeSealP && _badgeSealOK) { try { _badgeSealP = new Path2D(_BADGE_SEAL_D); } catch (_) { _badgeSealOK = false; } } return _badgeSealP; }
+  function _badgeCheck() { if (!_badgeCheckP && _badgeCheckOK) { try { _badgeCheckP = new Path2D(_BADGE_CHECK_D); } catch (_) { _badgeCheckOK = false; } } return _badgeCheckP; }
+  function _badgeXform(ctx, S) { const k = S / 6000; ctx.setTransform(k, 0, 0, -k, -6.5 * S / 600, 599.7 * S / 600); }
+  function _badgeFillSeal(ctx, S, color) { const p = _badgeSeal(); ctx.save(); ctx.fillStyle = color; if (p && _badgeSealOK) { _badgeXform(ctx, S); ctx.fill(p); } else { ctx.beginPath(); ctx.arc(S / 2, S / 2, S * 0.46, 0, Math.PI * 2); ctx.fill(); } ctx.restore(); }
+  function _badgeFillCheck(ctx, S, color) { const p = _badgeCheck(); if (!p || !_badgeCheckOK) return; ctx.save(); ctx.fillStyle = color; _badgeXform(ctx, S); ctx.fill(p); ctx.restore(); }
+  // "check it" cell sizes: fused 144 buffer -> 12px cells (12x12 checks over the same
+  // centered 24-cell crop paintTo uses); picker thumbnail -> bigger cells, fewer checks
+  // (Le: "pocas checks grandes y nítidas" — a legible zoomed badge, not the full crop).
+  const FZ_BADGE_CELL = 12, PK_BADGE_CELL = 8, PK_BADGE_W = 48;
+
 // Engine factory — direct port of html-placeholders/artifact-render.html.
 // Differences from the placeholder:
   function _createArtifactEngine(canvas, rawComposition) {
@@ -1445,15 +1482,43 @@ function _extractComposition(decodedHtml) {
   }
   function render() { paintTo(canvas, ctx); }
 
+  // ── "check it" badge render (ported from collection, simplified) ──────────────
+  //  Per-engine sprite cache: one seal+check sprite per PAL color, keyed CELL|BG|PAL.
+  //  Dropped collection's _bIsDither/_bDitherSprite (modulopunks dither is 6px-subpixel,
+  //  doesn't map to a badge cell) -> always SP.normal. dither:null is intentional.
+  const BADGE_BG = '#dbd8d1';
+  let _badgeSprites = null, _badgeSig = '';
+  function _bNewCanvas(w, h) { if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(w, h); const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+  function _bBadgeSprite(CELL, col, bg) { const cv = _bNewCanvas(CELL, CELL), x = cv.getContext('2d'); _badgeFillSeal(x, CELL, col); _badgeFillCheck(x, CELL, bg); return cv; }
+  function _bBuildSprites(CELL, bg) { const normal = []; for (let i = 0; i < PAL.length; i++) normal.push(_bBadgeSprite(CELL, 'rgb(' + PAL[i][0] + ',' + PAL[i][1] + ',' + PAL[i][2] + ')', bg)); if (!PAL.length) normal.push(_bBadgeSprite(CELL, '#000', bg)); return { normal: normal, dither: null }; }
+  // Same centered crop window as paintTo (offC=213/offR=113 for the 144 buffer at CELL=12,
+  // subsampled by stride=round(CELL/6)). Fills bg beige then one badge sprite per visible cell.
+  function paintToBadge(target, tctx, opts) {
+    const CELL = (opts && opts.cell) || FZ_BADGE_CELL, BG = (opts && opts.bg) || BADGE_BG, W = target.width, H = target.height;
+    const stride = Math.max(1, Math.round(CELL / 6));
+    const visCols = Math.floor(W / CELL), visRows = Math.floor(H / CELL);
+    const offC = Math.floor((450 - visCols * stride) / 2), offR = Math.floor((250 - visRows * stride) / 2);
+    tctx.fillStyle = BG; tctx.fillRect(0, 0, W, H);
+    if (visCols <= 0 || visRows <= 0) return;
+    const sig = CELL + '|' + BG + '|' + PAL.map(p => p[0] + ',' + p[1] + ',' + p[2]).join(';');
+    if (_badgeSig !== sig) { _badgeSprites = _bBuildSprites(CELL, BG); _badgeSig = sig; }
+    const SP = _badgeSprites, gW = visCols * CELL, gH = visRows * CELL, px0 = Math.floor((W - gW) / 2), py0 = Math.floor((H - gH) / 2);
+    for (let r = 0; r < visRows; r++) for (let c = 0; c < visCols; c++) {
+      const gi = (offR + r * stride) * 450 + (offC + c * stride), dx = px0 + c * CELL, dy = py0 + r * CELL;
+      const s = SP.normal[grid[gi]] || SP.normal[0]; if (s) tctx.drawImage(s, dx, dy);   // dither dropped (A4): always SP.normal
+    }
+  }
+
   // ===== ENGINE END =====
 
-  return {step, render, paintTo, paintToNative, applyRects: applyRectShifts, tickRects, dtOps: _sumTokenOps};
+  return {step, render, paintTo, paintToNative, paintToBadge, applyRects: applyRectShifts, tickRects, dtOps: _sumTokenOps};
 }
 
   // ── Fusion state + MULTI-engine compose loop (Phase 3: N traits at once) ──
   var FUSE_CAP = (window.matchMedia && window.matchMedia('(pointer:coarse)').matches) ? 2 : 6;
   var BG_ID = -1;   // synthetic "Background" pseudo-trait id — never in _fz.L, never indexes layerBmp
   var _fz = { raf: 0, punkId: null, L: null, selected: null, tokenSeq: 0,
+              checkMode: false,         // "check it" render mode (badge texture instead of normal CA)
               assignments: new Map(),  // layerId -> { engine, off, offctx, artifactId } (off = 144×144)
               pending: new Map(),       // layerId -> token (in-flight fetch guard)
               caCv: null, caCtx: null, comCv: null, comCtx: null };
@@ -1480,16 +1545,18 @@ function _extractComposition(decodedHtml) {
   // layer (masked CA if fused, else static). Single source of truth for preview + MP4 export.
   function _composeFusionFrame() {
     _fzAlloc();
+    var pf = _fz.checkMode ? 'paintToBadge' : 'paintTo';            // "check it" mode -> badge texture; pipeline/masks unchanged
+    var po = _fz.checkMode ? { cell: FZ_BADGE_CELL } : undefined;
     _fz.assignments.forEach(function (a) { a.engine.step(a.engine.dtOps); a.engine.applyRects(); a.engine.tickRects && a.engine.tickRects(); });
     _fz.comCtx.clearRect(0, 0, 144, 144);
     var bgA = _fz.assignments.get(BG_ID);
-    if (bgA) { bgA.engine.paintTo(bgA.off, bgA.offctx); _fz.comCtx.drawImage(bgA.off, 0, 0); }  // full-frame base = background
+    if (bgA) { bgA.engine[pf](bgA.off, bgA.offctx, po); _fz.comCtx.drawImage(bgA.off, 0, 0); }  // full-frame base = background
     for (var i = 0; i < _fz.L.length; i++) {
       var li = _fz.L[i], a = _fz.assignments.get(li);
       if (a && layerBmp) {
         var intr = interiorBmp && INTERIOR_DEF[li];                 // interior-only trait (eyewear): static frame stays, CA fills the lens/screen
         if (intr) _fz.comCtx.drawImage(layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, 144, 144);  // static frame UNDER the interior CA
-        a.engine.paintTo(a.off, a.offctx);                          // 144×144 = centered 24-cell crop @6px/cell, WITH dx
+        a.engine[pf](a.off, a.offctx, po);                          // 144×144 = centered 24-cell crop @6px/cell (or badge in check mode)
         _fz.caCtx.globalCompositeOperation = 'source-over';
         _fz.caCtx.clearRect(0, 0, 144, 144);
         _fz.caCtx.drawImage(a.off, 0, 0);                           // 1:1
@@ -1516,9 +1583,28 @@ function _extractComposition(decodedHtml) {
     }
     if (_fz.assignments.size) _animRaf = requestAnimationFrame(_animFrame);
   }
-  function _fzTeardown() { _fz.assignments.clear(); _fz.pending.clear(); _fz.selected = null; _fz.punkId = null; _fz.caCv = null; _fz.comCv = null; _animStopIfIdle(); }
-  function _resetFusion() { _punkBg = PUNK_BG; _pkTeardown(); _fzTeardown(); var p = document.getElementById('fz-panel'); if (p) p.style.display = 'none'; var p2 = document.getElementById('fz-pick'); if (p2) p2.style.display = 'none'; _fzStatus(''); }
-  function _clearAllFusion() { _fz.assignments.clear(); _fz.pending.clear(); _animStopIfIdle(); _refreshPills(); _drawStaticPunk(); _fzStatus('cleared'); }
+  function _fzTeardown() { _fz.assignments.clear(); _fz.pending.clear(); _fz.selected = null; _fz.punkId = null; _resetCheckModeUI(); _fz.caCv = null; _fz.comCv = null; _animStopIfIdle(); }   // _resetCheckModeUI = flag OFF + button/field classes OFF (never let the UI outlive checkMode, incl. any future in-modal punk switch)
+  function _resetFusion() { _punkBg = PUNK_BG; _pkTeardown(); _fzTeardown(); _resetCheckModeUI(); var p = document.getElementById('fz-panel'); if (p) p.style.display = 'none'; var p2 = document.getElementById('fz-pick'); if (p2) p2.style.display = 'none'; _fzStatus(''); }
+  function _clearAllFusion() { _fz.assignments.clear(); _fz.pending.clear(); _pkRedrawLive(); _animStopIfIdle(); _refreshPills(); _drawStaticPunk(); _fzStatus('cleared'); }   // keep check mode sticky across Clear-all (view setting, orthogonal to assignments); _pkRedrawLive honors the current mode
+  // ── "check it" mode (badge texture) toggle ──
+  function _resetCheckModeUI() {                                    // force mode OFF + button/indicator OFF (does NOT redraw the live picker)
+    _fz.checkMode = false;
+    var b = document.getElementById('fz-check'); if (b) { b.setAttribute('aria-pressed', 'false'); b.classList.remove('fz-check-on'); }
+    var p = document.getElementById('fz-pick'); if (p) p.classList.remove('fz-check-bg');
+  }
+  function _toggleCheckMode() {
+    _fz.checkMode = !_fz.checkMode;
+    var b = document.getElementById('fz-check'); if (b) { b.setAttribute('aria-pressed', String(_fz.checkMode)); b.classList.toggle('fz-check-on', _fz.checkMode); }
+    var p = document.getElementById('fz-pick'); if (p) p.classList.toggle('fz-check-bg', _fz.checkMode);
+    _pkRedrawLive();                                                // swap picker thumbnails to the active mode (lazy-renders the badge variant)
+    if (_fz.assignments.size) _animKick();                          // re-render the fused preview in the new mode
+    else _drawStaticPunk();                                         // 0 assignments: nothing to badge-ify; keep the punk square consistent
+  }
+  function _drawFzBadgeIcon() {                                     // static icon: blue seal (CSS-spins) + beige check on top
+    var sc = document.querySelector('#fz-check .fz-check-seal'), tc = document.querySelector('#fz-check .fz-check-tick');
+    if (sc) try { _badgeFillSeal(sc.getContext('2d'), 28, '#6363ff'); } catch (e) {}
+    if (tc) try { _badgeFillCheck(tc.getContext('2d'), 28, '#dbd8d1'); } catch (e) {}
+  }
   function _refreshPills() {
     var host = document.getElementById('fz-traits'); if (!host) return;
     [].forEach.call(host.children, function (pill) {
@@ -1590,7 +1676,7 @@ function _extractComposition(decodedHtml) {
   var _hasOSC = (typeof OffscreenCanvas !== 'undefined');
   function _pkOff(w, h) { if (_hasOSC) return new OffscreenCanvas(w, h); var c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
   var PK_MAX_RETRY = 3, PK_DELAYS = [1000, 3000, 8000];   // bounded retry for flaky preview loads (RPC burst-throttle)
-  var _pk = { active: false, total: 0, io: null, cellEls: new Map(), live: new Map(), pending: new Set(), dwell: new Map(), cache: new Map(), failures: new Map() };
+  var _pk = { active: false, total: 0, io: null, cellEls: new Map(), live: new Map(), pending: new Set(), dwell: new Map(), cache: new Map(), cacheCheck: new Map(), checkPending: new Set(), failures: new Map() };
   function _pkCellClick(e) {
     var id = +e.currentTarget.dataset.art; if (!(id >= 0)) return;
     var cur = (_fz.selected != null) ? _fz.assignments.get(_fz.selected) : null;
@@ -1616,14 +1702,49 @@ function _extractComposition(decodedHtml) {
     _pk.live.delete(id);
     if (p.cv && p.cv.parentNode) p.cv.parentNode.removeChild(p.cv);   // canvas out of DOM; ImageData stays in _pk.cache
   }
-  function _pkDraw(id, imgData) {                                       // build an in-DOM thumbnail from cached/fresh ImageData
+  function _pkDraw(id) {                                                // build an in-DOM thumbnail from the cache for the ACTIVE mode
     var el = _pk.cellEls.get(id); if (!el || _pk.live.has(id)) return;
-    var cv = document.createElement('canvas'); cv.width = 24; cv.height = 24; cv.className = 'pk-cv';
+    var src = _fz.checkMode ? (_pk.cacheCheck.get(id) || _pk.cache.get(id)) : _pk.cache.get(id);   // fall back to normal if the check variant isn't ready
+    if (!src) return;                                                  // nothing cached yet -> leave the slot until a mount/lazy-render completes
+    var d = src.width;                                                 // 24 (normal) or PK_BADGE_W (check) — CSS sizes the canvas to the 44px slot
+    var cv = document.createElement('canvas'); cv.width = d; cv.height = d; cv.className = 'pk-cv';
     var ctx = cv.getContext('2d'); ctx.imageSmoothingEnabled = false;
-    ctx.putImageData(imgData, 0, 0);
+    ctx.putImageData(src, 0, 0);
     var slot = el.querySelector('.pk-slot'); (slot || el).appendChild(cv);
     if (slot) slot.classList.remove('pk-err');                          // recovered → drop the dim "failed" placeholder
     _pk.live.set(id, { cv: cv });
+  }
+  // Render the badge thumbnail from an already-built+evolved engine (no rebuild) → cacheCheck.
+  function _pkBadgeFromEngine(id, eng) {
+    try {
+      var bb = _pkOff(PK_BADGE_W, PK_BADGE_W), bctx = bb.getContext('2d'); bctx.imageSmoothingEnabled = false;
+      eng.paintToBadge(bb, bctx, { cell: PK_BADGE_CELL });
+      _pk.cacheCheck.set(id, bctx.getImageData(0, 0, PK_BADGE_W, PK_BADGE_W));
+    } catch (e) {}
+  }
+  // Lazy: render the check variant for a cell whose engine was already GC'd (rebuild from the
+  // CACHED composition — no RPC). Only fired on toggle / cache-hit-while-in-check-mode, for live cells.
+  function _pkRenderCheck(id) {
+    if (!_pk.active || _pk.cacheCheck.has(id) || _pk.checkPending.has(id)) return;
+    if (!_ensureOnChain()) return;
+    _pk.checkPending.add(id);
+    _fetchArtifactComposition(id).then(function (comp) {
+      _pk.checkPending.delete(id);
+      if (!_pk.active || _pk.cacheCheck.has(id) || !_pk.cellEls.has(id)) return;
+      var off = _pkOff(450, 250), octx = off.getContext('2d'); octx.imageSmoothingEnabled = false;
+      var eng; try { eng = _createArtifactEngine(off, comp); } catch (e) { return; }
+      try { for (var s = 0; s < STATIC_STEPS; s++) { eng.step(eng.dtOps); eng.applyRects(); eng.tickRects && eng.tickRects(); } } catch (e) { return; }
+      _pkBadgeFromEngine(id, eng);
+      if (_fz.checkMode && _pk.live.has(id)) { _pkUnmount(id); _pkDraw(id); }   // swap the live normal thumb → badge
+    }).catch(function () { _pk.checkPending.delete(id); });
+  }
+  // Re-draw every live picker cell for the current mode (used by toggle + clear). Snapshot the
+  // keys FIRST — _pkUnmount deletes and _pkDraw re-adds, so iterating _pk.live live would loop forever.
+  function _pkRedrawLive() {
+    if (!_pk.active) return;
+    var ids = Array.prototype.slice.call(_pk.live.keys());
+    ids.forEach(function (id) { _pkUnmount(id); _pkDraw(id); });
+    if (_fz.checkMode) ids.forEach(function (id) { if (!_pk.cacheCheck.has(id)) _pkRenderCheck(id); });   // kick lazy badge render for the visible cells
   }
   // ── Per-cell loading spinner + bounded retry (flaky preview loads under RPC burst-throttle) ──
   function _pkSpinStart(id) { var el = _pk.cellEls.get(id); if (!el) return; var slot = el.querySelector('.pk-slot'); if (!slot || slot.querySelector('.pk-spin')) return; var s = document.createElement('span'); s.className = 'pk-spin'; slot.appendChild(s); }
@@ -1644,7 +1765,7 @@ function _extractComposition(decodedHtml) {
   function _pkMount(id) {
     if (!_pk.active) return;
     if (_pk.live.has(id) || _pk.pending.has(id)) return;
-    if (_pk.cache.has(id)) { _pkDraw(id, _pk.cache.get(id)); return; }   // instant from cache (no fetch / no steps)
+    if (_pk.cache.has(id)) { _pkDraw(id); if (_fz.checkMode && !_pk.cacheCheck.has(id)) _pkRenderCheck(id); return; }   // instant from cache (no fetch / no steps); lazy-render the badge variant if in check mode
     if (!_ensureOnChain()) return;
     _pk.pending.add(id);
     _pkSpinStart(id);                                                    // loading spinner on while the preview fetches/renders
@@ -1663,8 +1784,9 @@ function _extractComposition(decodedHtml) {
       var imgData; try { imgData = tctx.getImageData(0, 0, 24, 24); } catch (e) { _pkFail(id, true); return; }
       _pk.failures.delete(id);                                          // success → reset failure record + clear spinner
       _pk.cache.set(id, imgData);
+      if (_fz.checkMode) _pkBadgeFromEngine(id, eng);                   // mounting while already in check mode → render the badge variant from the in-hand engine (no rebuild)
       _pkSpinStop(id);
-      _pkDraw(id, imgData);
+      _pkDraw(id);
       // eng / off / tmp are local → GC'd (no rAF, no stored engine ref)
     }).catch(function () { _pk.pending.delete(id); _pkFail(id, false); });   // fetch failed (transient) → retry, spinner stays
   }
@@ -1686,7 +1808,8 @@ function _extractComposition(decodedHtml) {
     var host = document.getElementById('fz-picker'); if (!host) return;
     _pk.dwell.forEach(function (t) { clearTimeout(t); }); _pk.dwell.clear();
     _pk.failures.forEach(function (rec) { if (rec.timer) clearTimeout(rec.timer); }); _pk.failures.clear();   // drop stale retry timers from a prior open
-    _pk.live.clear(); _pk.pending.clear();          // canvases removed by host.textContent='' below; cache kept
+    _pk.checkPending.clear();                        // drop in-flight lazy badge renders
+    _pk.live.clear(); _pk.pending.clear();          // canvases removed by host.textContent='' below; cache + cacheCheck kept
     host.textContent = ''; _pk.cellEls.clear();
     if (!_pk.io) _pk.io = new IntersectionObserver(_pkIO, { root: detail, rootMargin: '100px 0px', threshold: 0.01 });
     else _pk.io.disconnect();
@@ -1713,6 +1836,7 @@ function _extractComposition(decodedHtml) {
     if (_pk.io) _pk.io.disconnect();
     _pk.dwell.forEach(function (t) { clearTimeout(t); }); _pk.dwell.clear();
     _pk.failures.forEach(function (rec) { if (rec.timer) clearTimeout(rec.timer); }); _pk.failures.clear();   // cancel pending retries on close
+    _pk.checkPending.clear();                                       // cancel in-flight lazy badge renders (cache + cacheCheck survive for re-open)
     _pk.live.forEach(function (p) { if (p.cv && p.cv.parentNode) p.cv.parentNode.removeChild(p.cv); });
     _pk.live.clear(); _pk.pending.clear(); _pk.cellEls.clear();
     var host = document.getElementById('fz-picker'); if (host) host.textContent = '';
@@ -1758,7 +1882,9 @@ function _extractComposition(decodedHtml) {
     var myPunk = _fz.punkId; if (myPunk == null) return;
     _exportInFlight = true; _animStop();
     var btn = document.getElementById('fz-export'), origText = btn ? btn.textContent : '↓ MP4';
+    var btnCheck = document.getElementById('fz-check');
     if (btn) btn.disabled = true;
+    if (btnCheck) btnCheck.disabled = true;   // freeze the mode during export so the MP4 can't switch mid-stream
     var encoder = null, muxer = null, fileStream = null;
     var toDisk = !!window.showSaveFilePicker;   // desktop: native "Save As" + stream (like collection); else mobile share/blob banner
     try {
@@ -1822,6 +1948,7 @@ function _extractComposition(decodedHtml) {
     } finally {
       _exportInFlight = false;
       if (btn) { btn.disabled = false; btn.textContent = origText; }
+      if (btnCheck) btnCheck.disabled = false;
       if (encoder) { try { encoder.close(); } catch (_) {} }
       if (fileStream) { try { await fileStream.abort(); } catch (_) {} }
       _animKick();
@@ -1830,6 +1957,12 @@ function _extractComposition(decodedHtml) {
   document.getElementById('fz-export').addEventListener('click', _exportPunkCard);
   document.getElementById('fz-remove').addEventListener('click', _removeSelected);
   document.getElementById('fz-clear').addEventListener('click', _clearAllFusion);
+  document.getElementById('fz-check').addEventListener('click', _toggleCheckMode);   // "check it" mode toggle (static tbar button, wired once)
+  _drawFzBadgeIcon();                                                                 // draw the seal+check icon (button is in static HTML, present at eval)
+  (function _injectFzCheckTile() {                                                    // diagonal check-field tile behind the picker; data: URL-encoded (mirrors the L62 favicon pattern)
+    var svg = "<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32'><path d='M8 17 l5 6 l11 -14' fill='none' stroke='rgba(99,99,255,0.22)' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/></svg>";
+    document.documentElement.style.setProperty('--fz-check-tile', 'url("data:image/svg+xml,' + encodeURIComponent(svg) + '")');
+  })();
   // The modal opens the fuse menu automatically (openDetail → _openFusion, which drops a
   // previous punk's assignments via its own pid-changed _fzTeardown). Every close path
   // (red dot / Escape / backdrop) routes through closeDetail() → _resetFusion().
