@@ -1491,7 +1491,7 @@ function _extractComposition(decodedHtml) {
   const BADGE_BG = '#dbd8d1';
   let _badgeSprites = null, _badgeSig = '';
   function _bNewCanvas(w, h) { if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(w, h); const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
-  function _bBadgeSprite(CELL, col, bg) { const cv = _bNewCanvas(CELL, CELL), x = cv.getContext('2d'); _badgeFillSeal(x, CELL, col); _badgeFillCheck(x, CELL, bg); return cv; }
+  function _bBadgeSprite(CELL, col, bg) { const cv = _bNewCanvas(CELL, CELL), x = cv.getContext('2d'); _badgeFillCheck(x, CELL, col); return cv; }   // check glyph ONLY, in the cell's palette colour (no seal disc); rest stays transparent so the status bg shows through. (bg param unused now — kept for call-site compat.)
   function _bBuildSprites(CELL, bg) { const normal = []; for (let i = 0; i < PAL.length; i++) normal.push(_bBadgeSprite(CELL, 'rgb(' + PAL[i][0] + ',' + PAL[i][1] + ',' + PAL[i][2] + ')', bg)); if (!PAL.length) normal.push(_bBadgeSprite(CELL, '#000', bg)); return { normal: normal, dither: null }; }
   // Same centered crop window as paintTo (offC=213/offR=113 for the 144 buffer at CELL=12,
   // subsampled by stride=round(CELL/6)). Fills bg beige then one badge sprite per visible cell.
@@ -1506,7 +1506,8 @@ function _extractComposition(decodedHtml) {
       visCols = Math.floor(W / CELL); visRows = Math.floor(H / CELL);
       offC = Math.floor((450 - visCols * stride) / 2); offR = Math.floor((250 - visRows * stride) / 2);
     }
-    tctx.fillStyle = BG; tctx.fillRect(0, 0, W, H);
+    if (opts.full) tctx.clearRect(0, 0, W, H);                      // fused preview: transparent base → the punk's status bg shows around each check (no fixed beige)
+    else { tctx.fillStyle = BG; tctx.fillRect(0, 0, W, H); }        // picker thumbnail: opaque beige base (no checkerboard show-through)
     if (visCols <= 0 || visRows <= 0) return;
     const sig = CELL + '|' + BG + '|' + PAL.map(p => p[0] + ',' + p[1] + ',' + p[2]).join(';');
     if (_badgeSig !== sig) { _badgeSprites = _bBuildSprites(CELL, BG); _badgeSig = sig; }
