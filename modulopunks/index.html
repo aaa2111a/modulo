@@ -381,6 +381,28 @@ body.night #fz-export { background:#2c2b28; }
   .pk-slot.pk-flip { animation:none; }
 }
 
+/* ── Export quality popup (desktop) ── */
+#fz-export-modal { display:none; position:fixed; inset:0; z-index:810; background:rgba(0,0,0,0.55); align-items:center; justify-content:center; }
+#fz-export-modal.active { display:flex; }
+#fz-export-modal-window { width:min(92vw,460px); background:var(--bg); border:0.5px solid var(--border-strong); border-radius:12px; display:flex; flex-direction:column; box-shadow:0 24px 60px rgba(0,0,0,0.5); overflow:hidden; }
+#fz-export-modal-tbar { height:34px; display:flex; align-items:center; padding:0 14px; background:var(--tbar-bg); border-bottom:0.5px solid var(--border-mid); }
+#fz-export-modal-title { font-size:11px; letter-spacing:.10em; text-transform:uppercase; color:var(--text-sub); }
+#fz-export-modal-body { padding:18px 20px 16px; }
+#fz-export-modal-hint { font-size:11px; letter-spacing:.04em; line-height:1.5; color:var(--text-sub); margin:0 0 14px; }
+#fz-export-modal-options { display:flex; flex-direction:column; gap:8px; margin-bottom:18px; }
+.fz-eopt { display:flex; align-items:flex-start; gap:10px; padding:11px 12px; border:0.5px solid var(--border-mid); border-radius:7px; cursor:pointer; background:var(--bg-alt); }
+.fz-eopt:hover { border-color:var(--border-strong); }
+.fz-eopt input[type="radio"] { margin-top:2px; flex-shrink:0; accent-color:var(--text); }
+.fz-eopt-label { display:flex; flex-direction:column; gap:3px; min-width:0; }
+.fz-eopt-title { font-size:12px; letter-spacing:.02em; color:var(--text); }
+.fz-eopt-sub { font-size:10px; letter-spacing:.03em; color:var(--text-sub); }
+.fz-eopt.disabled { opacity:0.42; cursor:not-allowed; }
+#fz-export-modal-actions { display:flex; justify-content:flex-end; gap:8px; border-top:0.5px solid var(--border); padding-top:14px; }
+#fz-export-modal-cancel, #fz-export-modal-go { padding:7px 16px; font-size:10px; letter-spacing:.08em; text-transform:uppercase; border-radius:6px; border:0.5px solid var(--border-mid); background:var(--bg-alt); color:var(--text); cursor:pointer; transition:filter 0.14s, border-color 0.14s; }
+#fz-export-modal-cancel:hover { border-color:var(--border-strong); }
+#fz-export-modal-go { background:var(--text); color:var(--bg); border-color:var(--text); }
+#fz-export-modal-go:hover { filter:brightness(0.9); }
+
 /* ── Filter drawer toggle (visible on all viewports) ── */
 #filter-btn { display:inline-flex; align-items:center; gap:7px; position:fixed; left:50%; bottom:20px;
   transform:translateX(-50%); z-index:600; font-family:monospace; font-size:12px; letter-spacing:.06em;
@@ -505,6 +527,21 @@ body.night #filter-btn { background:#2c2b28; }
 </div>
 
 <div id="mobile-dl-banner"><a id="mobile-dl-link" href="#">Tap to save MP4</a></div>
+
+<!-- Export quality popup (DESKTOP only; mobile exports standard directly). Mirrors collection's #export-modal pattern. Body-level sibling (NOT inside #punk-detail). -->
+<div id="fz-export-modal">
+  <div id="fz-export-modal-window">
+    <div id="fz-export-modal-tbar"><span id="fz-export-modal-title">Export quality</span></div>
+    <div id="fz-export-modal-body">
+      <p id="fz-export-modal-hint">Pick a quality preset for the MP4.</p>
+      <div id="fz-export-modal-options">
+        <label class="fz-eopt"><input type="radio" name="fz-export-preset" value="std" checked><span class="fz-eopt-label"><span class="fz-eopt-title">Standard · 1080×1080 · 30 fps</span><span class="fz-eopt-sub">~20 MB · works everywhere</span></span></label>
+        <label class="fz-eopt" id="fz-eopt-hq"><input type="radio" name="fz-export-preset" value="hq"><span class="fz-eopt-label"><span class="fz-eopt-title">High quality · 2000×2000 · 60 fps</span><span class="fz-eopt-sub" id="fz-eopt-hq-sub">larger file · smoother spin</span></span></label>
+      </div>
+      <div id="fz-export-modal-actions"><button id="fz-export-modal-cancel" type="button">Cancel</button><button id="fz-export-modal-go" type="button">Export</button></div>
+    </div>
+  </div>
+</div>
 
 <div id="boot"><div class="spin"></div><div id="boot-msg">Loading punks…</div></div>
 
@@ -1017,7 +1054,7 @@ body.night #filter-btn { background:#2c2b28; }
   canvas.addEventListener('mousemove', onMove);
   canvas.addEventListener('mouseleave', onLeave);
   canvas.addEventListener('click', function (e) { var id = hitTest(e.clientX, e.clientY); if (id >= 0) openDetail(id); });
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { closeDetail(); document.body.classList.remove('filters-open'); } });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { if (_fzExportModalOpen()) { _closeFzExportModal(); return; } closeDetail(); document.body.classList.remove('filters-open'); } });
   // Use the window resize event (NOT ResizeObserver on body) — sizeSpacer() mutates
   // section min-height, which would re-trigger a body/section ResizeObserver every
   // layout (P2-1). window.resize fires only on real viewport changes (width, mobile
@@ -2121,7 +2158,7 @@ function _extractComposition(decodedHtml) {
       wireBlob();
     }
   }
-  async function _exportPunkCard() {
+  async function _exportPunkCard(preset) {
     if (_exportInFlight) return;
     if (!window.VideoEncoder || !window.Mp4Muxer) { alert('Video export not supported by this browser (try Chrome/Edge).'); return; }
     var myPunk = _fz.punkId; if (myPunk == null) return;
@@ -2136,8 +2173,11 @@ function _extractComposition(decodedHtml) {
     var toDisk = !!window.showSaveFilePicker;   // desktop: native "Save As" + stream (like collection); else mobile share/blob banner
     try {
       var isCheck = _fz.checkMode;                                    // frozen for the whole export (the toggle is disabled above) — gates the check-mode perf path
-      var W = 1080, H = 1080, FPS = isCheck ? 30 : 60, FRAMES = FPS * 20, BITRATE = 8000000;   // check mode → 30fps clip: the badge texture is slow-moving (live preview already runs it at 30fps), and this halves the heavy 720 compose AND the encode count
-      var ladder = ['avc1.64002a', 'avc1.640028', 'avc1.4d4028', 'avc1.42e01f'], codec = null;
+      var _hq = (preset === 'hq');                                    // desktop high-quality preset (popup); default / mobile = standard
+      var W, H, FPS, BITRATE, ladder, codec = null;
+      if (_hq) { W = 2000; H = 2000; FPS = 60; BITRATE = 30000000; ladder = ['avc1.640034', 'avc1.640033']; }   // L5.2 / L5.1 — both conformant for 2000²@60 (~937,500 MB/s); non-conformant lower levels excluded so a permissive isConfigSupported can't pick a level that lies about its capacity
+      else { W = 1080; H = 1080; FPS = isCheck ? 30 : 60; BITRATE = 8000000; ladder = ['avc1.64002a', 'avc1.640028', 'avc1.4d4028', 'avc1.42e01f']; }   // standard: check/gold 30fps (heavy 720 compose, slow-moving), normal 60fps
+      var FRAMES = FPS * 20;
       for (var ci = 0; ci < ladder.length; ci++) {
         var sup = null; try { sup = await VideoEncoder.isConfigSupported({ codec: ladder[ci], width: W, height: H, bitrate: BITRATE, framerate: FPS, bitrateMode: 'constant', latencyMode: 'quality', hardwareAcceleration: 'prefer-hardware' }); } catch (_) {}
         if (sup && sup.supported) { codec = ladder[ci]; break; }
@@ -2145,7 +2185,7 @@ function _extractComposition(decodedHtml) {
       if (!codec) { alert('No supported H.264 configuration on this device.'); return; }
       var capBg = '#dbd8d1';   // beige card frame + caption strip (like collection's card)
       var punkBg = _punkBg;    // punk-square bg = exactly what the modal shows (status colour, or BG modulo fills it)
-      var S = 832, pX = Math.floor((W - S) / 2), pY = 40;            // square punk above the caption (no overlap)
+      var S = Math.round(W * 0.7703703703), pX = Math.floor((W - S) / 2), pY = Math.round(W * 0.037);   // W-relative → 832 / 40 exactly at W=1080 (byte-equiv std); scales for the 2000² card
       var card = _pkOff(W, H), cx = card.getContext('2d'); cx.imageSmoothingEnabled = false;
       cx.fillStyle = capBg; cx.fillRect(0, 0, W, H);
       var SERIF = "'Times New Roman', Times, serif";
@@ -2185,9 +2225,9 @@ function _extractComposition(decodedHtml) {
         encoder.encode(frame, { keyFrame: f % (FPS * 2) === 0 });    // ~2s GOP in both modes
         frame.close();
         if (_encoderError) throw _encoderError;                      // dead encoder surfaces cleanly instead of encoding into a closed encoder / spinning the stall guard
-        if (isCheck) await new Promise(function (r) { setTimeout(r, 0); });   // yield each frame so the encoder.output drain (muxer.addVideoChunk, main-thread) interleaves with the heavy 720 compose → no stall starvation
-        var stall = 0;
-        while (encoder.encodeQueueSize > 2) { if (++stall > 1500) throw new Error('VideoEncoder stalled'); await new Promise(function (r) { setTimeout(r, 0); }); }
+        if (isCheck || _hq) await new Promise(function (r) { setTimeout(r, 0); });   // yield each frame so the encoder.output drain (muxer.addVideoChunk, main-thread) interleaves with the heavy 720 compose / 2000² encode → no stall starvation
+        var stall = 0, STALL_MAX = _hq ? 4000 : 1500;               // hq (2000²/60) encodes slower → more patience before declaring a dead encoder
+        while (encoder.encodeQueueSize > 2) { if (++stall > STALL_MAX) throw new Error('VideoEncoder stalled'); await new Promise(function (r) { setTimeout(r, 0); }); }
         if (f % 30 === 0 && btn) { btn.textContent = '▪ ' + Math.round(f / FRAMES * 100) + '%'; await new Promise(function (r) { setTimeout(r, 0); }); }
       }
       await encoder.flush(); encoder.close(); encoder = null;
@@ -2211,7 +2251,42 @@ function _extractComposition(decodedHtml) {
       _animKick();
     }
   }
-  document.getElementById('fz-export').addEventListener('click', _exportPunkCard);
+  // ── Export quality popup (desktop only; mobile exports standard directly) ──
+  var _fzExportModal = null, _hqExportSupported = null;            // _hqExportSupported: null=unprobed → bool (cached across opens)
+  async function _probeHqExport() {
+    if (_hqExportSupported !== null) return _hqExportSupported;
+    var L = ['avc1.640034', 'avc1.640033'], ok = false;            // probe the FULL hq ladder (L5.2 + L5.1) → many GPUs cap at L5.1; probing only L5.2 would false-negative
+    for (var i = 0; i < L.length; i++) {
+      try { var s = await VideoEncoder.isConfigSupported({ codec: L[i], width: 2000, height: 2000, bitrate: 30000000, framerate: 60, bitrateMode: 'constant', latencyMode: 'quality', hardwareAcceleration: 'prefer-hardware' }); if (s && s.supported) { ok = true; break; } } catch (_) {}
+    }
+    _hqExportSupported = ok; return ok;
+  }
+  function _fzExportModalOpen() { return !!(_fzExportModal && _fzExportModal.classList.contains('active')); }
+  function _closeFzExportModal() { if (_fzExportModal) _fzExportModal.classList.remove('active'); }
+  function _openFzExportModal() {
+    if (_exportInFlight) return;
+    if (!_fzExportModal) _fzExportModal = document.getElementById('fz-export-modal');
+    if (!_fzExportModal) { _exportPunkCard('std'); return; }        // popup missing → just export std
+    var stdRadio = _fzExportModal.querySelector('input[value="std"]'); if (stdRadio) stdRadio.checked = true;   // reset to std on every open (no stale hq from a cancelled popup)
+    _fzExportModal.classList.add('active');
+    var cancel = document.getElementById('fz-export-modal-cancel'); if (cancel) setTimeout(function () { try { cancel.focus(); } catch (_) {} }, 0);
+    _probeHqExport().then(function (okHq) {                          // disable the hq option if no conformant H.264 level (cached → runs once)
+      var hqOpt = document.getElementById('fz-eopt-hq'), hqIn = hqOpt && hqOpt.querySelector('input'), sub = document.getElementById('fz-eopt-hq-sub');
+      if (!okHq && hqOpt) { hqOpt.classList.add('disabled'); if (hqIn) { hqIn.disabled = true; hqIn.checked = false; } if (sub) sub.textContent = 'not supported on this browser'; if (stdRadio) stdRadio.checked = true; }
+    });
+  }
+  document.getElementById('fz-export').addEventListener('click', function () {
+    if (window.showSaveFilePicker) _openFzExportModal();            // desktop → preset popup
+    else _exportPunkCard('std');                                    // mobile → direct standard export (byte-equivalent to the old default)
+  });
+  document.getElementById('fz-export-modal-cancel').addEventListener('click', _closeFzExportModal);
+  document.getElementById('fz-export-modal').addEventListener('click', function (e) { if (e.target.id === 'fz-export-modal') _closeFzExportModal(); });   // backdrop click
+  document.getElementById('fz-export-modal-go').addEventListener('click', function () {
+    var checked = _fzExportModal && _fzExportModal.querySelector('input[name="fz-export-preset"]:checked');
+    var preset = (checked && checked.value === 'hq') ? 'hq' : 'std';
+    _closeFzExportModal();
+    _exportPunkCard(preset);
+  });
   document.getElementById('fz-remove').addEventListener('click', _removeSelected);
   document.getElementById('fz-clear').addEventListener('click', _clearAllFusion);
   document.getElementById('fz-check').addEventListener('click', function () { _setRenderMode(_fzCurMode() === 'check' ? 'normal' : 'check'); });   // Tier 2 toggle (mutually exclusive with gold)
