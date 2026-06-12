@@ -1807,7 +1807,7 @@ function _extractComposition(decodedHtml) {
     if (!_pk.active) return;
     var vis = new Set(_pk.onScreen);                                // RC1 fix: re-sync EVERY visible cell (incl. pending/dwell/failed/just-unmounted in the 100px band),
     _pk.live.forEach(function (_v, id) { vis.add(id); });           // not just `live` — else those keep their pre-toggle mode forever (stale in BOTH directions)
-    var ids = Array.prototype.slice.call(vis);
+    var ids = Array.from(vis);                                      // ⚠ NOT Array.prototype.slice.call — a Set/iterator is NOT array-like (no .length) → slice.call returns [] → the whole redraw silently no-op'd (only IO/scroll refreshed cards). THE real root cause.
     ids.forEach(function (id, idx) {
       var instant = !_fz.checkMode || _pk.cacheCheck.has(id);
       _pkUnmount(id); _pkDraw(id);                                  // _pkDraw is a no-op when nothing is cached yet (pending/dwell cells); else draws the CURRENT mode
