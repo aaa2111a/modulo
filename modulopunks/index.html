@@ -1963,10 +1963,11 @@ function _extractComposition(decodedHtml) {
     var btnCheck = document.getElementById('fz-check');
     if (btn) btn.disabled = true;
     if (btnCheck) btnCheck.disabled = true;   // freeze the mode during export so the MP4 can't switch mid-stream
-    var encoder = null, muxer = null, fileStream = null;
+    var encoder = null, muxer = null, fileStream = null, _encoderError = null;
     var toDisk = !!window.showSaveFilePicker;   // desktop: native "Save As" + stream (like collection); else mobile share/blob banner
     try {
-      var W = 1080, H = 1080, FPS = 60, FRAMES = FPS * 20, BITRATE = 8000000;
+      var isCheck = _fz.checkMode;                                    // frozen for the whole export (the toggle is disabled above) — gates the check-mode perf path
+      var W = 1080, H = 1080, FPS = isCheck ? 30 : 60, FRAMES = FPS * 20, BITRATE = 8000000;   // check mode → 30fps clip: the badge texture is slow-moving (live preview already runs it at 30fps), and this halves the heavy 720 compose AND the encode count
       var ladder = ['avc1.64002a', 'avc1.640028', 'avc1.4d4028', 'avc1.42e01f'], codec = null;
       for (var ci = 0; ci < ladder.length; ci++) {
         var sup = null; try { sup = await VideoEncoder.isConfigSupported({ codec: ladder[ci], width: W, height: H, bitrate: BITRATE, framerate: FPS, bitrateMode: 'constant', latencyMode: 'quality', hardwareAcceleration: 'prefer-hardware' }); } catch (_) {}
@@ -2000,7 +2001,7 @@ function _extractComposition(decodedHtml) {
         target = new Mp4Muxer.ArrayBufferTarget();
       }
       muxer = new Mp4Muxer.Muxer({ target: target, video: { codec: 'avc', width: W, height: H, frameRate: FPS }, fastStart: 'fragmented' });
-      encoder = new VideoEncoder({ output: function (chunk, meta) { muxer.addVideoChunk(chunk, meta); }, error: function (e) { console.error('[card-export]', e); } });
+      encoder = new VideoEncoder({ output: function (chunk, meta) { muxer.addVideoChunk(chunk, meta); }, error: function (e) { console.error('[card-export]', e); _encoderError = _encoderError || e; } });
       encoder.configure({ codec: codec, width: W, height: H, bitrate: BITRATE, framerate: FPS, bitrateMode: 'constant', latencyMode: 'quality', hardwareAcceleration: 'prefer-hardware' });
 
       for (var f = 0; f < FRAMES; f++) {
@@ -2008,13 +2009,15 @@ function _extractComposition(decodedHtml) {
         _composeFusionFrame();
         cx.fillStyle = punkBg; cx.fillRect(pX, pY, S, S);            // punk-square bg = the modal's bg (status colour); BG modulo overdraws it
         cx.imageSmoothingEnabled = false;
-        var _eSrc = _fz.checkMode ? _fz.comHR : _fz.comCv, _eS = _fz.checkMode ? PD : 144;   // check mode = crisp 720 source
+        var _eSrc = isCheck ? _fz.comHR : _fz.comCv, _eS = isCheck ? PD : 144;   // check mode = crisp 720 source
         cx.drawImage(_eSrc, 0, 0, _eS, _eS, pX, pY, S, S);           // fused punk upscaled (nearest)
         var frame = new VideoFrame(card, { timestamp: Math.round(f * 1000000 / FPS), duration: Math.round(1000000 / FPS) });
-        encoder.encode(frame, { keyFrame: f % 120 === 0 });
+        encoder.encode(frame, { keyFrame: f % (FPS * 2) === 0 });    // ~2s GOP in both modes
         frame.close();
+        if (_encoderError) throw _encoderError;                      // dead encoder surfaces cleanly instead of encoding into a closed encoder / spinning the stall guard
+        if (isCheck) await new Promise(function (r) { setTimeout(r, 0); });   // yield each frame so the encoder.output drain (muxer.addVideoChunk, main-thread) interleaves with the heavy 720 compose → no stall starvation
         var stall = 0;
-        while (encoder.encodeQueueSize > 4) { if (++stall > 600) throw new Error('VideoEncoder stalled'); await new Promise(function (r) { setTimeout(r, 0); }); }
+        while (encoder.encodeQueueSize > 2) { if (++stall > 1500) throw new Error('VideoEncoder stalled'); await new Promise(function (r) { setTimeout(r, 0); }); }
         if (f % 30 === 0 && btn) { btn.textContent = '▪ ' + Math.round(f / FRAMES * 100) + '%'; await new Promise(function (r) { setTimeout(r, 0); }); }
       }
       await encoder.flush(); encoder.close(); encoder = null;
