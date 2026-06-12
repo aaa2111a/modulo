@@ -1572,13 +1572,21 @@ function _extractComposition(decodedHtml) {
   //    crop the badge uses; composed at PD=720 via _composeGoldHR for crisp vector stars) ──
   function paintToStars(target, tctx, opts) {
     opts = opts || {};
-    var W = target.width, H = target.height, CELL = Math.floor(W / 24), offC = 213, offR = 113;
+    var W = target.width, H = target.height, CELL, stride, visCols, visRows, offC, offR;
+    if (opts.cell) {                                                 // picker-thumbnail: fewer/bigger stars (mirrors paintToBadge's zoomed sub-sample else-branch)
+      CELL = opts.cell; stride = Math.max(1, Math.round(CELL / 6));
+      visCols = Math.floor(W / CELL); visRows = Math.floor(H / CELL);
+      offC = Math.floor((450 - visCols * stride) / 2); offR = Math.floor((250 - visRows * stride) / 2);
+    } else {                                                         // full centered 24-cell crop (720 HR compose / export) — byte-identical to before
+      CELL = Math.floor(W / 24); stride = 1; visCols = 24; visRows = 24; offC = 213; offR = 113;
+    }
+    if (visCols <= 0 || visRows <= 0) return;
     var star = _starSprite(CELL);
     var beHi = _gLerp(GOLD_LIT, '#ffffff', 0.33), beSh = _gLerp(GOLD_LIT, '#000000', 0.42), lw = Math.max(1, Math.round(CELL * 0.1));
-    var gW = 24 * CELL, px0 = Math.floor((W - gW) / 2), py0 = Math.floor((H - gW) / 2);
+    var gW = visCols * CELL, gH = visRows * CELL, px0 = Math.floor((W - gW) / 2), py0 = Math.floor((H - gH) / 2);
     tctx.fillStyle = GOLD_SH; tctx.fillRect(0, 0, W, H);
-    for (var r = 0; r < 24; r++) for (var c = 0; c < 24; c++) {
-      var v = grid[(offR + r) * 450 + (offC + c)];
+    for (var r = 0; r < visRows; r++) for (var c = 0; c < visCols; c++) {
+      var v = grid[(offR + r * stride) * 450 + (offC + c * stride)];
       var bgOn = (v & 2) === 0, starOn = (v & 1) === 0;          // bit1 → fondo LIT/SHADOW · bit0 → estrella on/off (independientes; invertido → el dominante v=0 prende)
       var dx = px0 + c * CELL, dy = py0 + r * CELL;
       tctx.fillStyle = bgOn ? GOLD_LIT : GOLD_SH; tctx.fillRect(dx, dy, CELL, CELL);
@@ -1837,7 +1845,7 @@ function _extractComposition(decodedHtml) {
   var _hasOSC = (typeof OffscreenCanvas !== 'undefined');
   function _pkOff(w, h) { if (_hasOSC) return new OffscreenCanvas(w, h); var c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
   var PK_MAX_RETRY = 3, PK_DELAYS = [1000, 3000, 8000];   // bounded retry for flaky preview loads (RPC burst-throttle)
-  var _pk = { active: false, total: 0, io: null, cellEls: new Map(), live: new Map(), pending: new Set(), dwell: new Map(), cache: new Map(), cacheCheck: new Map(), checkPending: new Set(), failures: new Map(), onScreen: new Set(), _totalInFlight: false };   // onScreen = IO-intersecting ids (incl. 100px prefetch band) → the redraw target on toggle, not just `live`
+  var _pk = { active: false, total: 0, io: null, cellEls: new Map(), live: new Map(), pending: new Set(), dwell: new Map(), cache: new Map(), cacheCheck: new Map(), cacheCheckFx: new Map(), checkPending: new Set(), failures: new Map(), onScreen: new Set(), _totalInFlight: false };   // cacheCheckFx: id → 'check'|'gold' tag for the cacheCheck entry (written/purged atomically with it) so a stale-fx variant is never drawn as the wrong tier   // onScreen = IO-intersecting ids (incl. 100px prefetch band) → the redraw target on toggle, not just `live`
   function _pkCellClick(e) {
     var id = +e.currentTarget.dataset.art; if (!(id >= 0)) return;
     var cur = (_fz.selected != null) ? _fz.assignments.get(_fz.selected) : null;
@@ -1867,7 +1875,7 @@ function _extractComposition(decodedHtml) {
     var el = _pk.cellEls.get(id); if (!el || _pk.live.has(id)) return;
     var src = _fz.checkMode ? (_pk.cacheCheck.get(id) || _pk.cache.get(id)) : _pk.cache.get(id);   // fall back to normal if the check variant isn't ready
     if (!src) return;                                                  // nothing cached yet -> leave the slot until a mount/lazy-render completes
-    var d = src.width;                                                 // 24 (normal) or PK_BADGE_W (check) — CSS sizes the canvas to the 44px slot
+    var d = src.width;                                                 // 24 (normal) or PK_BADGE_W (check/gold) — CSS sizes the canvas to the 44px slot
     var cv = document.createElement('canvas'); cv.width = d; cv.height = d; cv.className = 'pk-cv';
     var ctx = cv.getContext('2d'); ctx.imageSmoothingEnabled = false;
     ctx.putImageData(src, 0, 0);
@@ -1875,12 +1883,15 @@ function _extractComposition(decodedHtml) {
     if (slot) slot.classList.remove('pk-err');                          // recovered → drop the dim "failed" placeholder
     _pk.live.set(id, { cv: cv });
   }
-  // Render the badge thumbnail from an already-built+evolved engine (no rebuild) → cacheCheck.
+  // Render the fx thumbnail (check badge OR gold stars, per the LIVE _fz.fx) from an already-built+evolved engine (no rebuild) → cacheCheck + cacheCheckFx tag (atomic).
   function _pkBadgeFromEngine(id, eng) {
     try {
+      var fx = _fz.fx;                                            // snapshot the fx at write time → the tag always matches the pixels produced
       var bb = _pkOff(PK_BADGE_W, PK_BADGE_W), bctx = bb.getContext('2d'); bctx.imageSmoothingEnabled = false;
-      eng.paintToBadge(bb, bctx, { cell: PK_BADGE_CELL });
+      if (fx === 'gold') eng.paintToStars(bb, bctx, { cell: PK_BADGE_CELL });
+      else eng.paintToBadge(bb, bctx, { cell: PK_BADGE_CELL });
       _pk.cacheCheck.set(id, bctx.getImageData(0, 0, PK_BADGE_W, PK_BADGE_W));
+      _pk.cacheCheckFx.set(id, fx);                              // tag in lockstep with the ImageData
     } catch (e) { console.error('[pk-badge] id=' + id, e); }   // surface (don't swallow) any deterministic per-artifact failure
   }
 
@@ -1889,10 +1900,15 @@ function _extractComposition(decodedHtml) {
   function _pkRenderCheck(id) {
     if (!_pk.active || _pk.cacheCheck.has(id) || _pk.checkPending.has(id)) return;
     if (!_ensureOnChain()) return;
+    var snapFx = _fz.fx;                                          // the fx this render targets; if the user toggles tier mid-fetch the result is stale
     _pk.checkPending.add(id);
     _fetchArtifactComposition(id).then(function (comp) {
       _pk.checkPending.delete(id);
       if (!_pk.active || _pk.cacheCheck.has(id) || !_pk.cellEls.has(id)) return;
+      if (!_fz.checkMode || _fz.fx !== snapFx) {                  // tier changed while the fetch was in flight → discard; re-enqueue for the NEW fx if the cell is still visible (else IO re-mount handles it)
+        if (_pk.active && _fz.checkMode && _pk.onScreen.has(id) && !_pk.cacheCheck.has(id) && !_pk.checkPending.has(id)) _pkRenderCheck(id);
+        return;
+      }
       var off = _pkOff(450, 250), octx = off.getContext('2d'); octx.imageSmoothingEnabled = false;
       var eng; try { eng = _createArtifactEngine(off, comp); } catch (e) { return; }
       try { for (var s = 0; s < STATIC_STEPS; s++) { eng.step(eng.dtOps); eng.applyRects(); eng.tickRects && eng.tickRects(); } } catch (e) { return; }
@@ -1914,6 +1930,10 @@ function _extractComposition(decodedHtml) {
   }
   function _pkRedrawLive() {
     if (!_pk.active) return;
+    if (_fz.checkMode) {                                            // purge fx variants tagged with a DIFFERENT tier than the one now active (atomic with the redraw below → _pkDraw never finds a stale-fx entry); skip when toggling OFF (fx is meaningless then, entries stay reusable)
+      var curFx = _fz.fx;
+      _pk.cacheCheck.forEach(function (_img, id) { if (_pk.cacheCheckFx.get(id) !== curFx) { _pk.cacheCheck.delete(id); _pk.cacheCheckFx.delete(id); } });
+    }
     var vis = new Set(_pk.onScreen);                                // RC1 fix: re-sync EVERY visible cell (incl. pending/dwell/failed/just-unmounted in the 100px band),
     _pk.live.forEach(function (_v, id) { vis.add(id); });           // not just `live` — else those keep their pre-toggle mode forever (stale in BOTH directions)
     var ids = Array.from(vis);                                      // ⚠ NOT Array.prototype.slice.call — a Set/iterator is NOT array-like (no .length) → slice.call returns [] → the whole redraw silently no-op'd (only IO/scroll refreshed cards). THE real root cause.
@@ -1947,7 +1967,13 @@ function _extractComposition(decodedHtml) {
   function _pkMount(id) {
     if (!_pk.active) return;
     if (_pk.live.has(id) || _pk.pending.has(id)) return;
-    if (_pk.cache.has(id)) { _pkDraw(id); if (_fz.checkMode && !_pk.cacheCheck.has(id)) _pkRenderCheck(id); return; }   // instant from cache (no fetch / no steps); lazy-render the badge variant if in check mode
+    if (_pk.cache.has(id)) {   // instant from cache (no fetch / no steps); lazy-render the fx variant if in fx mode (tag-aware: a stale-fx cached entry is PURGED FIRST so _pkDraw falls back to normal until the correct tier lands — no wrong-fx flash; closes the reopen-with-fx-already-active hole, P1-A)
+      var needFx = false;
+      if (_fz.checkMode) { var cf = _pk.cacheCheck.get(id); if (!cf || _pk.cacheCheckFx.get(id) !== _fz.fx) { if (cf) { _pk.cacheCheck.delete(id); _pk.cacheCheckFx.delete(id); } needFx = true; } }
+      _pkDraw(id);
+      if (needFx) _pkRenderCheck(id);
+      return;
+    }
     if (!_ensureOnChain()) return;
     _pk.pending.add(id);
     _pkSpinStart(id);                                                    // loading spinner on while the preview fetches/renders
