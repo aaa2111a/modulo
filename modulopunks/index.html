@@ -1728,7 +1728,7 @@ function _extractComposition(decodedHtml) {
   var _hasOSC = (typeof OffscreenCanvas !== 'undefined');
   function _pkOff(w, h) { if (_hasOSC) return new OffscreenCanvas(w, h); var c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
   var PK_MAX_RETRY = 3, PK_DELAYS = [1000, 3000, 8000];   // bounded retry for flaky preview loads (RPC burst-throttle)
-  var _pk = { active: false, total: 0, io: null, cellEls: new Map(), live: new Map(), pending: new Set(), dwell: new Map(), cache: new Map(), cacheCheck: new Map(), checkPending: new Set(), failures: new Map() };
+  var _pk = { active: false, total: 0, io: null, cellEls: new Map(), live: new Map(), pending: new Set(), dwell: new Map(), cache: new Map(), cacheCheck: new Map(), checkPending: new Set(), failures: new Map(), onScreen: new Set() };   // onScreen = IO-intersecting ids (incl. 100px prefetch band) → the redraw target on toggle, not just `live`
   function _pkCellClick(e) {
     var id = +e.currentTarget.dataset.art; if (!(id >= 0)) return;
     var cur = (_fz.selected != null) ? _fz.assignments.get(_fz.selected) : null;
@@ -1787,10 +1787,11 @@ function _extractComposition(decodedHtml) {
       var off = _pkOff(450, 250), octx = off.getContext('2d'); octx.imageSmoothingEnabled = false;
       var eng; try { eng = _createArtifactEngine(off, comp); } catch (e) { return; }
       try { for (var s = 0; s < STATIC_STEPS; s++) { eng.step(eng.dtOps); eng.applyRects(); eng.tickRects && eng.tickRects(); } } catch (e) { return; }
-      _pkBadgeFromEngine(id, eng);
-      if (_fz.checkMode && _pk.cellEls.has(id)) {                    // draw even if the IO unmounted it between toggle and now — else the badge silently never shows (the "only-some-flip" bug)
-        if (_pk.live.has(id)) _pkUnmount(id);
-        _pkDraw(id); _pkFlip(id);                                    // swap the normal thumb → badge + flip cue
+      _pkBadgeFromEngine(id, eng);                                  // populates cacheCheck (mode-independent — safe to cache even if the user toggled OFF mid-flight)
+      if (_pk.live.has(id)) _pkUnmount(id);
+      if (_pk.cellEls.has(id) && _pk.onScreen.has(id)) {            // redraw only cells still on-screen; _pkDraw re-reads the LIVE mode → self-corrects after a flip (RC4); off-screen cells just keep the cached badge for an instant re-mount
+        _pkDraw(id);
+        if (_fz.checkMode && _pk.cacheCheck.has(id)) _pkFlip(id);
       }
     }).catch(function () { _pk.checkPending.delete(id); });
   }
@@ -1804,13 +1805,19 @@ function _extractComposition(decodedHtml) {
   }
   function _pkRedrawLive() {
     if (!_pk.active) return;
-    var ids = Array.prototype.slice.call(_pk.live.keys());
+    var vis = new Set(_pk.onScreen);                                // RC1 fix: re-sync EVERY visible cell (incl. pending/dwell/failed/just-unmounted in the 100px band),
+    _pk.live.forEach(function (_v, id) { vis.add(id); });           // not just `live` — else those keep their pre-toggle mode forever (stale in BOTH directions)
+    var ids = Array.prototype.slice.call(vis);
     ids.forEach(function (id, idx) {
-      var instant = !_fz.checkMode || _pk.cacheCheck.has(id);        // normal mode, or check already cached → final content draws now
-      _pkUnmount(id); _pkDraw(id);
-      if (instant) _pkFlip(id, idx);                                 // async (lazy) cells flip later, when their check lands (in _pkRenderCheck)
+      var instant = !_fz.checkMode || _pk.cacheCheck.has(id);
+      _pkUnmount(id); _pkDraw(id);                                  // _pkDraw is a no-op when nothing is cached yet (pending/dwell cells); else draws the CURRENT mode
+      if (instant && _pk.live.has(id)) _pkFlip(id, idx);            // flip only cells that actually got a canvas (async ones flip later, when their check lands)
     });
-    if (_fz.checkMode) ids.forEach(function (id) { if (!_pk.cacheCheck.has(id)) _pkRenderCheck(id); });   // kick lazy badge render for the visible cells
+    if (_fz.checkMode) ids.forEach(function (id) {
+      if (_pk.cacheCheck.has(id)) return;
+      if (_pk.cache.has(id)) { _pkRenderCheck(id); return; }        // normal preview cached → rebuild badge from cached composition (no RPC)
+      if (!_pk.live.has(id) && !_pk.pending.has(id) && !_pk.dwell.has(id) && !_pk.checkPending.has(id) && !(_pk.failures.get(id) && _pk.failures.get(id).timer)) _pkMount(id);   // not cached at all → mount it now; its tail badges it under check mode
+    });
   }
   // ── Per-cell loading spinner + bounded retry (flaky preview loads under RPC burst-throttle) ──
   function _pkSpinStart(id) { var el = _pk.cellEls.get(id); if (!el) return; var slot = el.querySelector('.pk-slot'); if (!slot || slot.querySelector('.pk-spin')) return; var s = document.createElement('span'); s.className = 'pk-spin'; slot.appendChild(s); }
@@ -1853,6 +1860,7 @@ function _extractComposition(decodedHtml) {
       if (_fz.checkMode) _pkBadgeFromEngine(id, eng);                   // mounting while already in check mode → render the badge variant from the in-hand engine (no rebuild)
       _pkSpinStop(id);
       _pkDraw(id);
+      if (_fz.checkMode && _pk.cacheCheck.has(id)) _pkFlip(id);         // flip cue on fresh mounts too (consistency with the lazy-cache path)
       // eng / off / tmp are local → GC'd (no rAF, no stored engine ref)
     }).catch(function () { _pk.pending.delete(id); _pkFail(id, false); });   // fetch failed (transient) → retry, spinner stays
   }
@@ -1861,10 +1869,12 @@ function _extractComposition(decodedHtml) {
     entries.forEach(function (e) {
       var id = +e.target.dataset.art;
       if (e.isIntersecting) {
-        if (_pk.dwell.has(id) || _pk.live.has(id) || _pk.pending.has(id) || (_pk.failures.get(id) && _pk.failures.get(id).timer)) return;   // also skip if a retry is already scheduled
+        _pk.onScreen.add(id);                                       // authoritative visible set (the toggle redraw target)
+        if (_pk.dwell.has(id) || _pk.live.has(id) || _pk.pending.has(id) || _pk.checkPending.has(id) || (_pk.failures.get(id) && _pk.failures.get(id).timer)) return;   // skip if a normal mount OR a badge render is already in flight (RC2: don't remount-as-normal mid-badge)
         var t = setTimeout(function () { _pk.dwell.delete(id); _pkMount(id); }, 60);   // dwell debounce
         _pk.dwell.set(id, t);
       } else {
+        _pk.onScreen.delete(id);
         var dt = _pk.dwell.get(id); if (dt) { clearTimeout(dt); _pk.dwell.delete(id); }
         if (_pk.live.has(id)) _pkUnmount(id);
       }
@@ -1875,6 +1885,7 @@ function _extractComposition(decodedHtml) {
     _pk.dwell.forEach(function (t) { clearTimeout(t); }); _pk.dwell.clear();
     _pk.failures.forEach(function (rec) { if (rec.timer) clearTimeout(rec.timer); }); _pk.failures.clear();   // drop stale retry timers from a prior open
     _pk.checkPending.clear();                        // drop in-flight lazy badge renders
+    _pk.onScreen.clear();                            // IO re-observes below → onScreen repopulates
     _pk.live.clear(); _pk.pending.clear();          // canvases removed by host.textContent='' below; cache + cacheCheck kept
     host.textContent = ''; _pk.cellEls.clear();
     if (!_pk.io) _pk.io = new IntersectionObserver(_pkIO, { root: detail, rootMargin: '100px 0px', threshold: 0.01 });
@@ -1903,6 +1914,7 @@ function _extractComposition(decodedHtml) {
     _pk.dwell.forEach(function (t) { clearTimeout(t); }); _pk.dwell.clear();
     _pk.failures.forEach(function (rec) { if (rec.timer) clearTimeout(rec.timer); }); _pk.failures.clear();   // cancel pending retries on close
     _pk.checkPending.clear();                                       // cancel in-flight lazy badge renders (cache + cacheCheck survive for re-open)
+    _pk.onScreen.clear();
     _pk.live.forEach(function (p) { if (p.cv && p.cv.parentNode) p.cv.parentNode.removeChild(p.cv); });
     _pk.live.clear(); _pk.pending.clear(); _pk.cellEls.clear();
     var host = document.getElementById('fz-picker'); if (host) host.textContent = '';
