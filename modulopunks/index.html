@@ -1828,10 +1828,10 @@ function _extractComposition(decodedHtml) {
     if (sc) try { _badgeFillSeal(sc.getContext('2d'), 28, '#6363ff'); } catch (e) {}
     if (tc) try { _badgeFillCheck(tc.getContext('2d'), 28, '#dbd8d1'); } catch (e) {}
   }
-  function _drawFzStarIcon() {                                      // static icon: blue seal (CSS-spins) + a HOLLOW beige star on top (mirrors _drawFzBadgeIcon)
+  function _drawFzStarIcon() {                                      // static icon: YELLOW seal (CSS-spins on hover) + a HOLLOW beige star on top
     var sc = document.querySelector('#fz-gold .fz-check-seal'), tc = document.querySelector('#fz-gold .fz-check-tick');
-    if (sc) try { _badgeFillSeal(sc.getContext('2d'), 28, '#6363ff'); } catch (e) {}
-    if (tc) try { var x = tc.getContext('2d'); x.clearRect(0, 0, 28, 28); _gStarStroke(x, 14, 14, 10.5, GOLD_BODY, 1.6); } catch (e) {}   // thin outline + bigger radius → interior stays OPEN (blue seal shows through, like the check glyph reads clean) instead of the strokes converging into a filled-looking blob
+    if (sc) try { _badgeFillSeal(sc.getContext('2d'), 28, GOLD_BODY); } catch (e) {}   // seal disc = yellow (the "around")
+    if (tc) try { var x = tc.getContext('2d'); x.clearRect(0, 0, 28, 28); _gStarStroke(x, 14, 14, 10.5, '#dbd8d1', 1.6); } catch (e) {}   // star = beige, thin hollow outline (yellow seal shows through the interior → reads clean like the check glyph)
   }
   function _refreshPills() {
     var host = document.getElementById('fz-traits'); if (!host) return;
