@@ -1311,7 +1311,7 @@ function _extractComposition(decodedHtml) {
   // (Le: "pocas checks grandes y nítidas" — a legible zoomed badge, not the full crop).
   const FZ_BADGE_CELL = 12, PK_BADGE_CELL = 8, PK_BADGE_W = 48;
   // ── Tier-3 GOLD STARS glyph + palette (5-point star, vector; palette-INDEPENDENT → module-level sprite cache keyed by CELL) ──
-  const GOLD_BODY = '#ffe600', GOLD_HI = '#fffbc8', GOLD_EDGE = '#e6b400', GOLD_LIT = '#f3c212', GOLD_SH = '#ce9f1c', GOLD_STAR_SZ = 0.75;
+  const GOLD_BODY = '#ffe600', GOLD_HI = '#fffbc8', GOLD_EDGE = '#e6b400', GOLD_LIT = '#f3c212', GOLD_SH = '#ce9f1c', GOLD_STAR_SZ = 0.75, GOLD_SPIN_MS = 2600;   // GOLD_SPIN_MS = star spin PERIOD (one rev per 2.6s = 2× the button's 1.3s period → half the angular speed); shared by preview + export so they can't diverge
   function _gLerp(a, b, f) { a = a.replace('#', ''); b = b.replace('#', ''); function h(s, o) { return parseInt(s.substr(o, 2), 16); } var ar = h(a, 0), ag = h(a, 2), ab = h(a, 4), br = h(b, 0), bg = h(b, 2), bb = h(b, 4); return 'rgb(' + ((ar + (br - ar) * f) | 0) + ',' + ((ag + (bg - ag) * f) | 0) + ',' + ((ab + (bb - ab) * f) | 0) + ')'; }
   function _gStarPath(x, cx, cy, RO) { var RI = RO * 0.42; x.beginPath(); for (var i = 0; i < 10; i++) { var a = -Math.PI / 2 + i * Math.PI / 5, R = (i % 2 === 0) ? RO : RI, px = cx + R * Math.cos(a), py = cy + R * Math.sin(a); i ? x.lineTo(px, py) : x.moveTo(px, py); } x.closePath(); }
   function _gStarStroke(x, cx, cy, RO, color, lw) { x.save(); x.lineJoin = 'round'; x.lineCap = 'round'; x.lineWidth = lw; x.strokeStyle = color; _gStarPath(x, cx, cy, RO); x.stroke(); x.restore(); }   // hollow (outline-only) star for the button glyph
@@ -1324,6 +1324,27 @@ function _extractComposition(decodedHtml) {
     x.fillStyle = GOLD_BODY; _gStarPath(x, cc, cc, RO); x.fill();
     x.fillStyle = GOLD_HI; _gStarPath(x, cc, cc, RO * 0.5); x.fill();
     _starSpriteCache.set(CELL, cv); return cv;
+  }
+  // Spinning gold star: re-rasterize the VECTOR star fresh at `angle` ONCE per frame (vector-crisp at every
+  // angle — no premult-alpha halo from rotating a baked sprite), then the caller blits it axis-aligned 1:1 per
+  // cell. Intra-frame memo on CELL|angle → the ≤6 _composeGoldHR layer calls (same global angle) rasterize once.
+  var _goldAngle = 0;                                                // global rotation phase (rad), shared by every cell → synchronized; written by _animFrame (preview) / the export loop (deterministic)
+  var _starScratch = null, _starScratchCtx = null, _starScratchKey = '';
+  function _rotatedStarSprite(CELL, angle) {
+    if (!_starScratch || _starScratch.width !== CELL) {
+      if (typeof OffscreenCanvas !== 'undefined') { _starScratch = new OffscreenCanvas(CELL, CELL); } else { _starScratch = document.createElement('canvas'); _starScratch.width = _starScratch.height = CELL; }
+      _starScratchCtx = _starScratch.getContext('2d'); _starScratchKey = '';   // imageSmoothingEnabled defaults true → path AA; the 1:1 blit preserves it
+    }
+    var key = CELL + '|' + angle;
+    if (key === _starScratchKey) return _starScratch;                // memo hit: same CELL+angle this frame → reuse
+    var x = _starScratchCtx, cc = CELL / 2, RO = (CELL / 2) * GOLD_STAR_SZ;
+    x.clearRect(0, 0, CELL, CELL);
+    x.save(); x.translate(cc, cc); x.rotate(angle);                  // rotate about the cell centre → clip-safe (edge at RO*1.06=0.3975·CELL < CELL/2)
+    x.fillStyle = GOLD_EDGE; _gStarPath(x, 0, 0, RO * 1.06); x.fill();
+    x.fillStyle = GOLD_BODY; _gStarPath(x, 0, 0, RO); x.fill();
+    x.fillStyle = GOLD_HI; _gStarPath(x, 0, 0, RO * 0.5); x.fill();
+    x.restore();
+    _starScratchKey = key; return _starScratch;
   }
 
 // Engine factory — direct port of html-placeholders/artifact-render.html.
@@ -1581,7 +1602,8 @@ function _extractComposition(decodedHtml) {
       CELL = Math.floor(W / 24); stride = 1; visCols = 24; visRows = 24; offC = 213; offR = 113;
     }
     if (visCols <= 0 || visRows <= 0) return;
-    var star = _starSprite(CELL);
+    var ang = opts.cell ? 0 : (opts.angle !== undefined ? opts.angle : _goldAngle);   // picker thumbnails (opts.cell) + reduced-motion (_goldAngle 0) → upright cached sprite; only the live/export full-compose spins
+    var star = ang ? _rotatedStarSprite(CELL, ang) : _starSprite(CELL);
     var beHi = _gLerp(GOLD_LIT, '#ffffff', 0.33), beSh = _gLerp(GOLD_LIT, '#000000', 0.42), lw = Math.max(1, Math.round(CELL * 0.1));
     var gW = visCols * CELL, gH = visRows * CELL, px0 = Math.floor((W - gW) / 2), py0 = Math.floor((H - gH) / 2);
     tctx.fillStyle = GOLD_SH; tctx.fillRect(0, 0, W, H);
@@ -1722,6 +1744,7 @@ function _extractComposition(decodedHtml) {
     var _skip = _fz.checkMode && (_animN & 1);                        // check mode → ~30fps: the HR (720) compose is heavy and badge colours don't change perceptibly at 60 vs 30 (export renders separately at full rate)
     if (_fz.assignments.size && !_skip) {
       try {
+        if (_fz.fx === 'gold') _goldAngle = _reducedMotion ? 0 : (performance.now() / GOLD_SPIN_MS) * 2 * Math.PI;   // absolute wall-clock → skip-frames don't drift; reduced-motion freezes upright
         _composeFusionFrame();
         pdCtx.clearRect(0, 0, PD, PD); pdCtx.imageSmoothingEnabled = false;
         pdCtx.fillStyle = _punkBg; pdCtx.fillRect(0, 0, PD, PD);        // live status background behind the fused layers
@@ -1771,7 +1794,7 @@ function _extractComposition(decodedHtml) {
   function _drawFzStarIcon() {                                      // static icon: blue seal (CSS-spins) + a HOLLOW beige star on top (mirrors _drawFzBadgeIcon)
     var sc = document.querySelector('#fz-gold .fz-check-seal'), tc = document.querySelector('#fz-gold .fz-check-tick');
     if (sc) try { _badgeFillSeal(sc.getContext('2d'), 28, '#6363ff'); } catch (e) {}
-    if (tc) try { var x = tc.getContext('2d'); x.clearRect(0, 0, 28, 28); _gStarStroke(x, 14, 14, 9, GOLD_BODY, 2.4); } catch (e) {}
+    if (tc) try { var x = tc.getContext('2d'); x.clearRect(0, 0, 28, 28); _gStarStroke(x, 14, 14, 10.5, GOLD_BODY, 1.6); } catch (e) {}   // thin outline + bigger radius → interior stays OPEN (blue seal shows through, like the check glyph reads clean) instead of the strokes converging into a filled-looking blob
   }
   function _refreshPills() {
     var host = document.getElementById('fz-traits'); if (!host) return;
@@ -2152,6 +2175,7 @@ function _extractComposition(decodedHtml) {
 
       for (var f = 0; f < FRAMES; f++) {
         if (_fz.punkId !== myPunk || !detail.classList.contains('open')) throw new Error('modal changed mid-export');
+        if (_fz.fx === 'gold') _goldAngle = ((f / FPS) * 1000 / GOLD_SPIN_MS) * 2 * Math.PI;   // frame-index drive → exact spin period in the OUTPUT regardless of encode pace (NOT wall-clock); export spins even under reduced-motion (user-initiated)
         _composeFusionFrame();
         cx.fillStyle = punkBg; cx.fillRect(pX, pY, S, S);            // punk-square bg = the modal's bg (status colour); BG modulo overdraws it
         cx.imageSmoothingEnabled = isCheck;                          // fx (check/gold) = vector glyphs → smooth the 720→832 blit; normal pixel-art CA = nearest
