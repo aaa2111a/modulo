@@ -300,7 +300,8 @@ body.night #pd-overlay { background:rgba(0,0,0,0.62); }
 #fz-panel { display:none; margin-top:6px; }
 #fz-pick { display:none; margin-top:16px; padding-top:14px; border-top:0.5px solid var(--border); }
 #fz-panel .fz-k { font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--text-meta); margin:0 0 7px; text-align:center; }
-#fz-traits { display:flex; flex-wrap:wrap; justify-content:center; gap:6px; margin-bottom:14px; }
+#fz-traits { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:6px; margin-bottom:14px; }
+.fz-cdot { align-self:center; color:var(--text-meta); font-size:13px; line-height:1; user-select:none; }   /* dot separating the check icon from the trait pills */
 .fz-pill { font-family:monospace; font-size:11px; padding:6px 10px; border-radius:16px; cursor:pointer;
   background:var(--bg-alt); color:var(--text); border:0.5px solid var(--border-mid); }
 .fz-pill:hover { border-color:var(--border-strong); }
@@ -345,10 +346,10 @@ body.night #fz-export { background:#2c2b28; }
 #fz-check { display:inline-flex; align-items:center; padding:0 2px; background:none; border:none; cursor:pointer; opacity:0.55; transition:opacity 0.15s; }
 #fz-check:hover, #fz-check:focus-visible, #fz-check.fz-check-on { opacity:1; }
 #fz-check:disabled { opacity:0.3; cursor:default; }
-.fz-check-icon { position:relative; display:block; width:28px; height:28px; }
-.fz-check-seal, .fz-check-tick { position:absolute; inset:0; display:block; width:28px; height:28px; }
+.fz-check-icon { position:relative; display:block; width:22px; height:22px; }   /* sits inline with the trait pills (canvas backing stays 28 → crisp) */
+.fz-check-seal, .fz-check-tick { position:absolute; inset:0; display:block; width:22px; height:22px; }
 .fz-check-seal { transform-origin:50% 50%; }
-#fz-check:hover .fz-check-seal, #fz-check:focus-visible .fz-check-seal, #fz-check.fz-check-on .fz-check-seal { animation:fzBadgeSpin 1.3s linear infinite; }
+#fz-check:hover .fz-check-seal, #fz-check:focus-visible .fz-check-seal { animation:fzBadgeSpin 1.3s linear infinite; }   /* spin ONLY on hover/focus — NOT while active (.fz-check-on) */
 #fz-pick { position:relative; }
 #fz-pick::before { content:''; position:absolute; inset:0; z-index:0; pointer-events:none; opacity:0; border-radius:8px;
   background-image:var(--fz-check-tile); background-size:32px 32px; transition:opacity 0.3s ease; }
@@ -460,7 +461,7 @@ body.night #filter-btn { background:#2c2b28; }
 
 <div id="pd-overlay">
 <aside id="punk-detail" role="dialog" aria-modal="true" aria-label="Customize punk">
-  <div class="pd-tbar"><span class="pd-title" id="pd-title">Trait fusing</span><span class="pd-tbar-actions"><button id="fz-check" type="button" aria-pressed="false" aria-label="check it — toggle badge mode" title="check it"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-export" type="button">↓ MP4</button><button id="pd-close" title="close"></button></span></div>
+  <div class="pd-tbar"><span class="pd-title" id="pd-title">Trait fusing</span><span class="pd-tbar-actions"><button id="fz-export" type="button">↓ MP4</button><button id="pd-close" title="close"></button></span></div>
   <div class="pd-body">
     <div class="pd-links" id="pd-links"></div>
     <div id="pd-name"></div>
@@ -468,7 +469,7 @@ body.night #filter-btn { background:#2c2b28; }
     <div id="fuse-title">Fuse with Modulo Artifacts</div>
     <div id="fz-panel">
       <p class="fz-k">Pick a trait, then pick a modulo to fill it. Several animate at once.</p>
-      <div id="fz-traits"></div>
+      <div id="fz-traits"><button id="fz-check" type="button" aria-pressed="false" aria-label="check it — toggle badge mode" title="check it"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><span class="fz-cdot" aria-hidden="true">·</span></div>
     </div>
     <div id="fz-pick">
       <div id="fz-picker"></div>
@@ -1650,7 +1651,7 @@ function _extractComposition(decodedHtml) {
   }
   function _refreshPills() {
     var host = document.getElementById('fz-traits'); if (!host) return;
-    [].forEach.call(host.children, function (pill) {
+    [].forEach.call(host.querySelectorAll('.fz-pill'), function (pill) {
       var li = +pill.dataset.li, i = +pill.dataset.i, a = _fz.assignments.get(li);
       pill.textContent = _labelFor(li, i) + (a ? ' · #' + a.artifactId : '');
       pill.classList.toggle('assigned', !!a);
@@ -1663,7 +1664,8 @@ function _extractComposition(decodedHtml) {
     if (pid !== _fz.punkId) _fzTeardown();                          // new punk → drop old assignments
     _fz.punkId = pid; _fz.L = traits[pid].L || [];
     _fz.selected = (_fz.L.length ? _fz.L[0] : null);
-    var host = document.getElementById('fz-traits'); host.textContent = '';
+    var host = document.getElementById('fz-traits');
+    [].slice.call(host.querySelectorAll('.fz-pill')).forEach(function (p) { host.removeChild(p); });   // keep the #fz-check button + dot separator; drop only the old trait pills
     var bgPill = document.createElement('button'); bgPill.type = 'button'; bgPill.className = 'fz-pill';
     bgPill.dataset.li = BG_ID; bgPill.dataset.i = -1;          // sentinel; _labelFor short-circuits → 'Background'
     bgPill.addEventListener('click', function () { _fz.selected = BG_ID; _refreshPills(); });
