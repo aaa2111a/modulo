@@ -1137,7 +1137,9 @@ body.night #filter-btn { background:#2c2b28; }
     if (_settleArtifact) return true;
     if (!window.ethers) return false;
     try {
-      _provider = new window.ethers.JsonRpcProvider(RPC_URL, CHAIN_ID, { batchMaxCount: 15 });
+      var _fr = new window.ethers.FetchRequest(RPC_URL); _fr.timeout = 20000;   // reject a stalled RPC in 20s (was ethers' 5-min default) → into _pkFail retry
+      var _net = window.ethers.Network.from(CHAIN_ID);
+      _provider = new window.ethers.JsonRpcProvider(_fr, _net, { batchMaxCount: 15, staticNetwork: _net });   // staticNetwork → no eth_chainId re-detection CU (mirrors app/'s readonly provider)
       _settleArtifact = new window.ethers.Contract(SETTLE_ARTIFACT_ADDRESS, SETTLE_ARTIFACT_ABI, _provider);
       return true;
     } catch (e) { console.error('[fuse] chain init', e); return false; }
@@ -1237,7 +1239,7 @@ body.night #filter-btn { background:#2c2b28; }
   } catch (_) { return null; }
 }
   function _normalizeComposition(raw) {
-  const num = v => (typeof v === 'bigint' ? Number(v) : Number(v)) | 0;
+  const num = v => Number(v) | 0;   // both ternary arms were identical; ids are bounded by totalArtifacts (int32-safe)
   return {
     artifactId: num(raw.artifactId),
     moduloId:   num(raw.moduloId),
@@ -1492,6 +1494,17 @@ function _extractComposition(decodedHtml) {
     }
     tctx.putImageData(img, 0, 0);
   }
+  // Native 1px/cell of ONLY a sw×sh window from grid[sy..][sx..] → putImageData at 0,0. The picker
+  // keeps a centered 24×24 crop, so this avoids rasterizing all 112,500 px to discard 99.5% of them.
+  function paintToNativeCrop(tctx, sx, sy, sw, sh) {
+    const img = tctx.createImageData(sw, sh), buf = img.data;
+    for (let r = 0; r < sh; r++) for (let c = 0; c < sw; c++) {
+      const [R, G, B] = PAL[grid[(sy + r) * 450 + (sx + c)]] || PAL[0];
+      const i = (r * sw + c) * 4;
+      buf[i] = R; buf[i+1] = G; buf[i+2] = B; buf[i+3] = 255;
+    }
+    tctx.putImageData(img, 0, 0);
+  }
   function render() { paintTo(canvas, ctx); }
 
   // ── "check it" badge render (ported from collection, simplified) ──────────────
@@ -1530,7 +1543,7 @@ function _extractComposition(decodedHtml) {
 
   // ===== ENGINE END =====
 
-  return {step, render, paintTo, paintToNative, paintToBadge, applyRects: applyRectShifts, tickRects, dtOps: _sumTokenOps};
+  return {step, render, paintTo, paintToNative, paintToNativeCrop, paintToBadge, applyRects: applyRectShifts, tickRects, dtOps: _sumTokenOps};
 }
 
   // ── Fusion state + MULTI-engine compose loop (Phase 3: N traits at once) ──
@@ -1563,16 +1576,16 @@ function _extractComposition(decodedHtml) {
     pdCtx.drawImage(atlasBmp, (_fz.punkId % ATLAS_COLS) * 24, Math.floor(_fz.punkId / ATLAS_COLS) * 24, 24, 24, 0, 0, PD, PD);
   }
   // ── Unified animation loop: assignment engines (60fps) + picker previews (~30fps) ──
-  var _animRaf = 0, _animN = 0, _exportInFlight = false;
+  var _animRaf = 0, _animN = 0, _animErrs = 0, _exportInFlight = false;
   function _animStop() { if (_animRaf) { cancelAnimationFrame(_animRaf); _animRaf = 0; } }
   function _animStopIfIdle() { if (!_fz.assignments.size) _animStop(); }   // picker is static now — only assignments drive the rAF
   function _animKick() { if (_exportInFlight) return; if (!_animRaf && detail.classList.contains('open') && _fz.assignments.size) _animRaf = requestAnimationFrame(_animFrame); }
   // Steps the assignment engines + rebuilds _fz.comCv (144) in z-order: background base, then each
   // layer (masked CA if fused, else static). Single source of truth for preview + MP4 export.
   function _composeFusionFrame() {
-    _fzAlloc();
     _fz.assignments.forEach(function (a) { a.engine.step(a.engine.dtOps); a.engine.applyRects(); a.engine.tickRects && a.engine.tickRects(); });
-    if (_fz.checkMode) { _composeCheckHR(); return; }               // crisp badge path composes at PD (720) into _fz.comHR
+    if (_fz.checkMode) { _composeCheckHR(); return; }               // crisp badge path composes at PD (720) via _fzAllocHR — skips the 144² _fzAlloc
+    _fzAlloc();
     _fz.comCtx.clearRect(0, 0, 144, 144);
     var bgA = _fz.assignments.get(BG_ID);
     if (bgA) { bgA.engine.paintTo(bgA.off, bgA.offctx); _fz.comCtx.drawImage(bgA.off, 0, 0); }  // full-frame base = background
@@ -1632,11 +1645,15 @@ function _extractComposition(decodedHtml) {
         pdCtx.fillStyle = _punkBg; pdCtx.fillRect(0, 0, PD, PD);        // live status background behind the fused layers
         if (_fz.checkMode) pdCtx.drawImage(_fz.comHR, 0, 0);            // 720→720 1:1 (crisp badges)
         else pdCtx.drawImage(_fz.comCv, 0, 0, 144, 144, 0, 0, PD, PD);  // 144→720 nearest (pixel-art CA)
-      } catch (_) {}
+        _animErrs = 0;
+      } catch (e) {
+        if (++_animErrs === 1) console.error('[fuse] compose', e);      // surface once (was a silent empty catch)
+        if (_animErrs >= 5) { _animStop(); return; }                    // a DETERMINISTIC compose throw → stop the silent runaway 60fps loop (a transient blip doesn't kill the preview)
+      }
     }
     if (_fz.assignments.size) _animRaf = requestAnimationFrame(_animFrame);
   }
-  function _fzTeardown() { _fz.assignments.clear(); _fz.pending.clear(); _fz.selected = null; _fz.punkId = null; _resetCheckModeUI(); _fz.caCv = null; _fz.comCv = null; _fz.offHR = null; _fz.caHR = null; _fz.comHR = null; _animStopIfIdle(); }   // _resetCheckModeUI = flag OFF + button/field classes OFF (never let the UI outlive checkMode, incl. any future in-modal punk switch)
+  function _fzTeardown() { _fz.assignments.clear(); _fz.pending.clear(); _fz.selected = null; _fz.punkId = null; _resetCheckModeUI(); _fz.caCv = null; _fz.comCv = null; _fz.caCtx = null; _fz.comCtx = null; _fz.offHR = null; _fz.caHR = null; _fz.comHR = null; _fz.offHRctx = null; _fz.caHRctx = null; _fz.comHRctx = null; _animStopIfIdle(); }   // null the ctx refs too (a ctx pins its canvas via ctx.canvas) → ~6MB of HR/CA buffers release on close instead of lingering until the next open   // _resetCheckModeUI = flag OFF + button/field classes OFF (never let the UI outlive checkMode, incl. any future in-modal punk switch)
   function _resetFusion() { _punkBg = PUNK_BG; _pkTeardown(); _fzTeardown(); _resetCheckModeUI(); var p = document.getElementById('fz-panel'); if (p) p.style.display = 'none'; var p2 = document.getElementById('fz-pick'); if (p2) p2.style.display = 'none'; _fzStatus(''); }
   function _clearAllFusion() { if (_exportInFlight) return; _fz.assignments.clear(); _fz.pending.clear(); _pkRedrawLive(); _animStopIfIdle(); _refreshPills(); _drawStaticPunk(); _fzStatus('cleared'); }   // keep check mode sticky across Clear-all (view setting, orthogonal to assignments); _pkRedrawLive honors the current mode
   // ── "check it" mode (badge texture) toggle ──
@@ -1730,7 +1747,7 @@ function _extractComposition(decodedHtml) {
   var _hasOSC = (typeof OffscreenCanvas !== 'undefined');
   function _pkOff(w, h) { if (_hasOSC) return new OffscreenCanvas(w, h); var c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
   var PK_MAX_RETRY = 3, PK_DELAYS = [1000, 3000, 8000];   // bounded retry for flaky preview loads (RPC burst-throttle)
-  var _pk = { active: false, total: 0, io: null, cellEls: new Map(), live: new Map(), pending: new Set(), dwell: new Map(), cache: new Map(), cacheCheck: new Map(), checkPending: new Set(), failures: new Map(), onScreen: new Set() };   // onScreen = IO-intersecting ids (incl. 100px prefetch band) → the redraw target on toggle, not just `live`
+  var _pk = { active: false, total: 0, io: null, cellEls: new Map(), live: new Map(), pending: new Set(), dwell: new Map(), cache: new Map(), cacheCheck: new Map(), checkPending: new Set(), failures: new Map(), onScreen: new Set(), _totalInFlight: false };   // onScreen = IO-intersecting ids (incl. 100px prefetch band) → the redraw target on toggle, not just `live`
   function _pkCellClick(e) {
     var id = +e.currentTarget.dataset.art; if (!(id >= 0)) return;
     var cur = (_fz.selected != null) ? _fz.assignments.get(_fz.selected) : null;
@@ -1847,15 +1864,13 @@ function _extractComposition(decodedHtml) {
     _fetchArtifactComposition(id).then(function (comp) {
       _pk.pending.delete(id);
       if (!_pk.active || !_pk.cellEls.has(id) || _pk.live.has(id)) return;   // teardown raced / cell gone / already drawn
-      var off = _pkOff(450, 250), octx = off.getContext('2d'); octx.imageSmoothingEnabled = false;
+      var tmp = _pkOff(24, 24), tctx = tmp.getContext('2d'); tctx.imageSmoothingEnabled = false;
       var eng;
-      try { eng = _createArtifactEngine(off, comp); } catch (e) { _pkFail(id, true); return; }   // bad composition → deterministic, no retry
+      try { eng = _createArtifactEngine(tmp, comp); } catch (e) { _pkFail(id, true); return; }   // engine render-canvas is unused by the picker (grid is 450×250 internally); a 24×24 canvas avoids the 450×250 alloc
       try {
         for (var s = 0; s < STATIC_STEPS; s++) { eng.step(eng.dtOps); eng.applyRects(); eng.tickRects && eng.tickRects(); }
-        eng.paintToNative(off, octx);
+        eng.paintToNativeCrop(tctx, 213, 113, 24, 24);                 // native 1px/cell of ONLY the centered 24×24 window (was: full 450×250 raster → drawImage-crop → discard 99.5%)
       } catch (e) { _pkFail(id, true); return; }
-      var tmp = _pkOff(24, 24), tctx = tmp.getContext('2d'); tctx.imageSmoothingEnabled = false;
-      tctx.drawImage(off, 213, 113, 24, 24, 0, 0, 24, 24);              // centered 24×24 crop (no squish)
       var imgData; try { imgData = tctx.getImageData(0, 0, 24, 24); } catch (e) { _pkFail(id, true); return; }
       _pk.failures.delete(id);                                          // success → reset failure record + clear spinner
       _pk.cache.set(id, imgData);
@@ -1903,12 +1918,15 @@ function _extractComposition(decodedHtml) {
     if (!_ensureOnChain()) { _fzStatus('on-chain unavailable — reload'); return; }
     _pk.active = true;
     if (_pk.total > 0) { _pkBuildGrid(); return; }
+    if (_pk._totalInFlight) return;                                 // a count fetch is already in flight (fast close→reopen) → don't duplicate the RPC + double grid rebuild; the in-flight .then will build for the reopened modal
+    _pk._totalInFlight = true;
     if (layerBmp) _fzStatus('loading modulos…');                    // global hint while the artifact count loads (grid not built yet)
     _settleArtifact.totalArtifacts().then(function (n) {
+      _pk._totalInFlight = false;
       _pk.total = Number(n) || 0;
       if (!_pk.active) return;
       _pkBuildGrid();
-    }).catch(function () { if (_pk.active) _fzStatus('could not load modulos — reload'); });
+    }).catch(function () { _pk._totalInFlight = false; if (_pk.active) _fzStatus('could not load modulos — reload'); });
   }
   function _pkTeardown() {
     _pk.active = false;                                              // set FIRST so queued callbacks bail
@@ -1947,13 +1965,21 @@ function _extractComposition(decodedHtml) {
     var canShare = !!(file && navigator.share && navigator.canShare && navigator.canShare({ files: [file] }));
     link.textContent = 'Tap to save MP4 (' + (blob.size / 1e6).toFixed(1) + ' MB)';
     banner.style.display = 'block';
-    if (canShare) {
-      link.href = '#'; link.removeAttribute('download');
-      link.onclick = function (e) { e.preventDefault(); navigator.share({ files: [file] }).then(function () { banner.style.display = 'none'; }).catch(function (err) { if (err && err.name !== 'AbortError') console.error('[share]', err); }); };
-    } else {
+    function wireBlob() {                                              // blob-URL save path (also the fallback when Web-Share rejects on iOS in-app browsers that falsely report canShare)
       var url = URL.createObjectURL(blob);
       link._dlUrl = url; link.href = url; link.download = filename;
       link.onclick = function () { setTimeout(function () { URL.revokeObjectURL(url); if (link._dlUrl === url) link._dlUrl = null; banner.style.display = 'none'; link.onclick = null; }, 2000); };
+    }
+    if (canShare) {
+      link.href = '#'; link.removeAttribute('download');
+      link.onclick = function (e) {
+        e.preventDefault();
+        navigator.share({ files: [file] })
+          .then(function () { link.onclick = null; banner.style.display = 'none'; })   // release the ~20MB File after a successful share (drop the onclick closure)
+          .catch(function (err) { if (err && err.name === 'AbortError') return; console.error('[share]', err); wireBlob(); });   // share dead-ended → fall back to the blob download instead of a dead '#' link
+      };
+    } else {
+      wireBlob();
     }
   }
   async function _exportPunkCard() {
@@ -2036,7 +2062,10 @@ function _extractComposition(decodedHtml) {
       if (btnCheck) btnCheck.disabled = false;
       if (encoder) { try { encoder.close(); } catch (_) {} }
       if (fileStream) { try { await fileStream.abort(); } catch (_) {} }
-      if (detail.classList.contains('open')) _pk.active = pkWasActive;   // resume the picker (skip if the modal closed mid-export — _pkTeardown already set it false)
+      if (detail.classList.contains('open')) {
+        _pk.active = pkWasActive;                                       // resume the picker (skip if the modal closed mid-export — _pkTeardown already set it false)
+        if (pkWasActive && _pk.io) { _pk.io.disconnect(); _pk.cellEls.forEach(function (el) { _pk.io.observe(el); }); }   // re-fire intersection → cells scrolled into view WHILE paused (IO bailed, onScreen went stale) now mount
+      }
       _animKick();
     }
   }
