@@ -350,14 +350,21 @@ body.night #fz-export { background:#2c2b28; }
 .fz-check-seal, .fz-check-tick { position:absolute; inset:0; display:block; width:22px; height:22px; }
 .fz-check-seal { transform-origin:50% 50%; }
 #fz-check:hover .fz-check-seal, #fz-check:focus-visible .fz-check-seal { animation:fzBadgeSpin 1.3s linear infinite; }   /* spin ONLY on hover/focus — NOT while active (.fz-check-on) */
-#fz-pick { position:relative; }
-#fz-pick::before { content:''; position:absolute; inset:0; z-index:0; pointer-events:none; opacity:0; border-radius:8px;
+/* diagonal check field behind the WHOLE modal body (not the tbar): a fixed backdrop on #punk-detail,
+   below the content (z-index 0). The opaque tbar (z-index 2) covers its top; .pd-body (z-index 1)
+   holds the content above it. pointer-events:none → never overlaps/blocks anything. */
+#punk-detail::before { content:''; position:absolute; inset:0; z-index:0; pointer-events:none; opacity:0; border-radius:14px;
   background-image:var(--fz-check-tile); background-size:32px 32px; transition:opacity 0.3s ease; }
-#fz-pick.fz-check-bg::before { opacity:1; animation:fzDiagScroll 2.5s linear infinite; }
-#fz-picker, .fz-row2 { position:relative; z-index:1; }   /* keep thumbnails + controls above the check field */
+#punk-detail.fz-check-bg::before { opacity:1; animation:fzDiagScroll 2.5s linear infinite; }
+.pd-tbar { position:relative; z-index:2; }   /* opaque → hides the field at the top of the modal */
+.pd-body { position:relative; z-index:1; }   /* all body content above the field */
+/* flip-card: each picker thumbnail flips when its mode content swaps in (toggle) */
+@keyframes pkFlip { 0% { transform:perspective(240px) rotateY(0); } 50% { transform:perspective(240px) rotateY(90deg); } 100% { transform:perspective(240px) rotateY(0); } }
+.pk-slot.pk-flip { animation:pkFlip 0.5s ease; }
 @media (prefers-reduced-motion: reduce) {
-  #fz-check:hover .fz-check-seal, #fz-check:focus-visible .fz-check-seal, #fz-check.fz-check-on .fz-check-seal { animation:none; }
-  #fz-pick.fz-check-bg::before { animation:none; }
+  #fz-check:hover .fz-check-seal, #fz-check:focus-visible .fz-check-seal { animation:none; }
+  #punk-detail.fz-check-bg::before { animation:none; }
+  .pk-slot.pk-flip { animation:none; }
 }
 
 /* ── Filter drawer toggle (visible on all viewports) ── */
@@ -1634,12 +1641,12 @@ function _extractComposition(decodedHtml) {
   function _resetCheckModeUI() {                                    // force mode OFF + button/indicator OFF (does NOT redraw the live picker)
     _fz.checkMode = false;
     var b = document.getElementById('fz-check'); if (b) { b.setAttribute('aria-pressed', 'false'); b.classList.remove('fz-check-on'); }
-    var p = document.getElementById('fz-pick'); if (p) p.classList.remove('fz-check-bg');
+    detail.classList.remove('fz-check-bg');                          // check field is a backdrop on the whole modal (minus tbar)
   }
   function _toggleCheckMode() {
     _fz.checkMode = !_fz.checkMode;
     var b = document.getElementById('fz-check'); if (b) { b.setAttribute('aria-pressed', String(_fz.checkMode)); b.classList.toggle('fz-check-on', _fz.checkMode); }
-    var p = document.getElementById('fz-pick'); if (p) p.classList.toggle('fz-check-bg', _fz.checkMode);
+    detail.classList.toggle('fz-check-bg', _fz.checkMode);           // check field backdrop on the whole modal (minus tbar)
     _pkRedrawLive();                                                // swap picker thumbnails to the active mode (lazy-renders the badge variant)
     if (_fz.assignments.size) _animKick();                          // re-render the fused preview in the new mode
     else _drawStaticPunk();                                         // 0 assignments: nothing to badge-ify; keep the punk square consistent
@@ -1765,8 +1772,9 @@ function _extractComposition(decodedHtml) {
       var bb = _pkOff(PK_BADGE_W, PK_BADGE_W), bctx = bb.getContext('2d'); bctx.imageSmoothingEnabled = false;
       eng.paintToBadge(bb, bctx, { cell: PK_BADGE_CELL });
       _pk.cacheCheck.set(id, bctx.getImageData(0, 0, PK_BADGE_W, PK_BADGE_W));
-    } catch (e) {}
+    } catch (e) { console.error('[pk-badge] id=' + id, e); }   // surface (don't swallow) any deterministic per-artifact failure
   }
+
   // Lazy: render the check variant for a cell whose engine was already GC'd (rebuild from the
   // CACHED composition — no RPC). Only fired on toggle / cache-hit-while-in-check-mode, for live cells.
   function _pkRenderCheck(id) {
@@ -1780,15 +1788,28 @@ function _extractComposition(decodedHtml) {
       var eng; try { eng = _createArtifactEngine(off, comp); } catch (e) { return; }
       try { for (var s = 0; s < STATIC_STEPS; s++) { eng.step(eng.dtOps); eng.applyRects(); eng.tickRects && eng.tickRects(); } } catch (e) { return; }
       _pkBadgeFromEngine(id, eng);
-      if (_fz.checkMode && _pk.live.has(id)) { _pkUnmount(id); _pkDraw(id); }   // swap the live normal thumb → badge
+      if (_fz.checkMode && _pk.cellEls.has(id)) {                    // draw even if the IO unmounted it between toggle and now — else the badge silently never shows (the "only-some-flip" bug)
+        if (_pk.live.has(id)) _pkUnmount(id);
+        _pkDraw(id); _pkFlip(id);                                    // swap the normal thumb → badge + flip cue
+      }
     }).catch(function () { _pk.checkPending.delete(id); });
   }
   // Re-draw every live picker cell for the current mode (used by toggle + clear). Snapshot the
   // keys FIRST — _pkUnmount deletes and _pkDraw re-adds, so iterating _pk.live live would loop forever.
+  function _pkFlip(id, d) {                                          // flip-card cue when a cell's mode content swaps in
+    var el = _pk.cellEls.get(id), slot = el && el.querySelector('.pk-slot');
+    if (!slot) return;
+    slot.style.animationDelay = ((d || 0) % 12) * 25 + 'ms';
+    slot.classList.remove('pk-flip'); void slot.offsetWidth; slot.classList.add('pk-flip');   // reflow → restart the animation
+  }
   function _pkRedrawLive() {
     if (!_pk.active) return;
     var ids = Array.prototype.slice.call(_pk.live.keys());
-    ids.forEach(function (id) { _pkUnmount(id); _pkDraw(id); });
+    ids.forEach(function (id, idx) {
+      var instant = !_fz.checkMode || _pk.cacheCheck.has(id);        // normal mode, or check already cached → final content draws now
+      _pkUnmount(id); _pkDraw(id);
+      if (instant) _pkFlip(id, idx);                                 // async (lazy) cells flip later, when their check lands (in _pkRenderCheck)
+    });
     if (_fz.checkMode) ids.forEach(function (id) { if (!_pk.cacheCheck.has(id)) _pkRenderCheck(id); });   // kick lazy badge render for the visible cells
   }
   // ── Per-cell loading spinner + bounded retry (flaky preview loads under RPC burst-throttle) ──
