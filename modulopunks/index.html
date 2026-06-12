@@ -1362,6 +1362,15 @@ function _extractComposition(decodedHtml) {
     x.fillStyle = GOLD_HI; _gStarPath(x, cc, cc, RO * 0.5); x.fill();
     _starSpriteCache.set(CELL, cv); return cv;
   }
+  function _starSpriteHalf(CELL) {                                  // HALF-size star (dither dx cells) — mirrors _starSprite, RO*0.5, cached under 'CELL|h' (coexists with the full sprite)
+    var key = CELL + '|h', c = _starSpriteCache.get(key); if (c) return c;
+    var cv; if (typeof OffscreenCanvas !== 'undefined') { cv = new OffscreenCanvas(CELL, CELL); } else { cv = document.createElement('canvas'); cv.width = cv.height = CELL; }
+    var x = cv.getContext('2d'), cc = CELL / 2, RO = (CELL / 2) * GOLD_STAR_SZ * 0.5;
+    x.fillStyle = GOLD_EDGE; _gStarPath(x, cc, cc, RO * 1.06); x.fill();
+    x.fillStyle = GOLD_BODY; _gStarPath(x, cc, cc, RO); x.fill();
+    x.fillStyle = GOLD_HI; _gStarPath(x, cc, cc, RO * 0.5); x.fill();
+    _starSpriteCache.set(key, cv); return cv;
+  }
   // Spinning gold star: re-rasterize the VECTOR star fresh at `angle` ONCE per frame (vector-crisp at every
   // angle — no premult-alpha halo from rotating a baked sprite), then the caller blits it axis-aligned 1:1 per
   // cell. Intra-frame memo on CELL|angle → the ≤6 _composeGoldHR layer calls (same global angle) rasterize once.
@@ -1382,6 +1391,23 @@ function _extractComposition(decodedHtml) {
     x.fillStyle = GOLD_HI; _gStarPath(x, 0, 0, RO * 0.5); x.fill();
     x.restore();
     _starScratchKey = key; return _starScratch;
+  }
+  var _starScratchH = null, _starScratchHCtx = null, _starScratchHKey = '';   // SEPARATE scratch for the HALF (dither) star → full + half coexist in one frame without memo thrash
+  function _rotatedStarSpriteHalf(CELL, angle) {                    // HALF-size spinning star — mirrors _rotatedStarSprite, RO*0.5
+    if (!_starScratchH || _starScratchH.width !== CELL) {
+      if (typeof OffscreenCanvas !== 'undefined') { _starScratchH = new OffscreenCanvas(CELL, CELL); } else { _starScratchH = document.createElement('canvas'); _starScratchH.width = _starScratchH.height = CELL; }
+      _starScratchHCtx = _starScratchH.getContext('2d'); _starScratchHKey = '';
+    }
+    var key = CELL + '|' + angle;
+    if (key === _starScratchHKey) return _starScratchH;
+    var x = _starScratchHCtx, cc = CELL / 2, RO = (CELL / 2) * GOLD_STAR_SZ * 0.5;
+    x.clearRect(0, 0, CELL, CELL);
+    x.save(); x.translate(cc, cc); x.rotate(angle);
+    x.fillStyle = GOLD_EDGE; _gStarPath(x, 0, 0, RO * 1.06); x.fill();
+    x.fillStyle = GOLD_BODY; _gStarPath(x, 0, 0, RO); x.fill();
+    x.fillStyle = GOLD_HI; _gStarPath(x, 0, 0, RO * 0.5); x.fill();
+    x.restore();
+    _starScratchHKey = key; return _starScratchH;
   }
 
 // Engine factory — direct port of html-placeholders/artifact-render.html.
@@ -1641,19 +1667,25 @@ function _extractComposition(decodedHtml) {
     if (visCols <= 0 || visRows <= 0) return;
     var ang = opts.cell ? 0 : (opts.angle !== undefined ? opts.angle : _goldAngle);   // picker thumbnails (opts.cell) + reduced-motion (_goldAngle 0) → upright cached sprite; only the live/export full-compose spins
     var star = ang ? _rotatedStarSprite(CELL, ang) : _starSprite(CELL);
+    var starHalf = ang ? _rotatedStarSpriteHalf(CELL, ang) : _starSpriteHalf(CELL);   // dither (dx) cells → HALF-size star (fetched once; both memos stay 1-raster/frame)
+    var dxPat = _activeDxPattern;                                  // constant per modulo; null → no dither stars
     var beHi = _gLerp(GOLD_LIT, '#ffffff', 0.33), beSh = _gLerp(GOLD_LIT, '#000000', 0.42), lw = Math.max(1, Math.round(CELL * 0.1));
     var gW = visCols * CELL, gH = visRows * CELL, px0 = Math.floor((W - gW) / 2), py0 = Math.floor((H - gH) / 2);
     tctx.fillStyle = GOLD_SH; tctx.fillRect(0, 0, W, H);
     for (var r = 0; r < visRows; r++) for (var c = 0; c < visCols; c++) {
-      var v = grid[(offR + r * stride) * 450 + (offC + c * stride)];
+      var gi = (offR + r * stride) * 450 + (offC + c * stride);
+      var v = grid[gi];
       var bgOn = (v & 2) === 0, starOn = (v & 1) === 0;          // bit1 → fondo LIT/SHADOW · bit0 → estrella on/off (independientes; invertido → el dominante v=0 prende)
+      var isDx = dxPat && (dxPat === 'o' ? (_ditherNoise[gi] <= 0.70)   // dither (dx) cell → half star. 'o' uses a reduced 0.70 threshold (vs 0.90 pixel-render) so it doesn't blanket the cell grid; tunable. num/numi approximated per-cell (no 2×2-block); others = grid0 + density.
+        : (v === 0 && _ditherNoise[gi] <= DITHER_DENSITY * ((dxPat === 'num' || dxPat === 'numi') ? 1.95 : 1)));
       var dx = px0 + c * CELL, dy = py0 + r * CELL;
       tctx.fillStyle = bgOn ? GOLD_LIT : GOLD_SH; tctx.fillRect(dx, dy, CELL, CELL);
       if (bgOn) {                                                // bisel tipo botón: luz arriba-izq, sombra abajo-der
         tctx.fillStyle = beHi; tctx.fillRect(dx, dy, CELL, lw); tctx.fillRect(dx, dy, lw, CELL);
         tctx.fillStyle = beSh; tctx.fillRect(dx + CELL - lw, dy, lw, CELL); tctx.fillRect(dx, dy + CELL - lw, CELL, lw);
       }
-      if (starOn) tctx.drawImage(star, dx, dy);
+      if (isDx) tctx.drawImage(starHalf, dx, dy);                 // dither cell → half star (overrides starOn: the dx texture always shows)
+      else if (starOn) tctx.drawImage(star, dx, dy);
     }
   }
 
