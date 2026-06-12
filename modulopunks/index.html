@@ -343,11 +343,13 @@ body.night #fz-export { background:#2c2b28; }
 /* ── "check it" mode: tbar icon (spins on hover) + diagonal check field behind the picker ── */
 @keyframes fzBadgeSpin { to { transform:rotate(360deg); } }   /* distinct from @keyframes spin (L387) */
 @keyframes fzDiagScroll { to { background-position:32px 32px; } }
-#fz-check { display:inline-flex; align-items:center; padding:0 2px; background:none; border:none; cursor:pointer; opacity:0.55; transition:opacity 0.15s; }
+#fz-check { display:inline-flex; align-items:center; padding:0 2px; background:none; border:none; cursor:pointer; opacity:0.55; transition:opacity 0.15s, transform 0.15s ease; }
 #fz-check:hover, #fz-check:focus-visible, #fz-check.fz-check-on { opacity:1; }
+#fz-check:hover, #fz-check:focus-visible { transform:scale(1.14); }   /* scale pop on hover/focus */
+#fz-check:active { transform:scale(0.9); }                            /* press feedback */
 #fz-check:disabled { opacity:0.3; cursor:default; }
-.fz-check-icon { position:relative; display:block; width:22px; height:22px; }   /* sits inline with the trait pills (canvas backing stays 28 → crisp) */
-.fz-check-seal, .fz-check-tick { position:absolute; inset:0; display:block; width:22px; height:22px; }
+.fz-check-icon { position:relative; display:block; width:28px; height:28px; }   /* a couple px taller than the ~26px trait pills (canvas backing is 28 → 1:1 crisp) */
+.fz-check-seal, .fz-check-tick { position:absolute; inset:0; display:block; width:28px; height:28px; }
 .fz-check-seal { transform-origin:50% 50%; }
 #fz-check:hover .fz-check-seal, #fz-check:focus-visible .fz-check-seal { animation:fzBadgeSpin 1.3s linear infinite; }   /* spin ONLY on hover/focus — NOT while active (.fz-check-on) */
 /* diagonal check field behind the WHOLE modal body (not the tbar): a fixed backdrop on #punk-detail,
