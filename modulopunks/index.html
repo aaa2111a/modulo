@@ -642,6 +642,7 @@ body.night #filter-btn { background:#2c2b28; }
     d[119] = { rect: [9, 13, 7, 2] };                                                     // Vr female screen
     return d;
   })();
+  var _OVERLAY_SET = null;      // 1-based idx of PURE-OVERLAY trait sprites (no opaque px) — populated by _buildMaskBmp; these get the solid-canon fusion treatment so they don't reveal a fused modulo behind them
   var layerNames = {};          // { "assetIdx": "Pretty Name" }
   var state = { Type: new Set(), AccCount: new Set(), Acc: new Set() };
 
@@ -1113,13 +1114,14 @@ body.night #filter-btn { background:#2c2b28; }
     var cv = document.createElement('canvas'); cv.width = bmp.width; cv.height = bmp.height;
     var cx = cv.getContext('2d'); cx.imageSmoothingEnabled = false; cx.drawImage(bmp, 0, 0);
     var img = cx.getImageData(0, 0, cv.width, cv.height), d = img.data;
-    var n = Math.floor(bmp.width / SRC);
+    var n = Math.floor(bmp.width / SRC), overlaySet = new Set();
     for (var s = 0; s < n; s++) {
       var hasOpaque = false, x, y, p;
       for (y = 0; y < SRC && !hasOpaque; y++)
         for (x = 0; x < SRC; x++)
           if (d[((y * cv.width) + s * SRC + x) * 4 + 3] === 255) { hasOpaque = true; break; }
       if (hasOpaque) continue;                          // mixed/opaque sprite → keep authentic alpha
+      overlaySet.add(s + 1);                            // pure-overlay (1-based idx) → also marked for solid-canon fusion treatment
       for (y = 0; y < SRC; y++)
         for (x = 0; x < SRC; x++) {
           p = ((y * cv.width) + s * SRC + x) * 4 + 3;
@@ -1127,6 +1129,7 @@ body.night #filter-btn { background:#2c2b28; }
         }
     }
     cx.putImageData(img, 0, 0);
+    _OVERLAY_SET = overlaySet;                          // single source of truth (same hasOpaque test) → published for the solid-canon overlay fix
     return cv;
   }
   // Builds the interior-only mask atlas: per sprite WITH an INTERIOR_DEF entry,
@@ -1761,7 +1764,7 @@ function _extractComposition(decodedHtml) {
   // ── Fusion state + MULTI-engine compose loop (Phase 3: N traits at once) ──
   var FUSE_CAP = (window.matchMedia && window.matchMedia('(pointer:coarse)').matches) ? 2 : 6;
   var BG_ID = -1;   // synthetic "Background" pseudo-trait id — never in _fz.L, never indexes layerBmp
-  var _fz = { raf: 0, punkId: null, L: null, selected: null, tokenSeq: 0,
+  var _fz = { raf: 0, punkId: null, L: null, selected: null, tokenSeq: 0, solidCanon: null,
               checkMode: false,         // fx render mode ON (check OR gold) — true = any tier>1 active (was "check it" only; kept as the single fx-on flag → picker/blit/export gating unchanged)
               fx: 'check',              // WHICH fx when checkMode: 'check' (Tier 2 badge) | 'gold' (Tier 3 stars). Single discriminator → no "both active" phantom state
               assignments: new Map(),  // layerId -> { engine, off, offctx, artifactId } (off = 144×144)
@@ -1817,7 +1820,9 @@ function _extractComposition(decodedHtml) {
         _fz.caCtx.globalCompositeOperation = 'source-over';
         _fz.comCtx.drawImage(_fz.caCv, 0, 0);
       } else if (layerBmp) {
-        _fz.comCtx.drawImage(layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, 144, 144);  // static layer upscaled 24→144
+        var _sc = _fz.solidCanon && _fz.solidCanon.get(li);
+        if (_sc) _fz.comCtx.drawImage(_sc, 0, 0, 24, 24, 0, 0, 144, 144);          // non-fused pure-overlay → SOLID per-punk canon (won't reveal a fused modulo behind it)
+        else _fz.comCtx.drawImage(layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, 144, 144);  // static layer upscaled 24→144
       }
     }
   }
@@ -1843,7 +1848,9 @@ function _extractComposition(decodedHtml) {
         cac.globalCompositeOperation = 'source-over';
         com.drawImage(ca, 0, 0);
       } else if (layerBmp) {
-        com.drawImage(layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, S, S);
+        var _sc = _fz.solidCanon && _fz.solidCanon.get(li);
+        if (_sc) com.drawImage(_sc, 0, 0, 24, 24, 0, 0, S, S);                     // non-fused pure-overlay → SOLID per-punk canon (no see-through to a fused modulo)
+        else com.drawImage(layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, S, S);
       }
     }
   }
@@ -1867,7 +1874,9 @@ function _extractComposition(decodedHtml) {
         cac.globalCompositeOperation = 'source-over';
         com.drawImage(ca, 0, 0);
       } else if (layerBmp) {
-        com.drawImage(layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, S, S);
+        var _sc = _fz.solidCanon && _fz.solidCanon.get(li);
+        if (_sc) com.drawImage(_sc, 0, 0, 24, 24, 0, 0, S, S);                     // non-fused pure-overlay → SOLID per-punk canon (no see-through to a fused modulo)
+        else com.drawImage(layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, S, S);
       }
     }
   }
@@ -1920,7 +1929,9 @@ function _extractComposition(decodedHtml) {
         cac.globalCompositeOperation = 'source-over';
         com.drawImage(ca, 0, 0);
       } else if (layerBmp) {
-        com.drawImage(layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, S, S);
+        var _sc = _fz.solidCanon && _fz.solidCanon.get(li);
+        if (_sc) com.drawImage(_sc, 0, 0, 24, 24, 0, 0, S, S);                     // non-fused pure-overlay → SOLID per-punk canon (no see-through to a fused modulo)
+        else com.drawImage(layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, S, S);
       }
     }
   }
@@ -1944,7 +1955,9 @@ function _extractComposition(decodedHtml) {
         cac.globalCompositeOperation = 'source-over';
         com.drawImage(ca, 0, 0);
       } else if (layerBmp) {
-        com.drawImage(layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, S, S);
+        var _sc = _fz.solidCanon && _fz.solidCanon.get(li);
+        if (_sc) com.drawImage(_sc, 0, 0, 24, 24, 0, 0, S, S);                     // non-fused pure-overlay → SOLID per-punk canon (no see-through to a fused modulo)
+        else com.drawImage(layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, S, S);
       }
     }
   }
@@ -1972,7 +1985,7 @@ function _extractComposition(decodedHtml) {
     }
     if (_fz.assignments.size) _animRaf = requestAnimationFrame(_animFrame);
   }
-  function _fzTeardown() { _fz.assignments.clear(); _fz.pending.clear(); _fz.selected = null; _fz.punkId = null; _resetCheckModeUI(); _fz.caCv = null; _fz.comCv = null; _fz.caCtx = null; _fz.comCtx = null; _fz.offHR = null; _fz.caHR = null; _fz.comHR = null; _fz.offHRctx = null; _fz.caHRctx = null; _fz.comHRctx = null; _fz.xbOff = null; _fz.xbOffctx = null; _fz.xbCaOff = null; _fz.xbCaCtx = null; _animStopIfIdle(); }   // null the ctx refs too (incl. X-Box scratch; the #fz-xbox-canvas element persists hidden) (a ctx pins its canvas via ctx.canvas) → ~6MB of HR/CA buffers release on close instead of lingering until the next open   // _resetCheckModeUI = flag OFF + button/field classes OFF (never let the UI outlive checkMode, incl. any future in-modal punk switch)
+  function _fzTeardown() { _fz.assignments.clear(); _fz.pending.clear(); _fz.selected = null; _fz.punkId = null; _resetCheckModeUI(); _fz.caCv = null; _fz.comCv = null; _fz.caCtx = null; _fz.comCtx = null; _fz.offHR = null; _fz.caHR = null; _fz.comHR = null; _fz.offHRctx = null; _fz.caHRctx = null; _fz.comHRctx = null; _fz.xbOff = null; _fz.xbOffctx = null; _fz.xbCaOff = null; _fz.xbCaCtx = null; _fz.solidCanon = null; _animStopIfIdle(); }   // null the ctx refs too (incl. X-Box scratch; the #fz-xbox-canvas element persists hidden) (a ctx pins its canvas via ctx.canvas) → ~6MB of HR/CA buffers release on close instead of lingering until the next open   // _resetCheckModeUI = flag OFF + button/field classes OFF (never let the UI outlive checkMode, incl. any future in-modal punk switch)
   function _resetFusion() { _punkBg = PUNK_BG; _pkTeardown(); _fzTeardown(); _resetCheckModeUI(); var p = document.getElementById('fz-panel'); if (p) p.style.display = 'none'; var p2 = document.getElementById('fz-pick'); if (p2) p2.style.display = 'none'; _fzStatus(''); }
   function _clearAllFusion() { if (_exportInFlight) return; _fz.assignments.clear(); _fz.pending.clear(); _pkRedrawLive(); _animStopIfIdle(); _refreshPills(); _drawStaticPunk(); _fzStatus('cleared'); }   // keep check mode sticky across Clear-all (view setting, orthogonal to assignments); _pkRedrawLive honors the current mode
   // ── "check it" mode (badge texture) toggle ──
@@ -2043,6 +2056,21 @@ function _extractComposition(decodedHtml) {
     var pid = window._activePunkId; if (pid == null || !traits[pid]) return;
     if (pid !== _fz.punkId) _fzTeardown();                          // new punk → drop old assignments
     _fz.punkId = pid; _fz.L = traits[pid].L || [];
+    // Per-punk SOLID-CANON sprites for this punk's pure-overlay traits: sample the canon atlas cell, clip to the trait footprint (binarized maskBmp) → an OPAQUE per-punk sprite. A non-fused overlay drawn from this won't reveal a fused modulo behind it. Fail-soft (null → compose falls back to layerBmp = today's behaviour).
+    _fz.solidCanon = null;
+    if (atlasBmp && maskBmp && _OVERLAY_SET && _OVERLAY_SET.size) {
+      var _scm = new Map(), _psx = (pid % ATLAS_COLS) * SRC, _psy = Math.floor(pid / ATLAS_COLS) * SRC;
+      _fz.L.forEach(function (li) {
+        if (!_OVERLAY_SET.has(li)) return;
+        var oc = _pkOff(SRC, SRC), octx = oc.getContext('2d'); octx.imageSmoothingEnabled = false;
+        octx.drawImage(atlasBmp, _psx, _psy, SRC, SRC, 0, 0, SRC, SRC);              // canon composite of this punk's cell
+        octx.globalCompositeOperation = 'destination-in';
+        octx.drawImage(maskBmp, (li - 1) * SRC, 0, SRC, SRC, 0, 0, SRC, SRC);        // clip to the trait's footprint → opaque canon trait
+        octx.globalCompositeOperation = 'source-over';
+        _scm.set(li, oc);
+      });
+      if (_scm.size) _fz.solidCanon = _scm;
+    }
     _fz.selected = (_fz.L.length ? _fz.L[0] : null);
     var host = document.getElementById('fz-traits');
     [].slice.call(host.querySelectorAll('.fz-pill')).forEach(function (p) { host.removeChild(p); });   // keep the #fz-check button + dot separator; drop only the old trait pills
