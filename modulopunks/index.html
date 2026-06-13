@@ -531,7 +531,7 @@ body.night #filter-btn { background:#2c2b28; }
     <div id="fuse-title">Fuse with Modulo Artifacts</div>
     <div id="fz-panel">
       <p class="fz-k">Pick a trait, then pick a modulo to fill it. Several animate at once.</p>
-      <div id="fz-traits"><button id="fz-check" type="button" aria-pressed="false" aria-label="check it — toggle badge mode" title="check it"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-gold" type="button" aria-pressed="false" aria-label="gold stars — toggle tier 3" title="gold stars"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-silver" type="button" aria-pressed="false" aria-label="silver stars — toggle tier 4" title="silver stars"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-xbox" type="button" aria-pressed="false" aria-label="X-Box — toggle tier 5" title="X-Box"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><span class="fz-cdot" aria-hidden="true">·</span></div>
+      <div id="fz-traits"><button id="fz-check" type="button" aria-pressed="false" aria-label="check it — toggle badge mode" title="check it"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-gold" type="button" aria-pressed="false" aria-label="gold stars — toggle tier 3" title="gold stars"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-silver" type="button" aria-pressed="false" aria-label="silver stars — toggle tier 4" title="silver stars"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-xbox" type="button" aria-pressed="false" aria-label="windows — toggle tier 5" title="windows"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><span class="fz-cdot" aria-hidden="true">·</span></div>
     </div>
     <div id="fz-pick">
       <div id="fz-picker"></div>
@@ -2018,17 +2018,15 @@ function _extractComposition(decodedHtml) {
     if (sc) try { _badgeFillSeal(sc.getContext('2d'), 28, sealColor); } catch (e) {}   // seal disc = the tier colour (the "around")
     if (tc) try { var x = tc.getContext('2d'); x.clearRect(0, 0, 28, 28); _gStarStroke(x, 14, 14, 10.5, '#dbd8d1', 1.6); } catch (e) {}   // star = beige, thin hollow outline (seal shows through → reads clean like the check glyph)
   }
-  function _drawFzXBoxIcon() {                                     // static icon = one X-Box cell glyph (hollow black frame + black X on a beige field)
+  function _drawFzXBoxIcon() {                                     // static icon = the "windows" X shape (s1), GREY, no frame/field
     var sc = document.querySelector('#fz-xbox .fz-check-seal'), tc = document.querySelector('#fz-xbox .fz-check-tick');
     if (tc) try { tc.getContext('2d').clearRect(0, 0, 28, 28); } catch (e) {}
     if (sc) try {
-      var x = sc.getContext('2d'), u = 3, o = 0;                   // 9·u = 27 ≈ the 28px seal canvas
+      var x = sc.getContext('2d'), u = 2, o = 4;                   // s1 = glifo 10×10 → 10·u=20 centrado en el canvas de 28px (offset 4)
       x.clearRect(0, 0, 28, 28); x.imageSmoothingEnabled = false;
-      x.fillStyle = '#dbd8d1'; x.fillRect(o, o, 9 * u, 9 * u);     // field
-      x.fillStyle = '#000';                                        // hollow frame ring (sub-px 1 & 7)
-      x.fillRect(o + u, o + u, 7 * u, u); x.fillRect(o + u, o + 7 * u, 7 * u, u);
-      x.fillRect(o + u, o + u, u, 7 * u); x.fillRect(o + 7 * u, o + u, u, 7 * u);
-      [[3, 3], [5, 3], [4, 4], [3, 5], [5, 5]].forEach(function (p) { x.fillRect(o + p[0] * u, o + p[1] * u, u, u); });   // X (base shape)
+      x.fillStyle = '#8b8b8b'; x.fillRect(o, o, 10 * u, 10 * u);   // fondo gris (el campo de la celda)
+      x.fillStyle = '#000000';                                     // X negra encima
+      XB_SHAPES.s1.forEach(function (p) { x.fillRect(o + p[0] * u, o + p[1] * u, u, u); });   // la X actual del modo (s1) — el icono sigue a s1 si cambia
     } catch (e) {}
   }
   function _refreshPills() {
@@ -2395,8 +2393,8 @@ function _extractComposition(decodedHtml) {
       var punkBg = _punkBg;    // punk-square bg = exactly what the modal shows (status colour, or BG modulo fills it)
       var S = Math.round(W * 0.7703703703), pX = Math.floor((W - S) / 2), pY = Math.round(W * 0.037);   // W-relative → 832 / 40 exactly at W=1080 (byte-equiv std); scales for the 2000² card
       var Sx = 0, xbExp = null, xbExpCtx = null, xbExpOff = null, xbExpOffc = null, xbExpCa = null, xbExpCac = null;
-      if (isXbox) {                                                   // X-Box export buffers: render at a 240-multiple ≥ S, then 1:1 center-crop into the S slot → crisp (no fractional scale); local → GC'd on return
-        Sx = Math.ceil(S / 240) * 240;
+      if (isXbox) {                                                   // X-Box export buffers: render at the largest 240-multiple ≤ S, then 1:1 CENTER (letterbox) into the S slot → all 24 cells visible, crisp (no crop, no fractional scale); local → GC'd on return
+        Sx = Math.max(240, Math.floor(S / 240) * 240);
         xbExp = _pkOff(Sx, Sx); xbExpCtx = xbExp.getContext('2d'); xbExpCtx.imageSmoothingEnabled = false;
         xbExpOff = _pkOff(Sx, Sx); xbExpOffc = xbExpOff.getContext('2d'); xbExpOffc.imageSmoothingEnabled = false;
         xbExpCa = _pkOff(Sx, Sx); xbExpCac = xbExpCa.getContext('2d'); xbExpCac.imageSmoothingEnabled = false;
@@ -2433,9 +2431,10 @@ function _extractComposition(decodedHtml) {
         if (isXbox) {                                                // X-Box: step engines INLINE (don't touch the shared _composeFusionFrame) → compose into the Sx buffer → 1:1 center-crop into the S slot
           _fz.assignments.forEach(function (a) { a.engine.step(a.engine.dtOps); a.engine.applyRects(); a.engine.tickRects && a.engine.tickRects(); });
           _composeXBoxExport(xbExpCtx, xbExpOff, xbExpOffc, xbExpCa, xbExpCac, Sx);
-          cx.imageSmoothingEnabled = false;                          // pixelated: 1:1 crop, no scale → crisp
-          var _xCrop = Math.floor((Sx - S) / 2);                     // integer source-crop offset (S can be odd → avoid a 0.5px crop on the HQ path); X-Box-only
-          cx.drawImage(xbExp, _xCrop, _xCrop, S, S, pX, pY, S, S);   // center crop the ~½-cell border overflow (Sx≥S); buffer already fills its own _punkBg
+          cx.imageSmoothingEnabled = false;                          // pixelated: 1:1, no scale → crisp
+          cx.fillStyle = punkBg; cx.fillRect(pX, pY, S, S);          // slot bg = _punkBg (same as the render's own bg → seamless margin, no visible border)
+          var _xOff = Math.floor((S - Sx) / 2);                      // CENTER the full Sx render in the S slot (letterbox, Sx≤S → NO crop, all 24 cells, 1:1 crisp)
+          cx.drawImage(xbExp, 0, 0, Sx, Sx, pX + _xOff, pY + _xOff, Sx, Sx);
         } else {
           if (_fz.fx === 'gold' || _fz.fx === 'silver') _goldAngle = ((f / FPS) * 1000 / GOLD_SPIN_MS) * 2 * Math.PI;   // shared star spin (gold+silver); frame-index drive → exact period regardless of encode pace
           _composeFusionFrame();
