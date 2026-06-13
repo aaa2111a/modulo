@@ -1376,9 +1376,9 @@ function _extractComposition(decodedHtml) {
   // ── X-Box render: per-cell 9×9 sub-pixel glyph (orilla + black hollow frame + hierarchy field + a pool shape that shifts with the CA). Ported from _gold-stars-mockup.html. ──
   // X-Box interior shapes — grid 10×10, coords 0..9, con margen de 1 cuadrado (contenido en 1..8). Decodificadas de los PNG de Le sad/sad2/sad3 (2026-06-13); reemplazan el set 9×9 (x/slashes/box/L…).
   const XB_SHAPES = {
-    s1: [[1,1],[2,1],[7,1],[8,1],[1,2],[2,2],[7,2],[8,2],[3,3],[4,3],[5,3],[6,3],[3,4],[4,4],[5,4],[6,4],[3,5],[4,5],[5,5],[6,5],[3,6],[4,6],[5,6],[6,6],[1,7],[2,7],[7,7],[8,7],[1,8],[2,8],[7,8],[8,8]],   // sad.png — esquinas 2×2 + centro 4×4
-    s2: [[7,1],[8,1],[7,2],[8,2],[5,3],[6,3],[5,4],[6,4],[3,5],[4,5],[3,6],[4,6],[1,7],[2,7],[1,8],[2,8]],   // diagonal "/" — 4 bloques 2×2 (2026-06-13)
-    s3: [[1,1],[2,1],[1,2],[2,2],[3,3],[4,3],[3,4],[4,4],[5,5],[6,5],[5,6],[6,6],[7,7],[8,7],[7,8],[8,8]]    // diagonal "\" — 4 bloques 2×2 (2026-06-13)
+    s1: [[2,2],[7,2],[3,3],[6,3],[4,4],[5,4],[4,5],[5,5],[3,6],[6,6],[2,7],[7,7]],   // sad.png — X (ambas diagonales, 1px), margen 2
+    s2: [[2,2],[3,3],[4,4],[5,5],[6,6],[7,7]],   // sad2.png — diagonal "\" (1px)
+    s3: [[7,2],[6,3],[5,4],[4,5],[3,6],[2,7]]    // sad3.png — diagonal "/" (1px)
   };
   const XB_POOL = ['s1', 's2', 's3'];   // las 3 formas nuevas 10×10 (Le 2026-06-13) reemplazan x/slashes; el pool shiftea con la CA
   function _xbHash(c, r) { var h = (c * 73856093) ^ (r * 19349663); return (h ^ (h >>> 13)) >>> 0; }   // hash espacial estable → forma fija por celda (los colores animan debajo)
