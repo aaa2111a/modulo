@@ -352,16 +352,23 @@ body.night #fz-export { background:#2c2b28; }
 .fz-check-icon { position:relative; display:block; width:28px; height:28px; }   /* a couple px taller than the ~26px trait pills (canvas backing is 28 → 1:1 crisp) */
 .fz-check-seal, .fz-check-tick { position:absolute; inset:0; display:block; width:28px; height:28px; }
 .fz-check-seal { transform-origin:50% 50%; }
-#fz-check:hover .fz-check-seal, #fz-check:focus-visible .fz-check-seal,
-#fz-gold:hover .fz-check-seal, #fz-gold:focus-visible .fz-check-seal,
-#fz-silver:hover .fz-check-seal, #fz-silver:focus-visible .fz-check-seal,
-#fz-xbox:hover .fz-check-seal, #fz-xbox:focus-visible .fz-check-seal { animation:fzBadgeSpin 1.3s linear infinite; }   /* spin ONLY on hover/focus — NOT while active (.fz-check-on) */
+#fz-check:hover .fz-check-seal, #fz-check:focus-visible .fz-check-seal, #fz-check.fz-check-on .fz-check-seal,
+#fz-gold:hover .fz-check-seal, #fz-gold:focus-visible .fz-check-seal, #fz-gold.fz-check-on .fz-check-seal,
+#fz-silver:hover .fz-check-seal, #fz-silver:focus-visible .fz-check-seal, #fz-silver.fz-check-on .fz-check-seal,
+#fz-normal:hover .fz-check-seal, #fz-normal:focus-visible .fz-check-seal, #fz-normal.fz-check-on .fz-check-seal,
+#fz-xbox:hover .fz-check-seal, #fz-xbox:focus-visible .fz-check-seal { animation:fzBadgeSpin 1.3s linear infinite; }   /* spin on hover/focus for all; AND while active (.fz-check-on) for check/gold/silver/normal — #fz-xbox (square glyph) spins on hover ONLY (Le 2026-06-13) */
 /* diagonal check field behind the WHOLE modal body (not the tbar): a fixed backdrop on #punk-detail,
    below the content (z-index 0). The opaque tbar (z-index 2) covers its top; .pd-body (z-index 1)
    holds the content above it. pointer-events:none → never overlaps/blocks anything. */
 #punk-detail::before { content:''; position:absolute; inset:0; z-index:0; pointer-events:none; opacity:0; border-radius:14px;
   background-image:var(--fz-check-tile); background-size:32px 32px; transition:opacity 0.3s ease; }
 #punk-detail.fz-check-bg::before { opacity:1; animation:fzDiagScroll 2.5s linear infinite; }
+/* Normal-mode selector button (Modulo mark; mirrors #fz-check; no backdrop — normal = the base state, no diagonal field) */
+#fz-normal { display:inline-flex; align-items:center; padding:0 2px; background:none; border:none; cursor:pointer; opacity:0.55; transition:opacity 0.15s, transform 0.15s ease; }
+#fz-normal:hover, #fz-normal:focus-visible, #fz-normal.fz-check-on { opacity:1; }
+#fz-normal:hover, #fz-normal:focus-visible { transform:scale(1.14); }
+#fz-normal:active { transform:scale(0.9); }
+#fz-normal:disabled { opacity:0.3; cursor:default; }
 /* Tier-3 GOLD STARS button (mirrors #fz-check) */
 #fz-gold { display:inline-flex; align-items:center; padding:0 2px; background:none; border:none; cursor:pointer; opacity:0.55; transition:opacity 0.15s, transform 0.15s ease; }
 #fz-gold:hover, #fz-gold:focus-visible, #fz-gold.fz-check-on { opacity:1; }
@@ -392,9 +399,10 @@ body.night #fz-export { background:#2c2b28; }
 @keyframes pkFlip { 0% { transform:perspective(240px) rotateY(0); } 50% { transform:perspective(240px) rotateY(90deg); } 100% { transform:perspective(240px) rotateY(0); } }
 .pk-slot.pk-flip { animation:pkFlip 0.5s ease; }
 @media (prefers-reduced-motion: reduce) {
-  #fz-check:hover .fz-check-seal, #fz-check:focus-visible .fz-check-seal,
-  #fz-gold:hover .fz-check-seal, #fz-gold:focus-visible .fz-check-seal,
-  #fz-silver:hover .fz-check-seal, #fz-silver:focus-visible .fz-check-seal,
+  #fz-check:hover .fz-check-seal, #fz-check:focus-visible .fz-check-seal, #fz-check.fz-check-on .fz-check-seal,
+  #fz-gold:hover .fz-check-seal, #fz-gold:focus-visible .fz-check-seal, #fz-gold.fz-check-on .fz-check-seal,
+  #fz-silver:hover .fz-check-seal, #fz-silver:focus-visible .fz-check-seal, #fz-silver.fz-check-on .fz-check-seal,
+  #fz-normal:hover .fz-check-seal, #fz-normal:focus-visible .fz-check-seal, #fz-normal.fz-check-on .fz-check-seal,
   #fz-xbox:hover .fz-check-seal, #fz-xbox:focus-visible .fz-check-seal { animation:none; }
   #punk-detail.fz-check-bg::before { animation:none; }
   .pk-slot.pk-flip { animation:none; }
@@ -492,7 +500,7 @@ body.night #filter-btn { background:#2c2b28; }
       <h1 class="display-title">Modulo Punks</h1>
       <img id="header-mark" class="id-mark" alt="">
     </div>
-    <div class="display-sub">all 10,000 cryptopunks powered by modulo artifacts - fully on-chain</div>
+    <div class="display-sub">all 10,000 cryptopunks powered by modulo artifacts - deflationary - fully on-chain - soon</div>
   </div>
 </header>
 
@@ -531,7 +539,7 @@ body.night #filter-btn { background:#2c2b28; }
     <div id="fuse-title">Fuse with Modulo Artifacts</div>
     <div id="fz-panel">
       <p class="fz-k">Pick a trait, then pick a modulo to fill it. Several animate at once.</p>
-      <div id="fz-traits"><button id="fz-check" type="button" aria-pressed="false" aria-label="check it — toggle badge mode" title="check it"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-gold" type="button" aria-pressed="false" aria-label="gold stars — toggle tier 3" title="gold stars"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-silver" type="button" aria-pressed="false" aria-label="silver stars — toggle tier 4" title="silver stars"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-xbox" type="button" aria-pressed="false" aria-label="windows — toggle tier 5" title="windows"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><span class="fz-cdot" aria-hidden="true">·</span></div>
+      <div id="fz-traits"><button id="fz-normal" type="button" aria-pressed="false" aria-label="normal — modulo" title="normal"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-check" type="button" aria-pressed="false" aria-label="check it — toggle badge mode" title="check it"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-gold" type="button" aria-pressed="false" aria-label="gold stars — toggle tier 3" title="gold stars"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-silver" type="button" aria-pressed="false" aria-label="silver stars — toggle tier 4" title="silver stars"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-xbox" type="button" aria-pressed="false" aria-label="windows — toggle tier 5" title="windows"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><span class="fz-cdot" aria-hidden="true">·</span></div>
     </div>
     <div id="fz-pick">
       <div id="fz-picker"></div>
@@ -1996,6 +2004,7 @@ function _extractComposition(decodedHtml) {
     var bg = document.getElementById('fz-gold'); if (bg) { var ong = m === 'gold'; bg.setAttribute('aria-pressed', String(ong)); bg.classList.toggle('fz-check-on', ong); }
     var bs = document.getElementById('fz-silver'); if (bs) { var ons = m === 'silver'; bs.setAttribute('aria-pressed', String(ons)); bs.classList.toggle('fz-check-on', ons); }
     var bx = document.getElementById('fz-xbox'); if (bx) { var onx = m === 'xbox'; bx.setAttribute('aria-pressed', String(onx)); bx.classList.toggle('fz-check-on', onx); }
+    var bn = document.getElementById('fz-normal'); if (bn) { var onn = m === 'normal'; bn.setAttribute('aria-pressed', String(onn)); bn.classList.toggle('fz-check-on', onn); }   // normal button = active iff NO fx on (complement of the 4; no new state var)
   }
   function _resetCheckModeUI() {                                    // force fx OFF + both buttons OFF + backdrops/scaling OFF (does NOT redraw the live picker)
     _fz.checkMode = false;
@@ -2042,6 +2051,17 @@ function _extractComposition(decodedHtml) {
       XB_SHAPES.s1.forEach(function (p) { x.fillRect(o + p[0] * u, o + p[1] * u, u, u); });   // la X actual del modo (s1) — el icono sigue a s1 si cambia
     } catch (e) {}
   }
+  function _drawFzModuloIcon() {                                   // static icon = the Modulo favicon's 2×2 quadrant mark (#fz-normal seal); spins via CSS like the favicon itself
+    var sc = document.querySelector('#fz-normal .fz-check-seal'), tc = document.querySelector('#fz-normal .fz-check-tick');
+    if (tc) try { tc.getContext('2d').clearRect(0, 0, 28, 28); } catch (e) {}
+    if (sc) try {
+      var x = sc.getContext('2d'), q = 9, o = 5;                   // 2×2 of 9px quads, inset 5 → 18×18 block centred in 28px (half-diag 12.73 < 14px seal radius → rotates without corner-clip)
+      x.clearRect(0, 0, 28, 28); x.imageSmoothingEnabled = false;
+      x.fillStyle = '#222222'; x.fillRect(o, o, q, q); x.fillRect(o + q, o + q, q, q);   // TL + BR dark (frozen angle-0 frame of the animated favicon)
+      x.fillStyle = '#6363ff'; x.fillRect(o + q, o, q, q);         // TR blue (favicon first-pair c1)
+      x.fillStyle = '#ff003a'; x.fillRect(o, o + q, q, q);         // BL red (favicon first-pair c2)
+    } catch (e) {}
+  }
   function _refreshPills() {
     var host = document.getElementById('fz-traits'); if (!host) return;
     [].forEach.call(host.querySelectorAll('.fz-pill'), function (pill) {
@@ -2073,7 +2093,7 @@ function _extractComposition(decodedHtml) {
     }
     _fz.selected = (_fz.L.length ? _fz.L[0] : null);
     var host = document.getElementById('fz-traits');
-    [].slice.call(host.querySelectorAll('.fz-pill')).forEach(function (p) { host.removeChild(p); });   // keep the #fz-check button + dot separator; drop only the old trait pills
+    [].slice.call(host.querySelectorAll('.fz-pill')).forEach(function (p) { host.removeChild(p); });   // keep the 5 fx buttons (#fz-normal + check/gold/silver/xbox) + dot separator; drop only the old trait pills
     var bgPill = document.createElement('button'); bgPill.type = 'button'; bgPill.className = 'fz-pill';
     bgPill.dataset.li = BG_ID; bgPill.dataset.i = -1;          // sentinel; _labelFor short-circuits → 'Background'
     bgPill.addEventListener('click', function () { _fz.selected = BG_ID; _refreshPills(); });
@@ -2088,6 +2108,7 @@ function _extractComposition(decodedHtml) {
     document.getElementById('fz-panel').style.display = 'block';
     document.getElementById('fz-pick').style.display = 'block';
     _fzStatus(!layerBmp ? 'layer data unavailable' : (_fz.assignments.size ? '' : 'pick a trait, then a modulo'));
+    _syncFxUI();                                                    // reflect the current mode on the fx buttons (incl. #fz-normal active+spin) on EVERY open path — reopen-same-punk skips teardown's sync; idempotent
     _pkInit();
   }
   async function _applyFusion(artifactId, layerId) {
@@ -2396,12 +2417,13 @@ function _extractComposition(decodedHtml) {
     _exportInFlight = true; _animStop();
     var pkWasActive = _pk.active; _pk.active = false;                 // pause the picker (IO/dwell/mount/render all bail on !_pk.active) so its heavy 20-step engine builds don't compete with the export compose → no encoder stall (esp. scrolled to a freshly-mounting region — the "fails if scroll is at the bottom" bug)
     var btn = document.getElementById('fz-export'), origText = btn ? btn.textContent : '↓ MP4';
-    var btnCheck = document.getElementById('fz-check'), btnGold = document.getElementById('fz-gold'), btnSilver = document.getElementById('fz-silver'), btnXbox = document.getElementById('fz-xbox');
+    var btnCheck = document.getElementById('fz-check'), btnGold = document.getElementById('fz-gold'), btnSilver = document.getElementById('fz-silver'), btnXbox = document.getElementById('fz-xbox'), btnNormal = document.getElementById('fz-normal');
     if (btn) btn.disabled = true;
     if (btnCheck) btnCheck.disabled = true;   // freeze the mode during export so the MP4 can't switch mid-stream
     if (btnGold) btnGold.disabled = true;     // all fx buttons frozen → renderMode can't change under the frozen isCheck
     if (btnSilver) btnSilver.disabled = true;
     if (btnXbox) btnXbox.disabled = true;     // freeze X-Box too → can't toggle into it mid-export (its compose has no comHR → would null-throw the export blit)
+    if (btnNormal) btnNormal.disabled = true; // freeze the normal selector too → mode can't change mid-export
     var encoder = null, muxer = null, fileStream = null, _encoderError = null;
     var toDisk = !!window.showSaveFilePicker;   // desktop: native "Save As" + stream (like collection); else mobile share/blob banner
     try {
@@ -2484,6 +2506,7 @@ function _extractComposition(decodedHtml) {
       if (btnGold) btnGold.disabled = false;
       if (btnSilver) btnSilver.disabled = false;
       if (btnXbox) btnXbox.disabled = false;
+      if (btnNormal) btnNormal.disabled = false;
       if (encoder) { try { encoder.close(); } catch (_) {} }
       if (fileStream) { try { await fileStream.abort(); } catch (_) {} }
       if (detail.classList.contains('open')) {
@@ -2535,7 +2558,8 @@ function _extractComposition(decodedHtml) {
   document.getElementById('fz-gold').addEventListener('click', function () { _setRenderMode(_fzCurMode() === 'gold' ? 'normal' : 'gold'); });      // Tier 3 toggle
   document.getElementById('fz-silver').addEventListener('click', function () { _setRenderMode(_fzCurMode() === 'silver' ? 'normal' : 'silver'); });   // Tier 4 toggle (mutually exclusive with check/gold)
   document.getElementById('fz-xbox').addEventListener('click', function () { _setRenderMode(_fzCurMode() === 'xbox' ? 'normal' : 'xbox'); });   // Tier 5 X-Box toggle (mutually exclusive)
-  _drawFzBadgeIcon(); _drawFzStarIcon('fz-gold', GOLD_BODY); _drawFzStarIcon('fz-silver', STAR_PALETTES.silver.body); _drawFzXBoxIcon();   // draw the 4 static fx-button icons (buttons are in static HTML, present at eval)
+  document.getElementById('fz-normal').addEventListener('click', function () { _setRenderMode('normal'); });   // normal-mode selector — ALWAYS normal (deselecting normal is a no-op, so not a toggle)
+  _drawFzBadgeIcon(); _drawFzStarIcon('fz-gold', GOLD_BODY); _drawFzStarIcon('fz-silver', STAR_PALETTES.silver.body); _drawFzXBoxIcon(); _drawFzModuloIcon();   // draw the 5 static fx-button icons (buttons are in static HTML, present at eval)
   // X-Box device-px canvas keep-sized: ONE persistent self-rearming watcher each (no per-enter arming → no listener accumulation/leak); both bail unless X-Box is the live mode
   var _xbRzT = 0;
   window.addEventListener('resize', function () { if (!(_fz.checkMode && _fz.fx === 'xbox')) return; clearTimeout(_xbRzT); _xbRzT = setTimeout(_xbResizeCv, 60); });
