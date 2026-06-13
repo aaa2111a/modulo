@@ -2393,7 +2393,7 @@ function _extractComposition(decodedHtml) {
       var punkBg = _punkBg;    // punk-square bg = exactly what the modal shows (status colour, or BG modulo fills it)
       var S = Math.round(W * 0.7703703703), pX = Math.floor((W - S) / 2), pY = Math.round(W * 0.037);   // W-relative → 832 / 40 exactly at W=1080 (byte-equiv std); scales for the 2000² card
       var Sx = 0, xbExp = null, xbExpCtx = null, xbExpOff = null, xbExpOffc = null, xbExpCa = null, xbExpCac = null;
-      if (isXbox) {                                                   // X-Box export buffers: render at the largest 240-multiple ≤ S, then 1:1 CENTER (letterbox) into the S slot → all 24 cells visible, crisp (no crop, no fractional scale); local → GC'd on return
+      if (isXbox) {                                                   // X-Box export: the punk-square = the largest 240-multiple ≤ S (so it renders crisp 1:1 AND fills its area edge-to-edge — no crop, no extra _punkBg margin); local → GC'd on return
         Sx = Math.max(240, Math.floor(S / 240) * 240);
         xbExp = _pkOff(Sx, Sx); xbExpCtx = xbExp.getContext('2d'); xbExpCtx.imageSmoothingEnabled = false;
         xbExpOff = _pkOff(Sx, Sx); xbExpOffc = xbExpOff.getContext('2d'); xbExpOffc.imageSmoothingEnabled = false;
@@ -2432,9 +2432,8 @@ function _extractComposition(decodedHtml) {
           _fz.assignments.forEach(function (a) { a.engine.step(a.engine.dtOps); a.engine.applyRects(); a.engine.tickRects && a.engine.tickRects(); });
           _composeXBoxExport(xbExpCtx, xbExpOff, xbExpOffc, xbExpCa, xbExpCac, Sx);
           cx.imageSmoothingEnabled = false;                          // pixelated: 1:1, no scale → crisp
-          cx.fillStyle = punkBg; cx.fillRect(pX, pY, S, S);          // slot bg = _punkBg (same as the render's own bg → seamless margin, no visible border)
-          var _xOff = Math.floor((S - Sx) / 2);                      // CENTER the full Sx render in the S slot (letterbox, Sx≤S → NO crop, all 24 cells, 1:1 crisp)
-          cx.drawImage(xbExp, 0, 0, Sx, Sx, pX + _xOff, pY + _xOff, Sx, Sx);
+          var _pXx = Math.floor((W - Sx) / 2), _pYx = pY + Math.floor((S - Sx) / 2);   // the windows punk-square IS the render (Sx, a 240-multiple) → fills it edge-to-edge, NO extra _punkBg margin; centred in the card, vertical centre kept where the S slot was
+          cx.drawImage(xbExp, 0, 0, Sx, Sx, _pXx, _pYx, Sx, Sx);     // 1:1, all 24 cells, no crop, no margin (render brings its own _punkBg bg; beige card frame around)
         } else {
           if (_fz.fx === 'gold' || _fz.fx === 'silver') _goldAngle = ((f / FPS) * 1000 / GOLD_SPIN_MS) * 2 * Math.PI;   // shared star spin (gold+silver); frame-index drive → exact period regardless of encode pace
           _composeFusionFrame();
