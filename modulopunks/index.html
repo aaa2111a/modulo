@@ -1735,15 +1735,15 @@ function _extractComposition(decodedHtml) {
       var gi = (offR + r) * 450 + (offC + c), v = grid[gi];
       var pi = (fIdx === 'last') ? (PAL.length - 1) : (fIdx === 'cell') ? v : (fIdx === 0) ? primIdx : Math.min(fIdx, PAL.length - 1);
       var col = PAL[pi] || PAL[0] || [0, 0, 0];
+      if (Math.max(col[0], col[1], col[2]) < 40) col = PAL[primIdx] || col;  // B-guard: celda cuyo color de CA es near-black → dominante no-oscuro (el frame+forma negros no se pierden). Quitar esta línea = B puro.
       var ox = X0 + c * CELL, oy = Y0 + r * CELL;
       // dx detection (same predicate as paintToStars half-star / _applyDither): 'o' threshold 0.70; others = grid0 + density
       var isDx = false;
       if (dxPat) isDx = (dxPat === 'o') ? (_ditherNoise[gi] <= 0.70) : (v === 0 && _ditherNoise[gi] <= DITHER_DENSITY * ((dxPat === 'num' || dxPat === 'numi') ? 1.95 : 1));
       var dxOn = isDx && dxIdx !== 'off';
-      var baseCol = dxOn ? (PAL[primIdx] || [0, 0, 0]) : col;                // orilla: celdas dx → PRIMARIO no-oscuro; resto → campo (1 color)
-      tctx.fillStyle = 'rgb(' + baseCol[0] + ',' + baseCol[1] + ',' + baseCol[2] + ')';
+      tctx.fillStyle = 'rgb(' + col[0] + ',' + col[1] + ',' + col[2] + ')';  // orilla/base = color de la celda POR CA (guarded) — todas las celdas (las dx también; el dx pinta su 2do color en el interior)
       tctx.fillRect(ox, oy, CELL, CELL);
-      if (dxOn) {                                                            // celda dx → 2do color SOLO en el interior (sub-px 2..6); la orilla queda con el primario
+      if (dxOn) {                                                            // celda dx → 2do color SOLO en el interior (sub-px 2..6); la orilla queda con el color de CA de la celda
         var dpi = (dxIdx === 'last') ? (PAL.length - 1) : (dxIdx === 'cell') ? v : Math.min(dxIdx, PAL.length - 1);
         var dcol = PAL[dpi] || PAL[0] || [0, 0, 0];
         tctx.fillStyle = 'rgb(' + dcol[0] + ',' + dcol[1] + ',' + dcol[2] + ')';
@@ -1908,7 +1908,7 @@ function _extractComposition(decodedHtml) {
     var off = _fz.xbOff, offc = _fz.xbOffctx, ca = _fz.xbCaOff, cac = _fz.xbCaCtx, com = _fz.xbCtx;
     com.clearRect(0, 0, S, S);
     com.fillStyle = _punkBg; com.fillRect(0, 0, S, S);             // status bg behind the layers (the on-screen canvas IS the compose target)
-    var XOPT = { shape: 'pool', fieldIdx: 0, dxFieldIdx: 1 };
+    var XOPT = { shape: 'pool', fieldIdx: 'cell', dxFieldIdx: 1 };   // fieldIdx 'cell' = color por CA (opción B); el B-guard near-black vive en paintToXBox
     var bgA = _fz.assignments.get(BG_ID);
     if (bgA) { bgA.engine.paintToXBox(off, offc, XOPT); com.drawImage(off, 0, 0); }
     for (var i = 0; i < _fz.L.length; i++) {
@@ -1932,7 +1932,7 @@ function _extractComposition(decodedHtml) {
   function _composeXBoxExport(com, off, offc, ca, cac, S) {
     com.clearRect(0, 0, S, S);
     com.fillStyle = _punkBg; com.fillRect(0, 0, S, S);
-    var XOPT = { shape: 'pool', fieldIdx: 0, dxFieldIdx: 1 };
+    var XOPT = { shape: 'pool', fieldIdx: 'cell', dxFieldIdx: 1 };   // fieldIdx 'cell' = color por CA (opción B); el B-guard near-black vive en paintToXBox
     var bgA = _fz.assignments.get(BG_ID);
     if (bgA) { bgA.engine.paintToXBox(off, offc, XOPT); com.drawImage(off, 0, 0); }
     for (var i = 0; i < _fz.L.length; i++) {
