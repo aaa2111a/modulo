@@ -1375,14 +1375,16 @@ function _extractComposition(decodedHtml) {
   const STAR_PALETTES = { gold: { body: GOLD_BODY, hi: GOLD_HI, edge: GOLD_EDGE, lit: GOLD_LIT, sh: GOLD_SH }, silver: { body: '#d8dfe8', hi: '#f7f9fc', edge: '#8fa0b4', lit: '#e4eaf2', sh: '#7b8fa3' } };
   // ── X-Box render: per-cell 9×9 sub-pixel glyph (orilla + black hollow frame + hierarchy field + a pool shape that shifts with the CA). Ported from _gold-stars-mockup.html. ──
   const XB_SHAPES = {
-    x:    [[3,3],[5,3],[4,4],[3,5],[5,5]],
+    x:       [[3,3],[5,3],[4,4],[3,5],[5,5]],
+    slashDn: [[2,2],[3,3],[4,4],[5,5],[6,6]],
+    slashUp: [[6,2],[5,3],[4,4],[3,5],[2,6]],
     box:  [[2,2],[3,2],[4,2],[5,2],[6,2],[2,6],[3,6],[4,6],[5,6],[6,6],[2,3],[2,4],[2,5],[6,3],[6,4],[6,5]],
     L:    [[2,2],[2,3],[2,4],[2,5],[2,6],[3,6],[4,6],[5,6],[6,6]],
     L2:   [[2,2],[3,2],[4,2],[5,2],[6,2],[6,3],[6,4],[6,5],[6,6]],
     barH: [[2,5],[3,5],[4,5],[5,5],[6,5],[2,6],[3,6],[4,6],[5,6],[6,6]],
     barV: [[5,2],[5,3],[5,4],[5,5],[5,6],[6,2],[6,3],[6,4],[6,5],[6,6]]
   };
-  const XB_POOL = ['x'];   // solo la X (Le 2026-06-13: "probemos dejando solo la X"); box/L/L2/barH/barV siguen en XB_SHAPES por si las re-agregamos al pool
+  const XB_POOL = ['x', 'slashDn', 'slashUp'];   // X + los 2 slashes (Le 2026-06-13); box/L/L2/barH/barV siguen en XB_SHAPES por si las re-agregamos
   function _xbHash(c, r) { var h = (c * 73856093) ^ (r * 19349663); return (h ^ (h >>> 13)) >>> 0; }   // hash espacial estable → forma fija por celda (los colores animan debajo)
   function _starFills(x, cx, cy, RO, P) { x.fillStyle = P.edge; _gStarPath(x, cx, cy, RO * 1.06); x.fill(); x.fillStyle = P.body; _gStarPath(x, cx, cy, RO); x.fill(); x.fillStyle = P.hi; _gStarPath(x, cx, cy, RO * 0.5); x.fill(); }   // 3-fill star body (edge/body/hi) for palette P → shared by all 4 sprite fns
   var _starSpriteCache = new Map();   // key CELL|pal (full) / CELL|pal|h (half) → canvas; pal in the key so silver never returns a gold sprite
@@ -1749,9 +1751,7 @@ function _extractComposition(decodedHtml) {
         tctx.fillStyle = 'rgb(' + dcol[0] + ',' + dcol[1] + ',' + dcol[2] + ')';
         tctx.fillRect(ox + 2 * u, oy + 2 * u, 5 * u, 5 * u);
       }
-      tctx.fillStyle = INK;                                                  // hollow frame ring (sub-px 1 & 7)
-      tctx.fillRect(ox + u, oy + u, 7 * u, u); tctx.fillRect(ox + u, oy + 7 * u, 7 * u, u);
-      tctx.fillRect(ox + u, oy + u, u, 7 * u); tctx.fillRect(ox + 7 * u, oy + u, u, 7 * u);
+      tctx.fillStyle = INK;                                                  // forma interior negra (frame removido — Le "quita el cuadrado")
       var pts = (shapeKey === 'pool') ? XB_SHAPES[XB_POOL[(_xbHash(c, r) + v) % XB_POOL.length]] : (XB_SHAPES[shapeKey] || XB_SHAPES.x);   // pool shifts with the CA (v)
       for (var i = 0; i < pts.length; i++) tctx.fillRect(ox + pts[i][0] * u, oy + pts[i][1] * u, u, u);
     }
