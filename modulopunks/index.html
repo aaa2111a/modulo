@@ -1382,7 +1382,7 @@ function _extractComposition(decodedHtml) {
     barH: [[2,5],[3,5],[4,5],[5,5],[6,5],[2,6],[3,6],[4,6],[5,6],[6,6]],
     barV: [[5,2],[5,3],[5,4],[5,5],[5,6],[6,2],[6,3],[6,4],[6,5],[6,6]]
   };
-  const XB_POOL = ['x', 'box', 'L', 'L2', 'barH', 'barV'];
+  const XB_POOL = ['x'];   // solo la X (Le 2026-06-13: "probemos dejando solo la X"); box/L/L2/barH/barV siguen en XB_SHAPES por si las re-agregamos al pool
   function _xbHash(c, r) { var h = (c * 73856093) ^ (r * 19349663); return (h ^ (h >>> 13)) >>> 0; }   // hash espacial estable → forma fija por celda (los colores animan debajo)
   function _starFills(x, cx, cy, RO, P) { x.fillStyle = P.edge; _gStarPath(x, cx, cy, RO * 1.06); x.fill(); x.fillStyle = P.body; _gStarPath(x, cx, cy, RO); x.fill(); x.fillStyle = P.hi; _gStarPath(x, cx, cy, RO * 0.5); x.fill(); }   // 3-fill star body (edge/body/hi) for palette P → shared by all 4 sprite fns
   var _starSpriteCache = new Map();   // key CELL|pal (full) / CELL|pal|h (half) → canvas; pal in the key so silver never returns a gold sprite
