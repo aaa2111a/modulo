@@ -1935,7 +1935,7 @@ function _extractComposition(decodedHtml) {
       }
     }
   }
-  // Export-only X-Box compose: same z-order/masks as _composeXBoxFrame but into a caller-sized device-px buffer (S = multiple of 240). STANDALONE (does NOT touch the headless-verified live _composeXBoxFrame). com = target ctx; off/ca = Sx-sized scratch canvases.
+  // Export X-Box compose: same z-order/masks as _composeXBoxFrame but into a caller's ctx at size S. STANDALONE (does NOT touch the live _composeXBoxFrame). Export calls it with comHRctx + the HR buffers at S=PD=720 (=240×3 → integer 10-sub-px cells) → then the STANDARD export blit (720→card-slot, smooth) handles it exactly like check/gold/silver. com = target ctx; off/ca = S-sized scratch.
   function _composeXBoxExport(com, off, offc, ca, cac, S) {
     com.clearRect(0, 0, S, S);
     com.fillStyle = _punkBg; com.fillRect(0, 0, S, S);
@@ -2420,13 +2420,6 @@ function _extractComposition(decodedHtml) {
       var capBg = '#dbd8d1';   // beige card frame + caption strip (like collection's card)
       var punkBg = _punkBg;    // punk-square bg = exactly what the modal shows (status colour, or BG modulo fills it)
       var S = Math.round(W * 0.7703703703), pX = Math.floor((W - S) / 2), pY = Math.round(W * 0.037);   // W-relative → 832 / 40 exactly at W=1080 (byte-equiv std); scales for the 2000² card
-      var Sx = 0, xbExp = null, xbExpCtx = null, xbExpOff = null, xbExpOffc = null, xbExpCa = null, xbExpCac = null;
-      if (isXbox) {                                                   // X-Box export: the punk-square = the largest 240-multiple ≤ S (so it renders crisp 1:1 AND fills its area edge-to-edge — no crop, no extra _punkBg margin); local → GC'd on return
-        Sx = Math.max(240, Math.floor(S / 240) * 240);
-        xbExp = _pkOff(Sx, Sx); xbExpCtx = xbExp.getContext('2d'); xbExpCtx.imageSmoothingEnabled = false;
-        xbExpOff = _pkOff(Sx, Sx); xbExpOffc = xbExpOff.getContext('2d'); xbExpOffc.imageSmoothingEnabled = false;
-        xbExpCa = _pkOff(Sx, Sx); xbExpCac = xbExpCa.getContext('2d'); xbExpCac.imageSmoothingEnabled = false;
-      }
       var card = _pkOff(W, H), cx = card.getContext('2d'); cx.imageSmoothingEnabled = false;
       cx.fillStyle = capBg; cx.fillRect(0, 0, W, H);
       var SERIF = "'Times New Roman', Times, serif";
@@ -2456,20 +2449,18 @@ function _extractComposition(decodedHtml) {
 
       for (var f = 0; f < FRAMES; f++) {
         if (_fz.punkId !== myPunk || !detail.classList.contains('open')) throw new Error('modal changed mid-export');
-        if (isXbox) {                                                // X-Box: step engines INLINE (don't touch the shared _composeFusionFrame) → compose into the Sx buffer → 1:1 center-crop into the S slot
-          _fz.assignments.forEach(function (a) { a.engine.step(a.engine.dtOps); a.engine.applyRects(); a.engine.tickRects && a.engine.tickRects(); });
-          _composeXBoxExport(xbExpCtx, xbExpOff, xbExpOffc, xbExpCa, xbExpCac, Sx);
-          cx.imageSmoothingEnabled = false;                          // pixelated: 1:1, no scale → crisp
-          var _pXx = Math.floor((W - Sx) / 2), _pYx = pY + Math.floor((S - Sx) / 2);   // the windows punk-square IS the render (Sx, a 240-multiple) → fills it edge-to-edge, NO extra _punkBg margin; centred in the card, vertical centre kept where the S slot was
-          cx.drawImage(xbExp, 0, 0, Sx, Sx, _pXx, _pYx, Sx, Sx);     // 1:1, all 24 cells, no crop, no margin (render brings its own _punkBg bg; beige card frame around)
+        if (isXbox) {                                                // X-Box: render the compose at PD=720 into comHR (SAME path as check/gold) → falls through to the standard blit below
+          _fzAllocHR();
+          _fz.assignments.forEach(function (a) { a.engine.step(a.engine.dtOps); a.engine.applyRects(); a.engine.tickRects && a.engine.tickRects(); });   // step engines inline (don't touch the shared _composeFusionFrame)
+          _composeXBoxExport(_fz.comHRctx, _fz.offHR, _fz.offHRctx, _fz.caHR, _fz.caHRctx, PD);
         } else {
           if (_fz.fx === 'gold' || _fz.fx === 'silver') _goldAngle = ((f / FPS) * 1000 / GOLD_SPIN_MS) * 2 * Math.PI;   // shared star spin (gold+silver); frame-index drive → exact period regardless of encode pace
           _composeFusionFrame();
-          cx.fillStyle = punkBg; cx.fillRect(pX, pY, S, S);          // punk-square bg = the modal's bg (status colour); BG modulo overdraws it
-          cx.imageSmoothingEnabled = isCheck;                        // fx (check/gold) = vector glyphs → smooth the 720→S blit; normal pixel-art CA = nearest
-          var _eSrc = isCheck ? _fz.comHR : _fz.comCv, _eS = isCheck ? PD : 144;   // fx = crisp 720 source
-          cx.drawImage(_eSrc, 0, 0, _eS, _eS, pX, pY, S, S);         // fused punk upscaled (nearest)
         }
+        cx.fillStyle = punkBg; cx.fillRect(pX, pY, S, S);            // punk-square bg = the modal's bg (status colour); BG modulo overdraws it
+        cx.imageSmoothingEnabled = isCheck;                          // fx (check/gold/xbox via isCheck) = smooth the 720→S blit; normal pixel-art CA = nearest. Same settings for all fx modes.
+        var _eSrc = isCheck ? _fz.comHR : _fz.comCv, _eS = isCheck ? PD : 144;   // fx = 720 source (comHR), normal = 144 (comCv)
+        cx.drawImage(_eSrc, 0, 0, _eS, _eS, pX, pY, S, S);          // fused punk → S slot — IDENTICAL blit for check/gold/silver/xbox
         var frame = new VideoFrame(card, { timestamp: Math.round(f * 1000000 / FPS), duration: Math.round(1000000 / FPS) });
         encoder.encode(frame, { keyFrame: f % (FPS * 2) === 0 });    // ~2s GOP in both modes
         frame.close();
