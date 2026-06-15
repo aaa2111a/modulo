@@ -1407,13 +1407,13 @@ function _extractComposition(decodedHtml) {
   //    Decoded pixel-exact from Le's PNGs (modulopunks/pepe effect/, 2026-06-15). ──
   const PEPE_PAL = ['#000000', '#008920', '#ffffff', '#ff1310', '#003eea', '#e9ebf6'];   // K · green · white · red · blue · light
   const PEPE_GLYPHS = [
-    ["2002020022","2002020022","2002020022","2002020022","2002020022","2002020022","2002020022","2002020022","0000000000","1111111111"],
+    ["1111111111","1111111111","1111111111","1111100000","1111105005","1111105005","0000000000","3333333333","0000000000","3333333333"],   // was PNG7 → swapped into slot 1 (Le 2026-06-15)
     ["2002022002","0000000000","3333333333","0000000000","3333333333","0000000000","4444444444","4444444444","4444444444","4444444444"],
     ["2200022000","2200022000","2200022000","0000022000","1111022000","1111022000","0000000000","3333333333","0000000000","3333333333"],
     ["2222022222","2222022222","0022000222","0022000222","0000000000","3333333333","0000000000","3333333333","4444444444","4444444444"],
     ["1111102222","0000002000","2222202000","2200000000","2200003333","0000000000","3333333333","3333333333","0000000000","4444444444"],
     ["1111022222","1111022222","1111022000","1111022000","1111022000","1111022000","1111000000","1111111111","1111111111","1111111111"],
-    ["1111111111","1111111111","1111111111","1111100000","1111105005","1111105005","0000000000","3333333333","0000000000","3333333333"],
+    ["2002020022","2002020022","2002020022","2002020022","2002020022","2002020022","2002020022","2002020022","0000000000","1111111111"],   // was PNG1 → swapped into slot 7 (Le 2026-06-15)
     ["2220000222","2220000222","2220000222","2220000222","0000000000","1111111111","1111111111","1111111111","1111111111","1111111111"]
   ];
   var _pepeSpriteCache = new Map();   // u → [8 canvases 10u×10u]; pre-rasterized ONCE per u → 576 drawImage/frame (not 57,600 fillRect)
@@ -1810,7 +1810,9 @@ function _extractComposition(decodedHtml) {
     var sprites = _pepeSprites(u);
     for (var r = 0; r < 24; r++) for (var c = 0; c < 24; c++) {
       var gi = (offR + r) * 450 + (offC + c), v = grid[gi];                 // v = PAL/hierarchy index of this cell
-      tctx.drawImage(sprites[_pepePerm[v % 8]], X0 + c * CELL, Y0 + r * CELL);   // glyph by tier (seeded perm); the glyph carries its own colour
+      var h = (_xbHash(c, r) ^ _compSeed) >>> 0;                            // stable per-cell+punk hash → which cells are "random" is fixed (no flicker); uses position only to seed the CHOICE, layout untouched
+      var g = ((h % 100) < 20) ? _pepePerm[(v + 1 + (h >>> 9) % 7) % 8] : _pepePerm[v % 8];   // 80% glyph by hierarchy tier; 20% a phase-shifted (decorrelated) glyph → breaks the regions = "random" (still animates with the CA)
+      tctx.drawImage(sprites[g], X0 + c * CELL, Y0 + r * CELL);             // the glyph carries its own colour
     }
   }
 
