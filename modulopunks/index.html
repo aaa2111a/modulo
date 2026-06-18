@@ -522,19 +522,23 @@
   // beveled "button" tile: a flat front (±I) at zF + 4 DIAGONAL bevel facets out to the full cell (±half) at zo, + side walls to zB + back cap.
   // The bevel facet normals (top +y / bottom -y / sides ±x, all tilted +z) make the POV lambert read the 2D button bevel (top-lit / bottom-shadow). Footprint ±half → stays gapless.
   function buildBevelTile(half, bev, zF, zB) {
-    var a = [], H = half, I = half - bev, zo = zF - bev;
+    var a = [], H = half, I = half - bev, zoF = zF - bev, zoB = zB + bev;          // beveled on BOTH broad faces (front zF + back zB); ±H ring in the middle (zoF..zoB)
     function nrm(x, y, z) { var l = Math.hypot(x, y, z) || 1; return [x/l, y/l, z/l]; }
     function q(p0, p1, p2, p3, n) { a.push(p0[0],p0[1],p0[2],n[0],n[1],n[2], p1[0],p1[1],p1[2],n[0],n[1],n[2], p2[0],p2[1],p2[2],n[0],n[1],n[2], p0[0],p0[1],p0[2],n[0],n[1],n[2], p2[0],p2[1],p2[2],n[0],n[1],n[2], p3[0],p3[1],p3[2],n[0],n[1],n[2]); }
-    q([-I,-I,zF],[I,-I,zF],[I,I,zF],[-I,I,zF], [0,0,1]);                          // flat front
-    q([-I,I,zF],[I,I,zF],[H,H,zo],[-H,H,zo], nrm(0, bev, bev));                   // TOP bevel (+y → bright)
-    q([I,-I,zF],[-I,-I,zF],[-H,-H,zo],[H,-H,zo], nrm(0, -bev, bev));              // BOTTOM bevel (-y → dark)
-    q([-I,-I,zF],[-I,I,zF],[-H,H,zo],[-H,-H,zo], nrm(-bev, 0, bev));              // LEFT bevel
-    q([I,I,zF],[I,-I,zF],[H,-H,zo],[H,H,zo], nrm(bev, 0, bev));                   // RIGHT bevel
-    q([H,H,zo],[H,-H,zo],[H,-H,zB],[H,H,zB], [1,0,0]);                            // +x wall
-    q([-H,-H,zo],[-H,H,zo],[-H,H,zB],[-H,-H,zB], [-1,0,0]);                       // -x wall
-    q([-H,H,zo],[H,H,zo],[H,H,zB],[-H,H,zB], [0,1,0]);                            // +y wall
-    q([H,-H,zo],[-H,-H,zo],[-H,-H,zB],[H,-H,zB], [0,-1,0]);                       // -y wall
-    q([H,-H,zB],[-H,-H,zB],[-H,H,zB],[H,H,zB], [0,0,-1]);                         // back cap
+    q([-I,-I,zF],[I,-I,zF],[I,I,zF],[-I,I,zF], [0,0,1]);                          // flat FRONT
+    q([-I,I,zF],[I,I,zF],[H,H,zoF],[-H,H,zoF], nrm(0, bev, bev));                 // front TOP bevel (+y → bright)
+    q([I,-I,zF],[-I,-I,zF],[-H,-H,zoF],[H,-H,zoF], nrm(0, -bev, bev));            // front BOTTOM bevel (-y → dark)
+    q([-I,-I,zF],[-I,I,zF],[-H,H,zoF],[-H,-H,zoF], nrm(-bev, 0, bev));            // front LEFT bevel
+    q([I,I,zF],[I,-I,zF],[H,-H,zoF],[H,H,zoF], nrm(bev, 0, bev));                 // front RIGHT bevel
+    q([H,H,zoF],[H,-H,zoF],[H,-H,zoB],[H,H,zoB], [1,0,0]);                        // +x wall
+    q([-H,-H,zoF],[-H,H,zoF],[-H,H,zoB],[-H,-H,zoB], [-1,0,0]);                   // -x wall
+    q([-H,H,zoF],[H,H,zoF],[H,H,zoB],[-H,H,zoB], [0,1,0]);                        // +y wall
+    q([H,-H,zoF],[-H,-H,zoF],[-H,-H,zoB],[H,-H,zoB], [0,-1,0]);                   // -y wall
+    q([-H,H,zoB],[H,H,zoB],[I,I,zB],[-I,I,zB], nrm(0, bev, -bev));                // back TOP bevel
+    q([H,-H,zoB],[-H,-H,zoB],[-I,-I,zB],[I,-I,zB], nrm(0, -bev, -bev));           // back BOTTOM bevel
+    q([-H,-H,zoB],[-H,H,zoB],[-I,I,zB],[-I,-I,zB], nrm(-bev, 0, -bev));           // back LEFT bevel
+    q([H,H,zoB],[H,-H,zoB],[I,-I,zB],[I,I,zB], nrm(bev, 0, -bev));                // back RIGHT bevel
+    q([I,-I,zB],[-I,-I,zB],[-I,I,zB],[I,I,zB], [0,0,-1]);                         // flat BACK
     return { data: new Float32Array(a), stride: 24, count: a.length / 6, baked: false };
   }
   function starPts(RO) { var RI = RO * 0.42, p = [], i; for (i = 0; i < 10; i++) { var an = -Math.PI/2 + i*Math.PI/5, R = (i % 2 === 0) ? RO : RI; p.push([R*Math.cos(an), R*Math.sin(an)]); } return p; }
@@ -664,12 +668,20 @@
   var FS = '#version 300 es\n' +
     'precision mediump float;\n' +
     'in vec3 vColor; in vec3 vNormal;\n' +
+    'uniform float uMetallic;\n' +
     'out vec4 frag;\n' +
     'void main(){\n' +
     '  vec3 nrm = normalize(vNormal);\n' +
     '  vec3 L = normalize(vec3(0.0, 0.25, 1.0));\n' +                  // key light from the POV (camera +z), a touch above → the visible side is always lit (no "only some angles"); no rightward bias
     '  float d = 0.80 + 0.20 * max(dot(nrm, L), 0.0);\n' +            // high ambient floor → shaded faces ~20% brighter (Le: colours looked dull); lit faces still = exact collection colour (max 1.0, palette untouched)
-    '  frag = vec4(vColor * d, 1.0);\n' +
+    '  vec3 c = vColor * d;\n' +
+    '  if (uMetallic > 0.5) {\n' +                                    // gold/silver: shiny metallic — a sharp Blinn-Phong glint that sweeps as the punk spins. Pure GLSL (no texture/env-map/eval) → self-contained on-chain.
+    '    vec3 SL = normalize(vec3(1.2, 0.30, 1.0));\n' +             // specular light biased to the RIGHT (separate from the diffuse L, which Le fixed with no x-bias) → glint comes from the right; a face dead-on to the camera no longer glares
+    '    vec3 H = normalize(SL + vec3(0.0, 0.0, 1.0));\n' +          // half-vector (view ≈ camera at +z, far)
+    '    float s = pow(max(dot(nrm, H), 0.0), 26.0);\n' +            // tight specular lobe
+    '    c += s * mix(vec3(1.0), vColor, 0.35) * 1.2;\n' +           // glint, slightly tinted by the metal colour (metals tint their reflection); strength 1.2 (Le)
+    '  }\n' +
+    '  frag = vec4(c, 1.0);\n' +
     '}';
 
   var glCanvas = document.getElementById('gl-canvas');
@@ -683,7 +695,7 @@
   var SPIN_SLOW = 0.0015, SPIN_FAST = 0.0055;   // idle-spin yaw rate: slow when the face faces the camera, fast through the back (Le) — all modes
   var DPR = Math.min(window.devicePixelRatio || 1, 2);
   var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  var uModelLoc, uViewLoc, uProjLoc, uNormLoc, uUseVCLoc, uTransXLoc;
+  var uModelLoc, uViewLoc, uProjLoc, uNormLoc, uUseVCLoc, uTransXLoc, uMetalLoc;
   var aPosLoc, aNormLoc, aVColLoc, aOffLoc, aColLoc;
   var proj = null, view = null;
 
@@ -731,7 +743,7 @@
     gl.useProgram(prog);
     uModelLoc = gl.getUniformLocation(prog, 'uModel'); uViewLoc = gl.getUniformLocation(prog, 'uView');
     uProjLoc = gl.getUniformLocation(prog, 'uProj'); uNormLoc = gl.getUniformLocation(prog, 'uNormalMat');
-    uUseVCLoc = gl.getUniformLocation(prog, 'uUseVertColor'); uTransXLoc = gl.getUniformLocation(prog, 'uTransX');
+    uUseVCLoc = gl.getUniformLocation(prog, 'uUseVertColor'); uTransXLoc = gl.getUniformLocation(prog, 'uTransX'); uMetalLoc = gl.getUniformLocation(prog, 'uMetallic');
     aPosLoc = gl.getAttribLocation(prog, 'aPos'); aNormLoc = gl.getAttribLocation(prog, 'aNormal');
     aVColLoc = gl.getAttribLocation(prog, 'aVertColor'); aOffLoc = gl.getAttribLocation(prog, 'aOffset'); aColLoc = gl.getAttribLocation(prog, 'aColor');
 
@@ -773,7 +785,7 @@
     MESH.tick = makeMesh(buildCheck());                                             // ✓ beige relief on BOTH faces — EXACT original badge check (1:1 size), front + back
     MESH.star = makeMesh(buildPoly(starPts(0.44), 0.55, -0.55));                     // gold/silver star — full-depth prism → visible on BOTH faces (Le)
     MESH.tileLit = makeMesh(buildBevelTile(0.5, 0.12, 0.5, -0.5));                    // gold/silver LIT tile — beveled (diagonal) edges, full depth
-    MESH.tileSh = makeMesh(buildBevelTile(0.5, 0.12, 0.5 - 0.22, -0.5));              // SHADOW (dull) tile — front recessed 0.22 (less depth) → the star relief shows over it
+    MESH.tileSh = makeMesh(buildBevelTile(0.5, 0.12, 0.5 - 0.22, -(0.5 - 0.22)));      // SHADOW (dull) tile — recessed 0.22 on BOTH faces (thin slab) → the star relief shows over it from front AND back
     MESH.s1 = makeMesh(buildPool(XB_SHAPES.s1));                                     // windows pool shapes (black relief) — BOTH faces
     MESH.s2 = makeMesh(buildPool(XB_SHAPES.s2));
     MESH.s3 = makeMesh(buildPool(XB_SHAPES.s3));
@@ -803,6 +815,7 @@
   // ── render one mode (full punk) at a horizontal world offset transX (slide) ──
   function renderMode(mi, rgb, idx, transX, ts) {
     gl.uniform1f(uTransXLoc, transX);
+    gl.uniform1f(uMetalLoc, 0);                                                   // default non-metallic (canon + all non-gold/silver draws); gold/silver flips it on for its tiles+star
     var mode = MODES[mi];
     if (mode !== 'datablock') drawPerInst(MESH.cube, canonOffBuf, canonColBuf, canonCount);   // canon glasses+hair = solid cube (identity); datablock displaces canon too → done in its branch
     if (mode === 'normal') {
@@ -813,6 +826,7 @@
       drawFlat(MESH.tick, ncOffBuf, ncCount, CHECK_BEIGE);                    // ✓ beige relief
     } else if (mode === 'gold' || mode === 'silver') {
       var pal = STAR_PAL[mode];
+      gl.uniform1f(uMetalLoc, 1);                                               // shiny metallic glint for the gold/silver tiles + star (canon stays matte — drawn above with uMetallic=0)
       var nLit = bucket(0, function (k) { return (idx[ncGi[k]] & 2) === 0; });   // LIT tiles (bright) → beveled full-depth cube, pal.lit
       drawFlat(MESH.tileLit, bkBufs[0], nLit, pal.lit);
       var nSh = bucket(1, function (k) { return (idx[ncGi[k]] & 2) !== 0; });    // SHADOW tiles (dull/opaque) → recessed beveled cube, pal.sh
