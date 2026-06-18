@@ -357,7 +357,8 @@ body.night #fz-export { background:#2c2b28; }
 #fz-silver:hover .fz-check-seal, #fz-silver:focus-visible .fz-check-seal, #fz-silver.fz-check-on .fz-check-seal,
 #fz-normal:hover .fz-check-seal, #fz-normal:focus-visible .fz-check-seal, #fz-normal.fz-check-on .fz-check-seal,
 #fz-pepe:hover .fz-check-seal, #fz-pepe:focus-visible .fz-check-seal,
-#fz-xbox:hover .fz-check-seal, #fz-xbox:focus-visible .fz-check-seal { animation:fzBadgeSpin 1.3s linear infinite; }   /* spin on hover/focus for all; AND while active (.fz-check-on) for check/gold/silver/normal — #fz-xbox + #fz-pepe (square glyphs) spin on hover ONLY (Le) */
+#fz-datablock:hover .fz-check-seal, #fz-datablock:focus-visible .fz-check-seal,
+#fz-xbox:hover .fz-check-seal, #fz-xbox:focus-visible .fz-check-seal { animation:fzBadgeSpin 1.3s linear infinite; }   /* spin on hover/focus for all; AND while active (.fz-check-on) for check/gold/silver/normal — #fz-xbox + #fz-pepe + #fz-datablock (square glyphs) spin on hover ONLY */
 /* diagonal check field behind the WHOLE modal body (not the tbar): a fixed backdrop on #punk-detail,
    below the content (z-index 0). The opaque tbar (z-index 2) covers its top; .pd-body (z-index 1)
    holds the content above it. pointer-events:none → never overlaps/blocks anything. */
@@ -399,6 +400,12 @@ body.night #fz-export { background:#2c2b28; }
 #fz-pepe:active { transform:scale(0.9); }
 #fz-pepe:disabled { opacity:0.3; cursor:default; }
 #punk-detail.fz-pepe-bg::before { background-image:var(--fz-pepe-tile); opacity:1; animation:fzDiagScroll 2.5s linear infinite; }
+/* datablock button (mirrors #fz-pepe; favicon-cube icon jitters while active, spins on hover; no backdrop tile) */
+#fz-datablock { display:inline-flex; align-items:center; padding:0 2px; background:none; border:none; cursor:pointer; opacity:0.55; transition:opacity 0.15s, transform 0.15s ease; }
+#fz-datablock:hover, #fz-datablock:focus-visible, #fz-datablock.fz-check-on { opacity:1; }
+#fz-datablock:hover, #fz-datablock:focus-visible { transform:scale(1.14); }
+#fz-datablock:active { transform:scale(0.9); }
+#fz-datablock:disabled { opacity:0.3; cursor:default; }
 /* fx modes (check/gold) = vector glyphs → smooth scaling; normal CA stays pixelated */
 #punk-detail.fz-fx-smooth #pd-canvas, #punk-detail.fz-fx-smooth .pk-cv { image-rendering:auto; }
 .pd-tbar { position:relative; z-index:2; }   /* opaque → hides the field at the top of the modal */
@@ -412,6 +419,7 @@ body.night #fz-export { background:#2c2b28; }
   #fz-silver:hover .fz-check-seal, #fz-silver:focus-visible .fz-check-seal, #fz-silver.fz-check-on .fz-check-seal,
   #fz-normal:hover .fz-check-seal, #fz-normal:focus-visible .fz-check-seal, #fz-normal.fz-check-on .fz-check-seal,
   #fz-pepe:hover .fz-check-seal, #fz-pepe:focus-visible .fz-check-seal,
+  #fz-datablock:hover .fz-check-seal, #fz-datablock:focus-visible .fz-check-seal,
   #fz-xbox:hover .fz-check-seal, #fz-xbox:focus-visible .fz-check-seal { animation:none; }
   #punk-detail.fz-check-bg::before { animation:none; }
   .pk-slot.pk-flip { animation:none; }
@@ -548,7 +556,7 @@ body.night #filter-btn { background:#2c2b28; }
     <div id="fuse-title">Fuse with Modulo Artifacts</div>
     <div id="fz-panel">
       <p class="fz-k">Pick a trait, then pick a modulo to fill it. Several animate at once.</p>
-      <div id="fz-traits"><button id="fz-normal" type="button" aria-pressed="false" aria-label="normal — modulo" title="normal"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-check" type="button" aria-pressed="false" aria-label="check it — toggle badge mode" title="check it"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-gold" type="button" aria-pressed="false" aria-label="gold stars — toggle tier 3" title="gold stars"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-silver" type="button" aria-pressed="false" aria-label="silver stars — toggle tier 4" title="silver stars"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-xbox" type="button" aria-pressed="false" aria-label="windows — toggle tier 5" title="windows"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-pepe" type="button" aria-pressed="false" aria-label="pepe — toggle tier 6" title="pepe"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><span class="fz-cdot" aria-hidden="true">·</span></div>
+      <div id="fz-traits"><button id="fz-normal" type="button" aria-pressed="false" aria-label="normal — modulo" title="normal"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-check" type="button" aria-pressed="false" aria-label="check it — toggle badge mode" title="check it"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-gold" type="button" aria-pressed="false" aria-label="gold stars — toggle tier 3" title="gold stars"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-silver" type="button" aria-pressed="false" aria-label="silver stars — toggle tier 4" title="silver stars"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-xbox" type="button" aria-pressed="false" aria-label="windows — toggle tier 5" title="windows"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-pepe" type="button" aria-pressed="false" aria-label="pepe — toggle tier 6" title="pepe"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-datablock" type="button" aria-pressed="false" aria-label="datablock — toggle glitch" title="datablock"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><span class="fz-cdot" aria-hidden="true">·</span></div>
     </div>
     <div id="fz-pick">
       <div id="fz-picker"></div>
@@ -1855,13 +1863,46 @@ function _extractComposition(decodedHtml) {
   // ── Unified animation loop: assignment engines (60fps) + picker previews (~30fps) ──
   var _animRaf = 0, _animN = 0, _animErrs = 0, _exportInFlight = false;
   function _animStop() { if (_animRaf) { cancelAnimationFrame(_animRaf); _animRaf = 0; } }
-  function _animStopIfIdle() { if (!_fz.assignments.size) _animStop(); }   // picker is static now — only assignments drive the rAF
-  function _animKick() { if (_exportInFlight) return; if (_fz.checkMode && (_fz.fx === 'xbox' || _fz.fx === 'pepe') && _fz.assignments.size) _xbSetVisible(true); if (!_animRaf && detail.classList.contains('open') && _fz.assignments.size) _animRaf = requestAnimationFrame(_animFrame); }
+  function _animWanted() { return _fz.assignments.size > 0 || (_fz.checkMode && !!POST_FX[_fz.fx]); }   // datablock (post-fx) animates the punk even with 0 fused modulos; for the other 6 modes this ≡ assignments.size>0 (no-op)
+  function _animStopIfIdle() { if (!_animWanted()) _animStop(); }   // picker is static — assignments OR a live post-fx drive the rAF
+  function _animKick() { if (_exportInFlight) return; if (_fz.checkMode && (_fz.fx === 'xbox' || _fz.fx === 'pepe') && _fz.assignments.size) _xbSetVisible(true); if (!_animRaf && detail.classList.contains('open') && _animWanted()) _animRaf = requestAnimationFrame(_animFrame); }
+  // ── "datablock" fx (per-cell datamosh): POST-PROCESS on the composed 144 punk (comCv, 6px/cell, 24×24)
+  // AFTER the normal z-order/mask compose → silhouette preserved. Macroblocks (DB_BLOCK cells) each sample
+  // from a drifting source block (wrap, no holes) → tear. Per-block displacement re-randomizes every DB_HOLD
+  // ms, STAGGERED per block → no synchronized loop. DB_MAX=1 (±1 cell → punk stays recognizable). Driven by
+  // _fxMs (preview = performance.now / export = frame-index ms) → preview & MP4 match. Runs even with 0 fused
+  // modulos (animates the plain punk). The warp must NOT step engines (it only touches the composed buffer).
+  var POST_FX = { datablock: 1 };
+  var _fxMs = 0, _CPX = 6, _CN = 24;
+  function _fxHash(c, r) { var x = (c * 374761393 + r * 668265263) >>> 0; x = ((x ^ (x >>> 13)) * 1274126177) >>> 0; return x; }
+  var DB_BLOCK = 4, DB_MAX = 1, DB_HOLD = 700;   // ms each block holds a displacement before re-randomizing; staggered per block → no synchronized loop
+  function _dbDelta(bx, by, axis) {              // per-block, per-axis displacement; new pseudo-random value every DB_HOLD ms, STAGGERED by a per-block phase → the field never repeats in a short loop
+    var phase = _fxHash(bx * 7 + axis, by) % DB_HOLD;
+    var epoch = Math.floor((_fxMs + phase) / DB_HOLD);
+    var hv = _fxHash((bx * 131 + axis * 977) ^ epoch, by * 257 + epoch);
+    return (hv % (2 * DB_MAX + 1)) - DB_MAX;
+  }
+  function _pfDatablock(ctx) {
+    var img = ctx.getImageData(0, 0, 144, 144), d = img.data;
+    if (!_fz.fxSnap || _fz.fxSnap.length !== d.length) _fz.fxSnap = new Uint8ClampedArray(d.length);
+    _fz.fxSnap.set(d); var src = _fz.fxSnap;                        // source snapshot → read from src, write to d (no read/write overlap)
+    for (var cr = 0; cr < _CN; cr++) for (var cc = 0; cc < _CN; cc++) {
+      var bx = (cc / DB_BLOCK) | 0, by = (cr / DB_BLOCK) | 0;
+      var dx = _dbDelta(bx, by, 0), dy = _dbDelta(bx, by, 1);
+      var scc = ((cc - dx) % _CN + _CN) % _CN, scr = ((cr - dy) % _CN + _CN) % _CN;
+      for (var yy = 0; yy < _CPX; yy++) {
+        var di = ((cr * _CPX + yy) * 144 + cc * _CPX) * 4, si = ((scr * _CPX + yy) * 144 + scc * _CPX) * 4;
+        d.set(src.subarray(si, si + _CPX * 4), di);
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+  function _applyPostFx(fx) { var ctx = _fz.comCtx; if (!ctx) return; if (fx === 'datablock') _pfDatablock(ctx); }
   // Steps the assignment engines + rebuilds _fz.comCv (144) in z-order: background base, then each
   // layer (masked CA if fused, else static). Single source of truth for preview + MP4 export.
   function _composeFusionFrame() {
     _fz.assignments.forEach(function (a) { a.engine.step(a.engine.dtOps); a.engine.applyRects(); a.engine.tickRects && a.engine.tickRects(); });
-    if (_fz.checkMode) { if (_fz.fx === 'xbox') { _composeXBoxFrame(); return; } if (_fz.fx === 'pepe') { _composePepeFrame(); return; } if (_fz.fx === 'gold' || _fz.fx === 'silver') _composeStarsHR(_fz.fx); else _composeCheckHR(); return; }   // xbox/pepe render DIRECTLY into their own device-px canvas; check/gold/silver compose at PD (720) via _fzAllocHR
+    if (_fz.checkMode && !POST_FX[_fz.fx]) { if (_fz.fx === 'xbox') { _composeXBoxFrame(); return; } if (_fz.fx === 'pepe') { _composePepeFrame(); return; } if (_fz.fx === 'gold' || _fz.fx === 'silver') _composeStarsHR(_fz.fx); else _composeCheckHR(); return; }   // xbox/pepe render DIRECTLY into their own device-px canvas; check/gold/silver compose at PD (720) via _fzAllocHR
     _fzAlloc();
     _fz.comCtx.clearRect(0, 0, 144, 144);
     var bgA = _fz.assignments.get(BG_ID);
@@ -1885,6 +1926,7 @@ function _extractComposition(decodedHtml) {
         else _fz.comCtx.drawImage(layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, 144, 144);  // static layer upscaled 24→144
       }
     }
+    if (_fz.checkMode && POST_FX[_fz.fx]) _applyPostFx(_fz.fx);   // per-cell post-fx (datablock) on the composed 144 punk; in-compose → preview + export both apply it
   }
   // Check mode: same z-order/masking as the normal path but composed at PD (720) so the vector
   // badge glyphs render crisp & 1-cell-=-1-check (paintToBadge {full:true} = the same centered
@@ -2079,26 +2121,28 @@ function _extractComposition(decodedHtml) {
     if (!detail.classList.contains('open')) return;
     _animN++;
     var _skip = _fz.checkMode && (_animN & 1);                        // check mode → ~30fps: the HR (720) compose is heavy and badge colours don't change perceptibly at 60 vs 30 (export renders separately at full rate)
-    if (_fz.assignments.size && !_skip) {
+    if (_animWanted() && !_skip) {
       try {
         if (_fz.fx === 'gold' || _fz.fx === 'silver') _goldAngle = _reducedMotion ? 0 : (performance.now() / GOLD_SPIN_MS) * 2 * Math.PI;   // shared star spin (gold+silver); absolute wall-clock → skip-frames don't drift; reduced-motion freezes upright
+        else if (POST_FX[_fz.fx]) _fxMs = _reducedMotion ? 0 : performance.now();   // datablock datamosh clock; reduced-motion freezes
         _composeFusionFrame();
         if (_fz.checkMode && (_fz.fx === 'xbox' || _fz.fx === 'pepe')) {                       // X-Box/Pepe paint DIRECTLY into the shared on-screen device-px canvas; #pd-canvas is hidden → no blit (comHR/comCv not allocated here → would null-throw)
         } else {
           pdCtx.clearRect(0, 0, PD, PD); pdCtx.imageSmoothingEnabled = false;
           pdCtx.fillStyle = _punkBg; pdCtx.fillRect(0, 0, PD, PD);      // live status background behind the fused layers
-          if (_fz.checkMode) pdCtx.drawImage(_fz.comHR, 0, 0);          // 720→720 1:1 (crisp badges/stars)
-          else pdCtx.drawImage(_fz.comCv, 0, 0, 144, 144, 0, 0, PD, PD); // 144→720 nearest (pixel-art CA)
+          if (_fz.checkMode && !POST_FX[_fz.fx]) pdCtx.drawImage(_fz.comHR, 0, 0);          // 720→720 1:1 (crisp badges/stars); datablock falls to the comCv 144→720 nearest blit (pixel)
+          else pdCtx.drawImage(_fz.comCv, 0, 0, 144, 144, 0, 0, PD, PD); // 144→720 nearest (pixel-art CA / datablock)
         }
+        if (_fz.checkMode && _fz.fx === 'datablock') _drawFzDatablockIcon();   // animate the button icon's quadrants only while datablock is the live mode (no extra timer)
         _animErrs = 0;
       } catch (e) {
         if (++_animErrs === 1) console.error('[fuse] compose', e);      // surface once (was a silent empty catch)
         if (_animErrs >= 5) { _animStop(); return; }                    // a DETERMINISTIC compose throw → stop the silent runaway 60fps loop (a transient blip doesn't kill the preview)
       }
     }
-    if (_fz.assignments.size) _animRaf = requestAnimationFrame(_animFrame);
+    if (_animWanted()) _animRaf = requestAnimationFrame(_animFrame);
   }
-  function _fzTeardown() { _fz.assignments.clear(); _fz.pending.clear(); _fz.selected = null; _fz.punkId = null; _resetCheckModeUI(); _fz.caCv = null; _fz.comCv = null; _fz.caCtx = null; _fz.comCtx = null; _fz.offHR = null; _fz.caHR = null; _fz.comHR = null; _fz.offHRctx = null; _fz.caHRctx = null; _fz.comHRctx = null; _fz.xbOff = null; _fz.xbOffctx = null; _fz.xbCaOff = null; _fz.xbCaCtx = null; _fz.solidCanon = null; _animStopIfIdle(); }   // null the ctx refs too (incl. X-Box scratch; the #fz-xbox-canvas element persists hidden) (a ctx pins its canvas via ctx.canvas) → ~6MB of HR/CA buffers release on close instead of lingering until the next open   // _resetCheckModeUI = flag OFF + button/field classes OFF (never let the UI outlive checkMode, incl. any future in-modal punk switch)
+  function _fzTeardown() { _fz.assignments.clear(); _fz.pending.clear(); _fz.selected = null; _fz.punkId = null; _resetCheckModeUI(); _fz.caCv = null; _fz.comCv = null; _fz.caCtx = null; _fz.comCtx = null; _fz.offHR = null; _fz.caHR = null; _fz.comHR = null; _fz.offHRctx = null; _fz.caHRctx = null; _fz.comHRctx = null; _fz.xbOff = null; _fz.xbOffctx = null; _fz.xbCaOff = null; _fz.xbCaCtx = null; _fz.solidCanon = null; _fz.fxSnap = null; _animStopIfIdle(); }   // null the ctx refs too (incl. X-Box scratch; the #fz-xbox-canvas element persists hidden) (a ctx pins its canvas via ctx.canvas) → ~6MB of HR/CA buffers release on close instead of lingering until the next open   // _resetCheckModeUI = flag OFF + button/field classes OFF (never let the UI outlive checkMode, incl. any future in-modal punk switch)
   function _resetFusion() { _punkBg = PUNK_BG; _pkTeardown(); _fzTeardown(); _resetCheckModeUI(); var p = document.getElementById('fz-panel'); if (p) p.style.display = 'none'; var p2 = document.getElementById('fz-pick'); if (p2) p2.style.display = 'none'; _fzStatus(''); }
   function _clearAllFusion() { if (_exportInFlight) return; _fz.assignments.clear(); _fz.pending.clear(); _pkRedrawLive(); _animStopIfIdle(); _refreshPills(); _drawStaticPunk(); _fzStatus('cleared'); }   // keep check mode sticky across Clear-all (view setting, orthogonal to assignments); _pkRedrawLive honors the current mode
   // ── "check it" mode (badge texture) toggle ──
@@ -2110,7 +2154,9 @@ function _extractComposition(decodedHtml) {
     var bs = document.getElementById('fz-silver'); if (bs) { var ons = m === 'silver'; bs.setAttribute('aria-pressed', String(ons)); bs.classList.toggle('fz-check-on', ons); }
     var bx = document.getElementById('fz-xbox'); if (bx) { var onx = m === 'xbox'; bx.setAttribute('aria-pressed', String(onx)); bx.classList.toggle('fz-check-on', onx); }
     var bp = document.getElementById('fz-pepe'); if (bp) { var onp = m === 'pepe'; bp.setAttribute('aria-pressed', String(onp)); bp.classList.toggle('fz-check-on', onp); }
-    var bn = document.getElementById('fz-normal'); if (bn) { var onn = m === 'normal'; bn.setAttribute('aria-pressed', String(onn)); bn.classList.toggle('fz-check-on', onn); }   // normal button = active iff NO fx on (complement of the 5; no new state var)
+    var bn = document.getElementById('fz-normal'); if (bn) { var onn = m === 'normal'; bn.setAttribute('aria-pressed', String(onn)); bn.classList.toggle('fz-check-on', onn); }   // normal button = active iff NO fx on (complement of the 6; no new state var)
+    var bd = document.getElementById('fz-datablock'); if (bd) { var ond = m === 'datablock'; bd.setAttribute('aria-pressed', String(ond)); bd.classList.toggle('fz-check-on', ond); }
+    _drawFzDatablockIcon();                                         // redraw the datablock icon for the current state (clean favicon cube when not live; the rAF loop animates it while live)
   }
   function _resetCheckModeUI() {                                    // force fx OFF + both buttons OFF + backdrops/scaling OFF (does NOT redraw the live picker)
     _fz.checkMode = false;
@@ -2132,11 +2178,11 @@ function _extractComposition(decodedHtml) {
     detail.classList.toggle('fz-silver-bg', target === 'silver');    // silver field backdrop (steel stars)
     detail.classList.toggle('fz-xbox-bg', target === 'xbox');        // X-Box field backdrop — the bg classes are per-class booleans → at most one on
     detail.classList.toggle('fz-pepe-bg', target === 'pepe');        // Pepe field backdrop
-    detail.classList.toggle('fz-fx-smooth', on && target !== 'xbox' && target !== 'pepe'); // smooth scaling for vector glyphs (badge/star); X-Box + Pepe stay PIXELATED (the 10×10 sub-px glyph must be crisp)
+    detail.classList.toggle('fz-fx-smooth', on && target !== 'xbox' && target !== 'pepe' && !POST_FX[target]); // smooth scaling for vector glyphs (badge/star); X-Box + Pepe + datablock stay PIXELATED
     _xbSetVisible((target === 'xbox' || target === 'pepe') && _fz.assignments.size > 0);    // show the shared device-px overlay only when there's a fused modulo to render (else the plain punk stays on #pd-canvas)
     _pkRedrawLive();                                                // picker renders the active fx per-thumbnail (X-Box reuses the normal CA thumbnail)
-    if (_fz.assignments.size) _animKick();                          // re-render the fused preview in the new mode
-    else _drawStaticPunk();                                         // 0 assignments: keep the punk square consistent
+    if (_animWanted()) _animKick();                                 // re-render the preview in the new mode (datablock also animates with 0 assignments)
+    else { _animStopIfIdle(); _drawStaticPunk(); }                 // 0 assignments + no post-fx: cancel any pending rAF (avoids a stale datablock frame after turning it off), then redraw the static punk
   }
   function _drawFzBadgeIcon() {                                     // static icon: blue seal (CSS-spins) + beige check on top
     var sc = document.querySelector('#fz-check .fz-check-seal'), tc = document.querySelector('#fz-check .fz-check-tick');
@@ -2177,6 +2223,20 @@ function _extractComposition(decodedHtml) {
       x.fillStyle = '#222222'; x.fillRect(o, o, q, q); x.fillRect(o + q, o + q, q, q);   // TL + BR dark (frozen angle-0 frame of the animated favicon)
       x.fillStyle = '#6363ff'; x.fillRect(o + q, o, q, q);         // TR blue (favicon first-pair c1)
       x.fillStyle = '#ff003a'; x.fillRect(o, o + q, q, q);         // BL red (favicon first-pair c2)
+    } catch (e) {}
+  }
+  function _drawFzDatablockIcon() {                                 // datablock button = the Modulo favicon 2×2 quadrant mark; the 4 quadrants JITTER (datamosh, reusing _dbDelta) ONLY while datablock is the live mode — else a clean static cube
+    var sc = document.querySelector('#fz-datablock .fz-check-seal'), tc = document.querySelector('#fz-datablock .fz-check-tick');
+    if (tc) try { tc.getContext('2d').clearRect(0, 0, 28, 28); } catch (e) {}
+    if (!sc) return;
+    try {
+      var x = sc.getContext('2d'), q = 9, o = 5; x.clearRect(0, 0, 28, 28); x.imageSmoothingEnabled = false;
+      var live = _fz.checkMode && _fz.fx === 'datablock' && !_reducedMotion;   // jitter only while datablock active (reduced-motion → static)
+      var quads = [[o, o, '#222222'], [o + q, o, '#6363ff'], [o, o + q, '#ff003a'], [o + q, o + q, '#222222']];   // TL/BR dark, TR blue, BL red — the favicon mark
+      for (var k = 0; k < 4; k++) {
+        var dx = live ? _dbDelta(k, 0, 0) * 2 : 0, dy = live ? _dbDelta(0, k, 1) * 2 : 0;   // reuse the datamosh field (±2px); 0 → clean cube in repose
+        x.fillStyle = quads[k][2]; x.fillRect(quads[k][0] + dx, quads[k][1] + dy, q, q);
+      }
     } catch (e) {}
   }
   function _refreshPills() {
@@ -2310,7 +2370,7 @@ function _extractComposition(decodedHtml) {
     try {
       var fx = _fz.fx;                                            // snapshot the fx at write time → the tag always matches the pixels produced
       var bb = _pkOff(PK_BADGE_W, PK_BADGE_W), bctx = bb.getContext('2d'); bctx.imageSmoothingEnabled = false;
-      if (fx === 'xbox' || fx === 'pepe') {                      // X-Box + Pepe thumbnails reuse the NORMAL CA native crop (the 10×10 glyph is sub-pixel-invisible at 44px); tag = live fx so the fx-cache has()/purge logic stays consistent (no fetch spin, no new picker path)
+      if (fx === 'xbox' || fx === 'pepe' || POST_FX[fx]) {       // X-Box/Pepe/datablock thumbnails reuse the NORMAL CA native crop (glyph/glitch invisible at 44px); tag = live fx so the fx-cache has()/purge logic stays consistent (no fetch spin, no new picker path)
         var nb = _pkOff(24, 24), nctx = nb.getContext('2d'); nctx.imageSmoothingEnabled = false;
         eng.paintToNativeCrop(nctx, 213, 113, 24, 24);
         _pk.cacheCheck.set(id, nctx.getImageData(0, 0, 24, 24));
@@ -2534,13 +2594,14 @@ function _extractComposition(decodedHtml) {
     _exportInFlight = true; _animStop();
     var pkWasActive = _pk.active; _pk.active = false;                 // pause the picker (IO/dwell/mount/render all bail on !_pk.active) so its heavy 20-step engine builds don't compete with the export compose → no encoder stall (esp. scrolled to a freshly-mounting region — the "fails if scroll is at the bottom" bug)
     var btn = document.getElementById('fz-export'), origText = btn ? btn.textContent : '↓ MP4';
-    var btnCheck = document.getElementById('fz-check'), btnGold = document.getElementById('fz-gold'), btnSilver = document.getElementById('fz-silver'), btnXbox = document.getElementById('fz-xbox'), btnPepe = document.getElementById('fz-pepe'), btnNormal = document.getElementById('fz-normal');
+    var btnCheck = document.getElementById('fz-check'), btnGold = document.getElementById('fz-gold'), btnSilver = document.getElementById('fz-silver'), btnXbox = document.getElementById('fz-xbox'), btnPepe = document.getElementById('fz-pepe'), btnDatablock = document.getElementById('fz-datablock'), btnNormal = document.getElementById('fz-normal');
     if (btn) btn.disabled = true;
     if (btnCheck) btnCheck.disabled = true;   // freeze the mode during export so the MP4 can't switch mid-stream
     if (btnGold) btnGold.disabled = true;     // all fx buttons frozen → renderMode can't change under the frozen isCheck
     if (btnSilver) btnSilver.disabled = true;
     if (btnXbox) btnXbox.disabled = true;     // freeze X-Box too → can't toggle into it mid-export (its compose has no comHR → would null-throw the export blit)
     if (btnPepe) btnPepe.disabled = true;     // freeze Pepe too (shares the device-px canvas path)
+    if (btnDatablock) btnDatablock.disabled = true;   // freeze datablock too → mode can't change mid-export
     if (btnNormal) btnNormal.disabled = true; // freeze the normal selector too → mode can't change mid-export
     var encoder = null, muxer = null, fileStream = null, _encoderError = null;
     var toDisk = !!window.showSaveFilePicker;   // desktop: native "Save As" + stream (like collection); else mobile share/blob banner
@@ -2600,11 +2661,13 @@ function _extractComposition(decodedHtml) {
           _composePepeExport(_fz.comHRctx, _fz.offHR, _fz.offHRctx, _fz.caHR, _fz.caHRctx, PD);
         } else {
           if (_fz.fx === 'gold' || _fz.fx === 'silver') _goldAngle = ((f / FPS) * 1000 / GOLD_SPIN_MS) * 2 * Math.PI;   // shared star spin (gold+silver); frame-index drive → exact period regardless of encode pace
+          else if (POST_FX[_fz.fx]) _fxMs = (f / FPS) * 1000;        // datablock datamosh clock; frame-index → exact, matches preview
           _composeFusionFrame();
         }
         cx.fillStyle = punkBg; cx.fillRect(pX, pY, S, S);            // punk-square bg = the modal's bg (status colour); BG modulo overdraws it
-        cx.imageSmoothingEnabled = isCheck;                          // fx (check/gold/xbox via isCheck) = smooth the 720→S blit; normal pixel-art CA = nearest. Same settings for all fx modes.
-        var _eSrc = isCheck ? _fz.comHR : _fz.comCv, _eS = isCheck ? PD : 144;   // fx = 720 source (comHR), normal = 144 (comCv)
+        var _ePost = POST_FX[_fz.fx];                                // datablock composes at 144 (comCv) like normal (pixel), NOT comHR
+        cx.imageSmoothingEnabled = isCheck && !_ePost;              // fx (check/gold/xbox) = smooth; normal + datablock pixel = nearest
+        var _eSrc = (isCheck && !_ePost) ? _fz.comHR : _fz.comCv, _eS = (isCheck && !_ePost) ? PD : 144;   // fx = 720 source (comHR); normal + datablock = 144 (comCv)
         cx.drawImage(_eSrc, 0, 0, _eS, _eS, pX, pY, S, S);          // fused punk → S slot — IDENTICAL blit for check/gold/silver/xbox
         var frame = new VideoFrame(card, { timestamp: Math.round(f * 1000000 / FPS), duration: Math.round(1000000 / FPS) });
         encoder.encode(frame, { keyFrame: f % (FPS * 2) === 0 });    // ~2s GOP in both modes
@@ -2630,6 +2693,7 @@ function _extractComposition(decodedHtml) {
       if (btnSilver) btnSilver.disabled = false;
       if (btnXbox) btnXbox.disabled = false;
       if (btnPepe) btnPepe.disabled = false;
+      if (btnDatablock) btnDatablock.disabled = false;
       if (btnNormal) btnNormal.disabled = false;
       if (encoder) { try { encoder.close(); } catch (_) {} }
       if (fileStream) { try { await fileStream.abort(); } catch (_) {} }
@@ -2683,8 +2747,9 @@ function _extractComposition(decodedHtml) {
   document.getElementById('fz-silver').addEventListener('click', function () { _setRenderMode(_fzCurMode() === 'silver' ? 'normal' : 'silver'); });   // Tier 4 toggle (mutually exclusive with check/gold)
   document.getElementById('fz-xbox').addEventListener('click', function () { _setRenderMode(_fzCurMode() === 'xbox' ? 'normal' : 'xbox'); });   // Tier 5 X-Box toggle (mutually exclusive)
   document.getElementById('fz-pepe').addEventListener('click', function () { _setRenderMode(_fzCurMode() === 'pepe' ? 'normal' : 'pepe'); });   // Tier 6 Pepe toggle (mutually exclusive)
+  document.getElementById('fz-datablock').addEventListener('click', function () { _setRenderMode(_fzCurMode() === 'datablock' ? 'normal' : 'datablock'); });   // datablock toggle (per-cell datamosh; mutually exclusive)
   document.getElementById('fz-normal').addEventListener('click', function () { _setRenderMode('normal'); });   // normal-mode selector — ALWAYS normal (deselecting normal is a no-op, so not a toggle)
-  _drawFzBadgeIcon(); _drawFzStarIcon('fz-gold', GOLD_BODY); _drawFzStarIcon('fz-silver', STAR_PALETTES.silver.body); _drawFzXBoxIcon(); _drawFzPepeIcon(); _drawFzModuloIcon();   // draw the 6 static fx-button icons (buttons are in static HTML, present at eval)
+  _drawFzBadgeIcon(); _drawFzStarIcon('fz-gold', GOLD_BODY); _drawFzStarIcon('fz-silver', STAR_PALETTES.silver.body); _drawFzXBoxIcon(); _drawFzPepeIcon(); _drawFzDatablockIcon(); _drawFzModuloIcon();   // draw the 7 static fx-button icons (buttons are in static HTML, present at eval); datablock icon animates via _animFrame while active
   // X-Box device-px canvas keep-sized: ONE persistent self-rearming watcher each (no per-enter arming → no listener accumulation/leak); both bail unless X-Box is the live mode
   var _xbRzT = 0;
   window.addEventListener('resize', function () { if (!(_fz.checkMode && (_fz.fx === 'xbox' || _fz.fx === 'pepe'))) return; clearTimeout(_xbRzT); _xbRzT = setTimeout(_xbResizeCv, 60); });
