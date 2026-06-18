@@ -357,7 +357,8 @@ body.night #fz-export { background:#2c2b28; }
 #fz-silver:hover .fz-check-seal, #fz-silver:focus-visible .fz-check-seal, #fz-silver.fz-check-on .fz-check-seal,
 #fz-normal:hover .fz-check-seal, #fz-normal:focus-visible .fz-check-seal, #fz-normal.fz-check-on .fz-check-seal,
 #fz-pepe:hover .fz-check-seal, #fz-pepe:focus-visible .fz-check-seal,
-#fz-xbox:hover .fz-check-seal, #fz-xbox:focus-visible .fz-check-seal { animation:fzBadgeSpin 1.3s linear infinite; }   /* spin on hover/focus for all; AND while active (.fz-check-on) for check/gold/silver/normal — #fz-xbox + #fz-pepe (square glyphs) spin on hover ONLY (Le) */
+#fz-track:hover .fz-check-seal, #fz-track:focus-visible .fz-check-seal,
+#fz-xbox:hover .fz-check-seal, #fz-xbox:focus-visible .fz-check-seal { animation:fzBadgeSpin 1.3s linear infinite; }   /* spin on hover/focus for all; AND while active (.fz-check-on) for check/gold/silver/normal — #fz-xbox + #fz-pepe + #fz-track (square glyphs) spin on hover ONLY (Le) */
 /* diagonal check field behind the WHOLE modal body (not the tbar): a fixed backdrop on #punk-detail,
    below the content (z-index 0). The opaque tbar (z-index 2) covers its top; .pd-body (z-index 1)
    holds the content above it. pointer-events:none → never overlaps/blocks anything. */
@@ -399,6 +400,13 @@ body.night #fz-export { background:#2c2b28; }
 #fz-pepe:active { transform:scale(0.9); }
 #fz-pepe:disabled { opacity:0.3; cursor:default; }
 #punk-detail.fz-pepe-bg::before { background-image:var(--fz-pepe-tile); opacity:1; animation:fzDiagScroll 2.5s linear infinite; }
+/* Tier-7 TRACKING button + backdrop (mirrors #fz-pepe; glitch icon → hover-spin only) */
+#fz-track { display:inline-flex; align-items:center; padding:0 2px; background:none; border:none; cursor:pointer; opacity:0.55; transition:opacity 0.15s, transform 0.15s ease; }
+#fz-track:hover, #fz-track:focus-visible, #fz-track.fz-check-on { opacity:1; }
+#fz-track:hover, #fz-track:focus-visible { transform:scale(1.14); }
+#fz-track:active { transform:scale(0.9); }
+#fz-track:disabled { opacity:0.3; cursor:default; }
+#punk-detail.fz-track-bg::before { background-image:var(--fz-track-tile); opacity:1; animation:fzDiagScroll 2.5s linear infinite; }
 /* fx modes (check/gold) = vector glyphs → smooth scaling; normal CA stays pixelated */
 #punk-detail.fz-fx-smooth #pd-canvas, #punk-detail.fz-fx-smooth .pk-cv { image-rendering:auto; }
 .pd-tbar { position:relative; z-index:2; }   /* opaque → hides the field at the top of the modal */
@@ -412,6 +420,7 @@ body.night #fz-export { background:#2c2b28; }
   #fz-silver:hover .fz-check-seal, #fz-silver:focus-visible .fz-check-seal, #fz-silver.fz-check-on .fz-check-seal,
   #fz-normal:hover .fz-check-seal, #fz-normal:focus-visible .fz-check-seal, #fz-normal.fz-check-on .fz-check-seal,
   #fz-pepe:hover .fz-check-seal, #fz-pepe:focus-visible .fz-check-seal,
+  #fz-track:hover .fz-check-seal, #fz-track:focus-visible .fz-check-seal,
   #fz-xbox:hover .fz-check-seal, #fz-xbox:focus-visible .fz-check-seal { animation:none; }
   #punk-detail.fz-check-bg::before { animation:none; }
   .pk-slot.pk-flip { animation:none; }
@@ -548,7 +557,7 @@ body.night #filter-btn { background:#2c2b28; }
     <div id="fuse-title">Fuse with Modulo Artifacts</div>
     <div id="fz-panel">
       <p class="fz-k">Pick a trait, then pick a modulo to fill it. Several animate at once.</p>
-      <div id="fz-traits"><button id="fz-normal" type="button" aria-pressed="false" aria-label="normal — modulo" title="normal"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-check" type="button" aria-pressed="false" aria-label="check it — toggle badge mode" title="check it"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-gold" type="button" aria-pressed="false" aria-label="gold stars — toggle tier 3" title="gold stars"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-silver" type="button" aria-pressed="false" aria-label="silver stars — toggle tier 4" title="silver stars"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-xbox" type="button" aria-pressed="false" aria-label="windows — toggle tier 5" title="windows"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-pepe" type="button" aria-pressed="false" aria-label="pepe — toggle tier 6" title="pepe"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><span class="fz-cdot" aria-hidden="true">·</span></div>
+      <div id="fz-traits"><button id="fz-normal" type="button" aria-pressed="false" aria-label="normal — modulo" title="normal"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-check" type="button" aria-pressed="false" aria-label="check it — toggle badge mode" title="check it"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-gold" type="button" aria-pressed="false" aria-label="gold stars — toggle tier 3" title="gold stars"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-silver" type="button" aria-pressed="false" aria-label="silver stars — toggle tier 4" title="silver stars"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-xbox" type="button" aria-pressed="false" aria-label="windows — toggle tier 5" title="windows"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-pepe" type="button" aria-pressed="false" aria-label="pepe — toggle tier 6" title="pepe"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-track" type="button" aria-pressed="false" aria-label="tracking — toggle tier 7" title="tracking"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><span class="fz-cdot" aria-hidden="true">·</span></div>
     </div>
     <div id="fz-pick">
       <div id="fz-picker"></div>
@@ -1857,11 +1866,35 @@ function _extractComposition(decodedHtml) {
   function _animStop() { if (_animRaf) { cancelAnimationFrame(_animRaf); _animRaf = 0; } }
   function _animStopIfIdle() { if (!_fz.assignments.size) _animStop(); }   // picker is static now — only assignments drive the rAF
   function _animKick() { if (_exportInFlight) return; if (_fz.checkMode && (_fz.fx === 'xbox' || _fz.fx === 'pepe') && _fz.assignments.size) _xbSetVisible(true); if (!_animRaf && detail.classList.contains('open') && _fz.assignments.size) _animRaf = requestAnimationFrame(_animFrame); }
+  // ── "tracking" fx (VHS head-mistracking): a horizontal band sweeps the COMPOSED punk (comCv@144)
+  // top→bottom; rows in the band shift horizontally with a smooth bulge, vacated columns WRAP (datamosh
+  // smear); faint white tint on the leading edge. POST-PROCESS on comCv (144) → the existing nearest
+  // 144→720 blit makes it chunky pixel-VHS (matches the normal pixel-art look). Driven by _trkPhase
+  // (preview wall-clock / export frame-index) so preview & MP4 can't diverge; ~30fps via the checkMode
+  // _skip gate. Operates PURELY on the composed pixel buffer — must NOT step engines (would double-speed it).
+  var _trkPhase = 0, TRK_BAND_H = 42, TRK_PERIOD_MS = 3200, TRK_MAX_DX = 14, TRK_TINT = 0.22, TRK_TINT_H = 5;   // 144-space; +W4 row-wrap assumes TRK_MAX_DX<=144
+  function _applyTrackWarp() {
+    var ctx = _fz.comCtx; if (!ctx) return;
+    if (!_fz.trkRow) _fz.trkRow = new Uint8ClampedArray(144 * 4);    // reused per-row buffer (alloc once) → the warp itself is zero-alloc
+    var bandTop = Math.round(_trkPhase * (144 + TRK_BAND_H)) - TRK_BAND_H;
+    var y0 = Math.max(0, bandTop), y1 = Math.min(144, bandTop + TRK_BAND_H);
+    if (y1 <= y0) return;                                            // band fully off-canvas (reduced-motion phase 0 → bandTop<0 → no warp/tint)
+    var img = ctx.getImageData(0, 0, 144, 144), d = img.data, row = _fz.trkRow, W4 = 144 * 4;
+    for (var y = y0; y < y1; y++) {
+      var t = (y - bandTop) / TRK_BAND_H, dx = Math.round(TRK_MAX_DX * Math.sin(Math.PI * t));   // sin bulge: 0 at edges, peak at band centre (dx ≥ 0 → rightward smear)
+      if (!dx) continue;
+      var b = y * W4, sh = dx * 4;
+      row.set(d.subarray(b, b + W4));                                // copy the row OUT first → no read/write overlap
+      for (var x = 0; x < W4; x++) d[b + x] = row[(x - sh + W4) % W4];   // wrap = smear; sh,W4 ≡0 mod4 → R/G/B/A stay aligned
+    }
+    ctx.putImageData(img, 0, 0);
+    if (bandTop >= 0) { ctx.fillStyle = 'rgba(255,255,255,' + TRK_TINT + ')'; ctx.fillRect(0, bandTop, 144, TRK_TINT_H); }   // faint white leading-edge tint
+  }
   // Steps the assignment engines + rebuilds _fz.comCv (144) in z-order: background base, then each
   // layer (masked CA if fused, else static). Single source of truth for preview + MP4 export.
   function _composeFusionFrame() {
     _fz.assignments.forEach(function (a) { a.engine.step(a.engine.dtOps); a.engine.applyRects(); a.engine.tickRects && a.engine.tickRects(); });
-    if (_fz.checkMode) { if (_fz.fx === 'xbox') { _composeXBoxFrame(); return; } if (_fz.fx === 'pepe') { _composePepeFrame(); return; } if (_fz.fx === 'gold' || _fz.fx === 'silver') _composeStarsHR(_fz.fx); else _composeCheckHR(); return; }   // xbox/pepe render DIRECTLY into their own device-px canvas; check/gold/silver compose at PD (720) via _fzAllocHR
+    if (_fz.checkMode && _fz.fx !== 'tracking') { if (_fz.fx === 'xbox') { _composeXBoxFrame(); return; } if (_fz.fx === 'pepe') { _composePepeFrame(); return; } if (_fz.fx === 'gold' || _fz.fx === 'silver') _composeStarsHR(_fz.fx); else _composeCheckHR(); return; }   // xbox/pepe render DIRECTLY into their own device-px canvas; check/gold/silver compose at PD (720) via _fzAllocHR
     _fzAlloc();
     _fz.comCtx.clearRect(0, 0, 144, 144);
     var bgA = _fz.assignments.get(BG_ID);
@@ -1885,6 +1918,7 @@ function _extractComposition(decodedHtml) {
         else _fz.comCtx.drawImage(layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, 144, 144);  // static layer upscaled 24→144
       }
     }
+    if (_fz.checkMode && _fz.fx === 'tracking') _applyTrackWarp();   // VHS band sweep over the composed 144 punk (in-compose → preview + export both apply it)
   }
   // Check mode: same z-order/masking as the normal path but composed at PD (720) so the vector
   // badge glyphs render crisp & 1-cell-=-1-check (paintToBadge {full:true} = the same centered
@@ -2082,12 +2116,13 @@ function _extractComposition(decodedHtml) {
     if (_fz.assignments.size && !_skip) {
       try {
         if (_fz.fx === 'gold' || _fz.fx === 'silver') _goldAngle = _reducedMotion ? 0 : (performance.now() / GOLD_SPIN_MS) * 2 * Math.PI;   // shared star spin (gold+silver); absolute wall-clock → skip-frames don't drift; reduced-motion freezes upright
+        else if (_fz.fx === 'tracking') _trkPhase = _reducedMotion ? 0 : ((performance.now() % TRK_PERIOD_MS) / TRK_PERIOD_MS);   // band sweep phase; reduced-motion → 0 (band off-canvas, no warp)
         _composeFusionFrame();
         if (_fz.checkMode && (_fz.fx === 'xbox' || _fz.fx === 'pepe')) {                       // X-Box/Pepe paint DIRECTLY into the shared on-screen device-px canvas; #pd-canvas is hidden → no blit (comHR/comCv not allocated here → would null-throw)
         } else {
           pdCtx.clearRect(0, 0, PD, PD); pdCtx.imageSmoothingEnabled = false;
           pdCtx.fillStyle = _punkBg; pdCtx.fillRect(0, 0, PD, PD);      // live status background behind the fused layers
-          if (_fz.checkMode) pdCtx.drawImage(_fz.comHR, 0, 0);          // 720→720 1:1 (crisp badges/stars)
+          if (_fz.checkMode && _fz.fx !== 'tracking') pdCtx.drawImage(_fz.comHR, 0, 0);          // 720→720 1:1 (crisp badges/stars); tracking falls to the comCv 144→720 nearest blit below (pixel-VHS)
           else pdCtx.drawImage(_fz.comCv, 0, 0, 144, 144, 0, 0, PD, PD); // 144→720 nearest (pixel-art CA)
         }
         _animErrs = 0;
@@ -2098,7 +2133,7 @@ function _extractComposition(decodedHtml) {
     }
     if (_fz.assignments.size) _animRaf = requestAnimationFrame(_animFrame);
   }
-  function _fzTeardown() { _fz.assignments.clear(); _fz.pending.clear(); _fz.selected = null; _fz.punkId = null; _resetCheckModeUI(); _fz.caCv = null; _fz.comCv = null; _fz.caCtx = null; _fz.comCtx = null; _fz.offHR = null; _fz.caHR = null; _fz.comHR = null; _fz.offHRctx = null; _fz.caHRctx = null; _fz.comHRctx = null; _fz.xbOff = null; _fz.xbOffctx = null; _fz.xbCaOff = null; _fz.xbCaCtx = null; _fz.solidCanon = null; _animStopIfIdle(); }   // null the ctx refs too (incl. X-Box scratch; the #fz-xbox-canvas element persists hidden) (a ctx pins its canvas via ctx.canvas) → ~6MB of HR/CA buffers release on close instead of lingering until the next open   // _resetCheckModeUI = flag OFF + button/field classes OFF (never let the UI outlive checkMode, incl. any future in-modal punk switch)
+  function _fzTeardown() { _fz.assignments.clear(); _fz.pending.clear(); _fz.selected = null; _fz.punkId = null; _resetCheckModeUI(); _fz.caCv = null; _fz.comCv = null; _fz.caCtx = null; _fz.comCtx = null; _fz.offHR = null; _fz.caHR = null; _fz.comHR = null; _fz.offHRctx = null; _fz.caHRctx = null; _fz.comHRctx = null; _fz.xbOff = null; _fz.xbOffctx = null; _fz.xbCaOff = null; _fz.xbCaCtx = null; _fz.solidCanon = null; _fz.trkRow = null; _animStopIfIdle(); }   // null the ctx refs too (incl. X-Box scratch; the #fz-xbox-canvas element persists hidden) (a ctx pins its canvas via ctx.canvas) → ~6MB of HR/CA buffers release on close instead of lingering until the next open   // _resetCheckModeUI = flag OFF + button/field classes OFF (never let the UI outlive checkMode, incl. any future in-modal punk switch)
   function _resetFusion() { _punkBg = PUNK_BG; _pkTeardown(); _fzTeardown(); _resetCheckModeUI(); var p = document.getElementById('fz-panel'); if (p) p.style.display = 'none'; var p2 = document.getElementById('fz-pick'); if (p2) p2.style.display = 'none'; _fzStatus(''); }
   function _clearAllFusion() { if (_exportInFlight) return; _fz.assignments.clear(); _fz.pending.clear(); _pkRedrawLive(); _animStopIfIdle(); _refreshPills(); _drawStaticPunk(); _fzStatus('cleared'); }   // keep check mode sticky across Clear-all (view setting, orthogonal to assignments); _pkRedrawLive honors the current mode
   // ── "check it" mode (badge texture) toggle ──
@@ -2110,16 +2145,19 @@ function _extractComposition(decodedHtml) {
     var bs = document.getElementById('fz-silver'); if (bs) { var ons = m === 'silver'; bs.setAttribute('aria-pressed', String(ons)); bs.classList.toggle('fz-check-on', ons); }
     var bx = document.getElementById('fz-xbox'); if (bx) { var onx = m === 'xbox'; bx.setAttribute('aria-pressed', String(onx)); bx.classList.toggle('fz-check-on', onx); }
     var bp = document.getElementById('fz-pepe'); if (bp) { var onp = m === 'pepe'; bp.setAttribute('aria-pressed', String(onp)); bp.classList.toggle('fz-check-on', onp); }
+    var bt = document.getElementById('fz-track'); if (bt) { var ont = m === 'tracking'; bt.setAttribute('aria-pressed', String(ont)); bt.classList.toggle('fz-check-on', ont); }
     var bn = document.getElementById('fz-normal'); if (bn) { var onn = m === 'normal'; bn.setAttribute('aria-pressed', String(onn)); bn.classList.toggle('fz-check-on', onn); }   // normal button = active iff NO fx on (complement of the 5; no new state var)
   }
   function _resetCheckModeUI() {                                    // force fx OFF + both buttons OFF + backdrops/scaling OFF (does NOT redraw the live picker)
     _fz.checkMode = false;
+    _trkPhase = 0;                                                   // reset the tracking band sweep (harmless — re-set each frame, but tidy)
     _syncFxUI();
     detail.classList.remove('fz-check-bg');                          // fx field backdrops on the whole modal (minus tbar)
     detail.classList.remove('fz-gold-bg');
     detail.classList.remove('fz-silver-bg');
     detail.classList.remove('fz-xbox-bg');
     detail.classList.remove('fz-pepe-bg');
+    detail.classList.remove('fz-track-bg');
     detail.classList.remove('fz-fx-smooth');                         // revert to pixelated for the normal pixel-art CA
     _xbSetVisible(false);                                            // hide the X-Box overlay canvas + un-hide #pd-canvas (safe no-op if never created)
   }
@@ -2132,7 +2170,8 @@ function _extractComposition(decodedHtml) {
     detail.classList.toggle('fz-silver-bg', target === 'silver');    // silver field backdrop (steel stars)
     detail.classList.toggle('fz-xbox-bg', target === 'xbox');        // X-Box field backdrop — the bg classes are per-class booleans → at most one on
     detail.classList.toggle('fz-pepe-bg', target === 'pepe');        // Pepe field backdrop
-    detail.classList.toggle('fz-fx-smooth', on && target !== 'xbox' && target !== 'pepe'); // smooth scaling for vector glyphs (badge/star); X-Box + Pepe stay PIXELATED (the 10×10 sub-px glyph must be crisp)
+    detail.classList.toggle('fz-track-bg', target === 'tracking');   // tracking field backdrop (VHS scanline bars)
+    detail.classList.toggle('fz-fx-smooth', on && target !== 'xbox' && target !== 'pepe' && target !== 'tracking'); // smooth scaling for vector glyphs (badge/star); X-Box + Pepe + tracking stay PIXELATED (sub-px glyph / pixel-VHS warp must be crisp)
     _xbSetVisible((target === 'xbox' || target === 'pepe') && _fz.assignments.size > 0);    // show the shared device-px overlay only when there's a fused modulo to render (else the plain punk stays on #pd-canvas)
     _pkRedrawLive();                                                // picker renders the active fx per-thumbnail (X-Box reuses the normal CA thumbnail)
     if (_fz.assignments.size) _animKick();                          // re-render the fused preview in the new mode
@@ -2177,6 +2216,19 @@ function _extractComposition(decodedHtml) {
       x.fillStyle = '#222222'; x.fillRect(o, o, q, q); x.fillRect(o + q, o + q, q, q);   // TL + BR dark (frozen angle-0 frame of the animated favicon)
       x.fillStyle = '#6363ff'; x.fillRect(o + q, o, q, q);         // TR blue (favicon first-pair c1)
       x.fillStyle = '#ff003a'; x.fillRect(o, o + q, q, q);         // BL red (favicon first-pair c2)
+    } catch (e) {}
+  }
+  function _drawFzTrackIcon() {                                     // static icon = horizontal bands with the middle one displaced + a white leading edge (VHS tracking), drawn 1:1 like the other glyph icons
+    var sc = document.querySelector('#fz-track .fz-check-seal'), tc = document.querySelector('#fz-track .fz-check-tick');
+    if (tc) try { tc.getContext('2d').clearRect(0, 0, 28, 28); } catch (e) {}
+    if (sc) try {
+      var x = sc.getContext('2d');
+      x.clearRect(0, 0, 28, 28); x.imageSmoothingEnabled = false;
+      x.fillStyle = '#9a98a4';                                       // punk-grey scanline bands
+      x.fillRect(6, 7, 16, 4);                                       // top band
+      x.fillRect(11, 13, 16, 4);                                     // middle band — displaced RIGHT (the tracking tear), clipped at the edge
+      x.fillRect(6, 19, 13, 4);                                      // bottom band
+      x.fillStyle = 'rgba(255,255,255,0.85)'; x.fillRect(11, 13, 16, 1);   // white leading edge on the torn band
     } catch (e) {}
   }
   function _refreshPills() {
@@ -2310,7 +2362,7 @@ function _extractComposition(decodedHtml) {
     try {
       var fx = _fz.fx;                                            // snapshot the fx at write time → the tag always matches the pixels produced
       var bb = _pkOff(PK_BADGE_W, PK_BADGE_W), bctx = bb.getContext('2d'); bctx.imageSmoothingEnabled = false;
-      if (fx === 'xbox' || fx === 'pepe') {                      // X-Box + Pepe thumbnails reuse the NORMAL CA native crop (the 10×10 glyph is sub-pixel-invisible at 44px); tag = live fx so the fx-cache has()/purge logic stays consistent (no fetch spin, no new picker path)
+      if (fx === 'xbox' || fx === 'pepe' || fx === 'tracking') { // X-Box/Pepe/tracking thumbnails reuse the NORMAL CA native crop (the glyph/glitch is invisible at 44px); tag = live fx so the fx-cache has()/purge logic stays consistent (no fetch spin, no new picker path)
         var nb = _pkOff(24, 24), nctx = nb.getContext('2d'); nctx.imageSmoothingEnabled = false;
         eng.paintToNativeCrop(nctx, 213, 113, 24, 24);
         _pk.cacheCheck.set(id, nctx.getImageData(0, 0, 24, 24));
@@ -2534,13 +2586,14 @@ function _extractComposition(decodedHtml) {
     _exportInFlight = true; _animStop();
     var pkWasActive = _pk.active; _pk.active = false;                 // pause the picker (IO/dwell/mount/render all bail on !_pk.active) so its heavy 20-step engine builds don't compete with the export compose → no encoder stall (esp. scrolled to a freshly-mounting region — the "fails if scroll is at the bottom" bug)
     var btn = document.getElementById('fz-export'), origText = btn ? btn.textContent : '↓ MP4';
-    var btnCheck = document.getElementById('fz-check'), btnGold = document.getElementById('fz-gold'), btnSilver = document.getElementById('fz-silver'), btnXbox = document.getElementById('fz-xbox'), btnPepe = document.getElementById('fz-pepe'), btnNormal = document.getElementById('fz-normal');
+    var btnCheck = document.getElementById('fz-check'), btnGold = document.getElementById('fz-gold'), btnSilver = document.getElementById('fz-silver'), btnXbox = document.getElementById('fz-xbox'), btnPepe = document.getElementById('fz-pepe'), btnTrack = document.getElementById('fz-track'), btnNormal = document.getElementById('fz-normal');
     if (btn) btn.disabled = true;
     if (btnCheck) btnCheck.disabled = true;   // freeze the mode during export so the MP4 can't switch mid-stream
     if (btnGold) btnGold.disabled = true;     // all fx buttons frozen → renderMode can't change under the frozen isCheck
     if (btnSilver) btnSilver.disabled = true;
     if (btnXbox) btnXbox.disabled = true;     // freeze X-Box too → can't toggle into it mid-export (its compose has no comHR → would null-throw the export blit)
     if (btnPepe) btnPepe.disabled = true;     // freeze Pepe too (shares the device-px canvas path)
+    if (btnTrack) btnTrack.disabled = true;   // freeze tracking too → mode can't change mid-export
     if (btnNormal) btnNormal.disabled = true; // freeze the normal selector too → mode can't change mid-export
     var encoder = null, muxer = null, fileStream = null, _encoderError = null;
     var toDisk = !!window.showSaveFilePicker;   // desktop: native "Save As" + stream (like collection); else mobile share/blob banner
@@ -2600,11 +2653,13 @@ function _extractComposition(decodedHtml) {
           _composePepeExport(_fz.comHRctx, _fz.offHR, _fz.offHRctx, _fz.caHR, _fz.caHRctx, PD);
         } else {
           if (_fz.fx === 'gold' || _fz.fx === 'silver') _goldAngle = ((f / FPS) * 1000 / GOLD_SPIN_MS) * 2 * Math.PI;   // shared star spin (gold+silver); frame-index drive → exact period regardless of encode pace
+          else if (_fz.fx === 'tracking') _trkPhase = ((f / FPS) * 1000 / TRK_PERIOD_MS) % 1;   // tracking band sweep; frame-index → exact, matches preview
           _composeFusionFrame();
         }
         cx.fillStyle = punkBg; cx.fillRect(pX, pY, S, S);            // punk-square bg = the modal's bg (status colour); BG modulo overdraws it
-        cx.imageSmoothingEnabled = isCheck;                          // fx (check/gold/xbox via isCheck) = smooth the 720→S blit; normal pixel-art CA = nearest. Same settings for all fx modes.
-        var _eSrc = isCheck ? _fz.comHR : _fz.comCv, _eS = isCheck ? PD : 144;   // fx = 720 source (comHR), normal = 144 (comCv)
+        var _eTrk = _fz.fx === 'tracking';                           // tracking composes at 144 (comCv) like normal (warp@144 → pixel-VHS), NOT comHR
+        cx.imageSmoothingEnabled = isCheck && !_eTrk;                // fx (check/gold/xbox via isCheck) = smooth the 720→S blit; normal + tracking pixel-art = nearest
+        var _eSrc = (isCheck && !_eTrk) ? _fz.comHR : _fz.comCv, _eS = (isCheck && !_eTrk) ? PD : 144;   // fx = 720 source (comHR); normal + tracking = 144 (comCv)
         cx.drawImage(_eSrc, 0, 0, _eS, _eS, pX, pY, S, S);          // fused punk → S slot — IDENTICAL blit for check/gold/silver/xbox
         var frame = new VideoFrame(card, { timestamp: Math.round(f * 1000000 / FPS), duration: Math.round(1000000 / FPS) });
         encoder.encode(frame, { keyFrame: f % (FPS * 2) === 0 });    // ~2s GOP in both modes
@@ -2630,6 +2685,7 @@ function _extractComposition(decodedHtml) {
       if (btnSilver) btnSilver.disabled = false;
       if (btnXbox) btnXbox.disabled = false;
       if (btnPepe) btnPepe.disabled = false;
+      if (btnTrack) btnTrack.disabled = false;
       if (btnNormal) btnNormal.disabled = false;
       if (encoder) { try { encoder.close(); } catch (_) {} }
       if (fileStream) { try { await fileStream.abort(); } catch (_) {} }
@@ -2683,8 +2739,9 @@ function _extractComposition(decodedHtml) {
   document.getElementById('fz-silver').addEventListener('click', function () { _setRenderMode(_fzCurMode() === 'silver' ? 'normal' : 'silver'); });   // Tier 4 toggle (mutually exclusive with check/gold)
   document.getElementById('fz-xbox').addEventListener('click', function () { _setRenderMode(_fzCurMode() === 'xbox' ? 'normal' : 'xbox'); });   // Tier 5 X-Box toggle (mutually exclusive)
   document.getElementById('fz-pepe').addEventListener('click', function () { _setRenderMode(_fzCurMode() === 'pepe' ? 'normal' : 'pepe'); });   // Tier 6 Pepe toggle (mutually exclusive)
+  document.getElementById('fz-track').addEventListener('click', function () { _setRenderMode(_fzCurMode() === 'tracking' ? 'normal' : 'tracking'); });   // Tier 7 tracking toggle (mutually exclusive)
   document.getElementById('fz-normal').addEventListener('click', function () { _setRenderMode('normal'); });   // normal-mode selector — ALWAYS normal (deselecting normal is a no-op, so not a toggle)
-  _drawFzBadgeIcon(); _drawFzStarIcon('fz-gold', GOLD_BODY); _drawFzStarIcon('fz-silver', STAR_PALETTES.silver.body); _drawFzXBoxIcon(); _drawFzPepeIcon(); _drawFzModuloIcon();   // draw the 6 static fx-button icons (buttons are in static HTML, present at eval)
+  _drawFzBadgeIcon(); _drawFzStarIcon('fz-gold', GOLD_BODY); _drawFzStarIcon('fz-silver', STAR_PALETTES.silver.body); _drawFzXBoxIcon(); _drawFzPepeIcon(); _drawFzTrackIcon(); _drawFzModuloIcon();   // draw the 7 static fx-button icons (buttons are in static HTML, present at eval)
   // X-Box device-px canvas keep-sized: ONE persistent self-rearming watcher each (no per-enter arming → no listener accumulation/leak); both bail unless X-Box is the live mode
   var _xbRzT = 0;
   window.addEventListener('resize', function () { if (!(_fz.checkMode && (_fz.fx === 'xbox' || _fz.fx === 'pepe'))) return; clearTimeout(_xbRzT); _xbRzT = setTimeout(_xbResizeCv, 60); });
@@ -2700,6 +2757,8 @@ function _extractComposition(decodedHtml) {
     document.documentElement.style.setProperty('--fz-xbox-tile', 'url("data:image/svg+xml,' + encodeURIComponent(xbox) + '")');
     var pepe = "<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32'><rect x='8' y='8' width='16' height='16' fill='rgba(0,137,32,0.16)'/></svg>";   // pepe backdrop: soft green square tile
     document.documentElement.style.setProperty('--fz-pepe-tile', 'url("data:image/svg+xml,' + encodeURIComponent(pepe) + '")');
+    var track = "<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32'><g fill='rgba(120,120,140,0.18)'><rect x='0' y='6' width='32' height='3'/><rect x='6' y='15' width='32' height='3'/><rect x='0' y='24' width='26' height='3'/></g></svg>";   // tracking backdrop: offset horizontal scanline bars (VHS bands)
+    document.documentElement.style.setProperty('--fz-track-tile', 'url("data:image/svg+xml,' + encodeURIComponent(track) + '")');
   })();
   // The modal opens the fuse menu automatically (openDetail → _openFusion, which drops a
   // previous punk's assignments via its own pid-changed _fzTeardown). Every close path
