@@ -23,7 +23,7 @@
   }
   var link = document.getElementById('favicon');
   var coarse = !!(window.matchMedia && window.matchMedia('(pointer:coarse)').matches);
-  var step = 0, mark = null;
+  var step = 0, splashMark = null, headerMark = null;
   setInterval(function () {
     if (document.hidden) return;
     var inCycle = step % ANGLES.length, cycleNum = Math.floor(step / ANGLES.length);
@@ -31,8 +31,10 @@
     var pair = PAIRS[cycleNum % PAIRS.length];
     var uri = genSVG(angle, pair[0], pair[1]);
     if (link && !coarse) link.href = uri;                          // skip the tab-favicon href on mobile (perf), like collection
-    if (!mark) mark = document.getElementById('splash-mark');
-    if (mark) mark.src = uri;                                      // the visible splash mark always animates
+    if (!splashMark) splashMark = document.getElementById('splash-mark');
+    if (!headerMark) headerMark = document.getElementById('header-mark');
+    if (splashMark) splashMark.src = uri;                          // intro-splash mark
+    if (headerMark) headerMark.src = uri;                          // mark beside the "Modulo Punks" wordmark (like collection)
     step++;
   }, coarse ? 150 : 50);
   // intro splash: hold ~2s with the animated mark, then fade out → landing
@@ -87,6 +89,8 @@
     font-size:clamp(40px, 7.5vw, 92px); letter-spacing:-0.02em; color:rgba(0,0,0,0.92);
     opacity:1; animation:fadeUp 0.9s ease 0.1s forwards;
   }
+  /* animated Modulo mark beside the wordmark (same as collection's #header-mark) */
+  .id-mark { display:inline-block; vertical-align:middle; width:0.42em; height:0.42em; margin-left:0.16em; border-radius:0.1em; }
   #bottom {
     position:absolute; bottom:clamp(22px, 6vh, 64px); left:0; right:0; z-index:2;
     display:flex; flex-direction:column; align-items:center; gap:clamp(10px, 2vh, 18px);
@@ -161,7 +165,7 @@
     <canvas id="gl-canvas"></canvas>
     <canvas id="fallback-canvas" width="240" height="240"></canvas>
     <div id="loading">loading…</div>
-    <div id="wordmark">Modulo Punks</div>
+    <div id="wordmark">Modulo Punks<img id="header-mark" class="id-mark" alt="" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23d8d4c9'/%3E%3Crect x='4' y='4' width='8' height='8' fill='%23222'/%3E%3C/svg%3E"></div>
     <div id="mode-nav">
       <button id="btn-mode-prev" class="mode-btn" type="button" aria-label="previous mode" disabled>&#9664;</button>
       <button id="btn-mode-next" class="mode-btn" type="button" aria-label="next mode" disabled>&#9654;</button>
@@ -515,6 +519,24 @@
              p0[0],p0[1],zF, nx,ny,0, p1[0],p1[1],zB, nx,ny,0, p0[0],p0[1],zB, nx,ny,0); }
     return { data: new Float32Array(a), stride: 24, count: a.length / 6, baked: false };
   }
+  // beveled "button" tile: a flat front (±I) at zF + 4 DIAGONAL bevel facets out to the full cell (±half) at zo, + side walls to zB + back cap.
+  // The bevel facet normals (top +y / bottom -y / sides ±x, all tilted +z) make the POV lambert read the 2D button bevel (top-lit / bottom-shadow). Footprint ±half → stays gapless.
+  function buildBevelTile(half, bev, zF, zB) {
+    var a = [], H = half, I = half - bev, zo = zF - bev;
+    function nrm(x, y, z) { var l = Math.hypot(x, y, z) || 1; return [x/l, y/l, z/l]; }
+    function q(p0, p1, p2, p3, n) { a.push(p0[0],p0[1],p0[2],n[0],n[1],n[2], p1[0],p1[1],p1[2],n[0],n[1],n[2], p2[0],p2[1],p2[2],n[0],n[1],n[2], p0[0],p0[1],p0[2],n[0],n[1],n[2], p2[0],p2[1],p2[2],n[0],n[1],n[2], p3[0],p3[1],p3[2],n[0],n[1],n[2]); }
+    q([-I,-I,zF],[I,-I,zF],[I,I,zF],[-I,I,zF], [0,0,1]);                          // flat front
+    q([-I,I,zF],[I,I,zF],[H,H,zo],[-H,H,zo], nrm(0, bev, bev));                   // TOP bevel (+y → bright)
+    q([I,-I,zF],[-I,-I,zF],[-H,-H,zo],[H,-H,zo], nrm(0, -bev, bev));              // BOTTOM bevel (-y → dark)
+    q([-I,-I,zF],[-I,I,zF],[-H,H,zo],[-H,-H,zo], nrm(-bev, 0, bev));              // LEFT bevel
+    q([I,I,zF],[I,-I,zF],[H,-H,zo],[H,H,zo], nrm(bev, 0, bev));                   // RIGHT bevel
+    q([H,H,zo],[H,-H,zo],[H,-H,zB],[H,H,zB], [1,0,0]);                            // +x wall
+    q([-H,-H,zo],[-H,H,zo],[-H,H,zB],[-H,-H,zB], [-1,0,0]);                       // -x wall
+    q([-H,H,zo],[H,H,zo],[H,H,zB],[-H,H,zB], [0,1,0]);                            // +y wall
+    q([H,-H,zo],[-H,-H,zo],[-H,-H,zB],[H,-H,zB], [0,-1,0]);                       // -y wall
+    q([H,-H,zB],[-H,-H,zB],[-H,H,zB],[H,H,zB], [0,0,-1]);                         // back cap
+    return { data: new Float32Array(a), stride: 24, count: a.length / 6, baked: false };
+  }
   function starPts(RO) { var RI = RO * 0.42, p = [], i; for (i = 0; i < 10; i++) { var an = -Math.PI/2 + i*Math.PI/5, R = (i % 2 === 0) ? RO : RI; p.push([R*Math.cos(an), R*Math.sin(an)]); } return p; }
   function flipPts(pts, sx, sy) { var o = [], i; for (i = 0; i < pts.length; i++) o.push([pts[i][0]*sx, pts[i][1]*sy]); return o; }
   function mirrorCoords(coords) { var o = [], i; for (i = 0; i < coords.length; i++) o.push([9 - coords[i][0], coords[i][1]]); return o; }   // X-mirror a 10×10 pixel shape (for the back face)
@@ -548,7 +570,7 @@
 
   // ── extruded 10×10 pixel glyph: per on-pixel front+back caps + boundary side walls (interior walls culled); optional baked per-pixel colour ──
   function buildPixels(on, colFn, zF, zB) {
-    var a = [], step = 0.95 / 10, baseX = -HALF, baseY = HALF, r, c, col = null;
+    var a = [], step = 1.0 / 10, baseX = -0.5, baseY = 0.5, r, c, col = null;   // full-cell footprint (±0.5) → no gap between pepe cells (Le); also fills the windows pool-glyph cell
     function v(x, y, z, nx, ny, nz) { a.push(x, y, z, nx, ny, nz); if (col) a.push(col[0], col[1], col[2]); }
     for (r = 0; r < 10; r++) for (c = 0; c < 10; c++) {
       if (!on(c, r)) continue;
@@ -613,7 +635,7 @@
       if (opaque(nr, nc)) continue;                               // only grow into empty (non-silhouette) cells
       var key = nr * N + nc; if (used[key]) continue; used[key] = 1;
       // gi/r/c so side-cubes also sample the CA + adopt the active mode's glyph (cohesion, not plain cubes)
-      side.push({ x: nc - (N - 1) / 2, y: -(nr - (N - 1) / 2), z: 0, gi: nr * N + nc, r: nr, c: nc });
+      side.push({ x: nc - (N - 1) / 2, y: -(nr - (N - 1) / 2), z: 0, gi: nr * N + nc, r: nr, c: nc, cr: e.cr, cg: e.cg, cb: e.cb });
     }
     // recenter on the actual silhouette bbox (punks are top-heavy / off-centre in the 24 grid) + report the
     // extent → the camera fits the PUNK (not the empty 24 grid) → it fills the screen + is vertically centred.
@@ -658,6 +680,7 @@
   var voxels = null, ca = null, instCount = 0, bodyCount = 0;
   var rotXa = 0.16, rotYa = -0.52, dragging = false, px = 0, py = 0, interacted = false, velYaw = 0, velPitch = 0;
   var raf = 0, lastStep = 0, STEP_MS = 16;   // CA ~60fps = artifact #20's native step rate
+  var SPIN_SLOW = 0.0015, SPIN_FAST = 0.0055;   // idle-spin yaw rate: slow when the face faces the camera, fast through the back (Le) — all modes
   var DPR = Math.min(window.devicePixelRatio || 1, 2);
   var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var uModelLoc, uViewLoc, uProjLoc, uNormLoc, uUseVCLoc, uTransXLoc;
@@ -665,7 +688,7 @@
   var proj = null, view = null;
 
   // ── fx render modes + slide-transition state ──
-  var MODES = ['normal', 'check', 'gold', 'silver', 'windows', 'pepe'];
+  var MODES = ['normal', 'check', 'gold', 'silver', 'windows', 'pepe', 'datablock'];
   var curMode = 0;
   var sliding = false, slideStart = 0, SLIDE_MS = 450, slideExitX = 0, slideFrom = 0, slideTo = 0, slideDir = 1;
   var frozenRGB = null, frozenIdx = null;                  // outgoing crop snapshot (frozen while it slides out)
@@ -675,6 +698,18 @@
   var ncOffBuf = null, ncColorBuf = null, canonOffBuf = null, canonColBuf = null;
   var bkArr = null, bkBufs = [];                           // bucket scratch (offset sub-buffers: star / pool / pepe glyph)
   var cropIdxArr = null;                                   // raw CA palette-index crop (24×24)
+  // ── datablock mode (3D datamosh, "sin artifact" — punk's OWN atlas colours + macroblock displacement; canon glitches too, Le) ──
+  var DB_BLOCK = 4, DB_MAX = 1, DB_HOLD = 700, DB_NB = Math.ceil(N / DB_BLOCK);   // 6×6 macroblocks over the 24×24 grid
+  var ncOwnColorBuf = null, ncBx = null, ncBy = null;      // non-canon: static own-atlas colour buffer + precomputed block coords
+  var canonGi = null, cOffStatic = null, canonBkArr = null, canonBkBuf = null;    // canon displaced-offset scratch (datablock displaces the WHOLE punk incl. glasses+hair)
+  var _dbX = new Int8Array(DB_NB * DB_NB), _dbY = new Int8Array(DB_NB * DB_NB);   // per-block (dx,dy) memo, recomputed per frame
+  function _dbHash(c, r) { var x = (c * 374761393 + r * 668265263) >>> 0; x = ((x ^ (x >>> 13)) * 1274126177) >>> 0; return x; }
+  function _dbDelta(bx, by, axis, ms) {                    // staggered per-block displacement (port of collection's _dbDelta): new value every DB_HOLD ms, phase-offset per block → no synced loop; ms=0 (reduced-motion) → static frame
+    var phase = _dbHash(bx * 7 + axis, by) % DB_HOLD;
+    var epoch = Math.floor((ms + phase) / DB_HOLD);
+    var hv = _dbHash((bx * 131 + axis * 977) ^ epoch, by * 257 + epoch);
+    return (hv % (2 * DB_MAX + 1)) - DB_MAX;
+  }
   var btnPrev = null, btnNext = null, labelEl = null;
   function setModeLabel(mi) { if (labelEl) labelEl.textContent = MODES[mi === undefined ? curMode : mi]; }
   function setBtnEnabled(on) { if (btnPrev) btnPrev.disabled = !on; if (btnNext) btnNext.disabled = !on; }
@@ -716,6 +751,12 @@
     for (i = 0; i < canonCount; i++) { cOff[i*3]=cn[i].x; cOff[i*3+1]=cn[i].y; cOff[i*3+2]=cn[i].z; cCol[i*3]=cn[i].cr||0; cCol[i*3+1]=cn[i].cg||0; cCol[i*3+2]=cn[i].cb||0; }
     ncOffBuf = mkBuf(ncOff, gl.STATIC_DRAW); canonOffBuf = mkBuf(cOff, gl.STATIC_DRAW); canonColBuf = mkBuf(cCol, gl.STATIC_DRAW);
     ncColorArr = new Float32Array(ncCount * 3); ncColorBuf = mkBuf(ncColorArr, gl.DYNAMIC_DRAW);
+    // datablock: per-non-canon OWN atlas colour (static) + precomputed macroblock coords
+    var ncOwn = new Float32Array(ncCount * 3); ncBx = new Uint8Array(ncCount); ncBy = new Uint8Array(ncCount);
+    for (i = 0; i < ncCount; i++) { ncOwn[i*3]=nc[i].cr||0; ncOwn[i*3+1]=nc[i].cg||0; ncOwn[i*3+2]=nc[i].cb||0; var _g=ncGi[i], _cc=_g%N, _rr=(_g/N)|0; ncBx[i]=(_cc/DB_BLOCK)|0; ncBy[i]=(_rr/DB_BLOCK)|0; }
+    ncOwnColorBuf = mkBuf(ncOwn, gl.STATIC_DRAW);
+    canonGi = new Uint16Array(canonCount); for (i = 0; i < canonCount; i++) canonGi[i] = cn[i].gi;   // canon block coords derived per-frame (datablock displaces canon too)
+    cOffStatic = cOff; canonBkArr = new Float32Array(canonCount * 3); canonBkBuf = mkBuf(canonBkArr, gl.DYNAMIC_DRAW);
     bkArr = new Float32Array(ncCount * 3); bkBufs = [];
     for (i = 0; i < 8; i++) { var bb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, bb); gl.bufferData(gl.ARRAY_BUFFER, ncCount * 3 * 4, gl.DYNAMIC_DRAW); bkBufs.push(bb); }
 
@@ -727,10 +768,12 @@
   function mkBuf(arr, usage) { var b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, arr, usage); return b; }
   function makeMesh(m) { m.buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, m.buf); gl.bufferData(gl.ARRAY_BUFFER, m.data, gl.STATIC_DRAW); return m; }
   function buildMeshes() {
-    MESH.cube = makeMesh({ data: buildCube(0.475), stride: 24, count: 36, baked: false });
+    MESH.cube = makeMesh({ data: buildCube(0.5), stride: 24, count: 36, baked: false });   // 0.5 = full cell → cubes flush, no gap (Le experiment); shared faces are interior/hidden → no visible z-fight
     MESH.disc = makeMesh(buildPoly(SEAL_PTS, HALF, -HALF));                          // check seal — EXACT original verified-badge outline (8 rounded points), full-depth, per-cell colour
     MESH.tick = makeMesh(buildCheck());                                             // ✓ beige relief on BOTH faces — EXACT original badge check (1:1 size), front + back
     MESH.star = makeMesh(buildPoly(starPts(0.44), 0.55, -0.55));                     // gold/silver star — full-depth prism → visible on BOTH faces (Le)
+    MESH.tileLit = makeMesh(buildBevelTile(0.5, 0.12, 0.5, -0.5));                    // gold/silver LIT tile — beveled (diagonal) edges, full depth
+    MESH.tileSh = makeMesh(buildBevelTile(0.5, 0.12, 0.5 - 0.22, -0.5));              // SHADOW (dull) tile — front recessed 0.22 (less depth) → the star relief shows over it
     MESH.s1 = makeMesh(buildPool(XB_SHAPES.s1));                                     // windows pool shapes (black relief) — BOTH faces
     MESH.s2 = makeMesh(buildPool(XB_SHAPES.s2));
     MESH.s3 = makeMesh(buildPool(XB_SHAPES.s3));
@@ -753,16 +796,15 @@
   // ── per-frame colour fills (non-canon set, in ncOff order) ──
   function uploadNC() { gl.bindBuffer(gl.ARRAY_BUFFER, ncColorBuf); gl.bufferData(gl.ARRAY_BUFFER, ncColorArr, gl.DYNAMIC_DRAW); }
   function fillNormal(rgb) { for (var i = 0; i < ncCount; i++) { var p = ncGi[i]*4; ncColorArr[i*3]=rgb[p]/255; ncColorArr[i*3+1]=rgb[p+1]/255; ncColorArr[i*3+2]=rgb[p+2]/255; } }
-  function fillStarTile(idx, palKey) { var pal = STAR_PAL[palKey]; for (var i = 0; i < ncCount; i++) { var c = ((idx[ncGi[i]] & 2) === 0) ? pal.lit : pal.sh; ncColorArr[i*3]=c[0]; ncColorArr[i*3+1]=c[1]; ncColorArr[i*3+2]=c[2]; } }
   function fillWindowsTile(rgb, prim) { for (var i = 0; i < ncCount; i++) { var p = ncGi[i]*4; if (rgb[p] < 40 && rgb[p+1] < 40 && rgb[p+2] < 40) { ncColorArr[i*3]=prim[0]; ncColorArr[i*3+1]=prim[1]; ncColorArr[i*3+2]=prim[2]; } else { ncColorArr[i*3]=rgb[p]/255; ncColorArr[i*3+1]=rgb[p+1]/255; ncColorArr[i*3+2]=rgb[p+2]/255; } } }
   function primRGB() { var PAL = ca.getPal(), i; for (i = 0; i < PAL.length; i++) { var p = PAL[i]; if (p && Math.max(p[0],p[1],p[2]) >= 40) return [p[0]/255,p[1]/255,p[2]/255]; } return PAL.length ? [PAL[0][0]/255,PAL[0][1]/255,PAL[0][2]/255] : [1,1,1]; }
   function bucket(slot, pred) { var n = 0, i; for (i = 0; i < ncCount; i++) { if (!pred(i)) continue; bkArr[n*3]=ncOff[i*3]; bkArr[n*3+1]=ncOff[i*3+1]; bkArr[n*3+2]=ncOff[i*3+2]; n++; } gl.bindBuffer(gl.ARRAY_BUFFER, bkBufs[slot]); gl.bufferData(gl.ARRAY_BUFFER, bkArr.subarray(0, n*3), gl.DYNAMIC_DRAW); return n; }
 
   // ── render one mode (full punk) at a horizontal world offset transX (slide) ──
-  function renderMode(mi, rgb, idx, transX) {
+  function renderMode(mi, rgb, idx, transX, ts) {
     gl.uniform1f(uTransXLoc, transX);
-    drawPerInst(MESH.cube, canonOffBuf, canonColBuf, canonCount);             // canon glasses+hair = solid cube in EVERY mode (identity)
     var mode = MODES[mi];
+    if (mode !== 'datablock') drawPerInst(MESH.cube, canonOffBuf, canonColBuf, canonCount);   // canon glasses+hair = solid cube (identity); datablock displaces canon too → done in its branch
     if (mode === 'normal') {
       fillNormal(rgb); uploadNC(); drawPerInst(MESH.cube, ncOffBuf, ncColorBuf, ncCount);
     } else if (mode === 'check') {
@@ -770,10 +812,13 @@
       drawPerInst(MESH.disc, ncOffBuf, ncColorBuf, ncCount);                  // seal disc = PAL[v]
       drawFlat(MESH.tick, ncOffBuf, ncCount, CHECK_BEIGE);                    // ✓ beige relief
     } else if (mode === 'gold' || mode === 'silver') {
-      fillStarTile(idx, mode); uploadNC();
-      drawPerInst(MESH.cube, ncOffBuf, ncColorBuf, ncCount);                  // lit/shadow tile
-      var ns2 = bucket(0, function (k) { return (idx[ncGi[k]] & 1) === 0; }); // starOn subset
-      drawFlat(MESH.star, bkBufs[0], ns2, STAR_PAL[mode].body);
+      var pal = STAR_PAL[mode];
+      var nLit = bucket(0, function (k) { return (idx[ncGi[k]] & 2) === 0; });   // LIT tiles (bright) → beveled full-depth cube, pal.lit
+      drawFlat(MESH.tileLit, bkBufs[0], nLit, pal.lit);
+      var nSh = bucket(1, function (k) { return (idx[ncGi[k]] & 2) !== 0; });    // SHADOW tiles (dull/opaque) → recessed beveled cube, pal.sh
+      drawFlat(MESH.tileSh, bkBufs[1], nSh, pal.sh);
+      var nStar = bucket(2, function (k) { return (idx[ncGi[k]] & 1) === 0; });  // star subset (full-depth prism) → relief stands proud over the recessed shadow tiles
+      drawFlat(MESH.star, bkBufs[2], nStar, pal.body);
     } else if (mode === 'windows') {
       fillWindowsTile(rgb, primRGB()); uploadNC();
       drawPerInst(MESH.cube, ncOffBuf, ncColorBuf, ncCount);                  // field tile (B-guarded)
@@ -785,6 +830,15 @@
         var n = bucket(gg, function (k) { var gi = ncGi[k], v = idx[gi], cc = gi % 24, rr = (gi / 24) | 0, h = (_xbHash(cc, rr) ^ seed) >>> 0, gsel = ((h % 100) < 20) ? perm[(v + 1 + (h >>> 9) % 7) % 8] : perm[v % 8]; return gsel === gg; });
         drawBaked(MESH.pepe[gg], bkBufs[gg], n);
       })(g);
+    } else if (mode === 'datablock') {
+      var dbMs = reduced ? 0 : (ts || 0), bi, di;
+      for (bi = 0; bi < DB_NB * DB_NB; bi++) { var bbx = bi % DB_NB, bby = (bi / DB_NB) | 0; _dbX[bi] = _dbDelta(bbx, bby, 0, dbMs); _dbY[bi] = _dbDelta(bbx, bby, 1, dbMs); }
+      for (di = 0; di < ncCount; di++) { var blk = ncBy[di] * DB_NB + ncBx[di]; bkArr[di*3] = ncOff[di*3] + _dbX[blk]; bkArr[di*3+1] = ncOff[di*3+1] + _dbY[blk]; bkArr[di*3+2] = ncOff[di*3+2]; }
+      gl.bindBuffer(gl.ARRAY_BUFFER, bkBufs[0]); gl.bufferData(gl.ARRAY_BUFFER, bkArr.subarray(0, ncCount*3), gl.DYNAMIC_DRAW);
+      drawPerInst(MESH.cube, bkBufs[0], ncOwnColorBuf, ncCount);              // non-canon: OWN atlas colour, block-displaced
+      for (di = 0; di < canonCount; di++) { var cg = canonGi[di], cblk = (((cg / N | 0) / DB_BLOCK) | 0) * DB_NB + (((cg % N) / DB_BLOCK) | 0); canonBkArr[di*3] = cOffStatic[di*3] + _dbX[cblk]; canonBkArr[di*3+1] = cOffStatic[di*3+1] + _dbY[cblk]; canonBkArr[di*3+2] = cOffStatic[di*3+2]; }
+      gl.bindBuffer(gl.ARRAY_BUFFER, canonBkBuf); gl.bufferData(gl.ARRAY_BUFFER, canonBkArr.subarray(0, canonCount*3), gl.DYNAMIC_DRAW);
+      drawPerInst(MESH.cube, canonBkBuf, canonColBuf, canonCount);            // canon glasses+hair, SAME block delta → glitches WITH the punk (Le)
     }
   }
 
@@ -832,7 +886,8 @@
         velYaw *= 0.94; velPitch *= 0.94;
         if (Math.abs(velYaw) < 0.0028) velYaw = 0; if (Math.abs(velPitch) < 0.0028) velPitch = 0;
       } else {
-        rotYa += 0.0028;                                                           // gentle continuous idle spin
+        var faceVis = Math.abs(Math.cos(rotYa));                                   // 1 = broad side showing (front face OR back), 0 = thin edge (side profile)
+        rotYa += SPIN_SLOW + (SPIN_FAST - SPIN_SLOW) * (1 - faceVis);              // idle spin: slow on BOTH the front face and the back, fast through the thin side edges (Le; all modes)
       }
     }
     if (ts - lastStep >= STEP_MS) { stepCA(); lastStep = ts; }
@@ -842,12 +897,12 @@
     gl.uniformMatrix4fv(uModelLoc, false, model); gl.uniformMatrix4fv(uViewLoc, false, view);
     gl.uniformMatrix4fv(uProjLoc, false, proj); gl.uniformMatrix3fv(uNormLoc, false, mat3of(model));
     if (!sliding) {
-      renderMode(curMode, cropImg, cropIdxArr, 0);
+      renderMode(curMode, cropImg, cropIdxArr, 0, ts);
     } else {
       if (slideStart === 0) slideStart = ts;
       var t = Math.min(1, (ts - slideStart) / SLIDE_MS), e = easeInOut(t);
-      renderMode(slideFrom, frozenRGB, frozenIdx, -slideDir * e * slideExitX);     // outgoing (frozen) slides out
-      renderMode(slideTo, cropImg, cropIdxArr, slideDir * (1 - e) * slideExitX);    // incoming (live) slides in
+      renderMode(slideFrom, frozenRGB, frozenIdx, -slideDir * e * slideExitX, ts);     // outgoing (frozen) slides out
+      renderMode(slideTo, cropImg, cropIdxArr, slideDir * (1 - e) * slideExitX, ts);    // incoming (live) slides in
       if (t >= 1) { sliding = false; curMode = slideTo; frozenRGB = frozenIdx = null; setBtnEnabled(true); }
     }
     gl.bindVertexArray(null);
@@ -888,6 +943,7 @@
       if (b.canon) col = [Math.round(b.cr*255), Math.round(b.cg*255), Math.round(b.cb*255)];      // glasses+hair canon
       else if (pal) { var c = ((v & 2) === 0) ? pal.lit : pal.sh; col = [c[0]*255|0, c[1]*255|0, c[2]*255|0]; }
       else if (prim) { col = (cropImg[p] < 40 && cropImg[p+1] < 40 && cropImg[p+2] < 40) ? [prim[0]*255|0, prim[1]*255|0, prim[2]*255|0] : [cropImg[p], cropImg[p+1], cropImg[p+2]]; }
+      else if (mode === 'datablock') col = [Math.round(b.cr*255), Math.round(b.cg*255), Math.round(b.cb*255)];   // datablock = punk's own colour (no glitch in the 2D fallback)
       else { col = [cropImg[p], cropImg[p+1], cropImg[p+2]]; }
       fbCtx.fillStyle = 'rgb(' + col[0] + ',' + col[1] + ',' + col[2] + ')';
       fbCtx.fillRect(b.c * s, b.r * s, Math.ceil(s), Math.ceil(s));
