@@ -357,8 +357,7 @@ body.night #fz-export { background:#2c2b28; }
 #fz-silver:hover .fz-check-seal, #fz-silver:focus-visible .fz-check-seal, #fz-silver.fz-check-on .fz-check-seal,
 #fz-normal:hover .fz-check-seal, #fz-normal:focus-visible .fz-check-seal, #fz-normal.fz-check-on .fz-check-seal,
 #fz-pepe:hover .fz-check-seal, #fz-pepe:focus-visible .fz-check-seal,
-#fz-datablock:hover .fz-check-seal, #fz-datablock:focus-visible .fz-check-seal,
-#fz-xbox:hover .fz-check-seal, #fz-xbox:focus-visible .fz-check-seal { animation:fzBadgeSpin 1.3s linear infinite; }   /* spin on hover/focus for all; AND while active (.fz-check-on) for check/gold/silver/normal — #fz-xbox + #fz-pepe + #fz-datablock (square glyphs) spin on hover ONLY */
+#fz-xbox:hover .fz-check-seal, #fz-xbox:focus-visible .fz-check-seal { animation:fzBadgeSpin 1.3s linear infinite; }   /* spin on hover/focus for all; AND while active (.fz-check-on) for check/gold/silver/normal — #fz-xbox + #fz-pepe (square glyphs) spin on hover ONLY. #fz-datablock NEVER spins — its quadrants move like datablock (JS jitter). */
 /* diagonal check field behind the WHOLE modal body (not the tbar): a fixed backdrop on #punk-detail,
    below the content (z-index 0). The opaque tbar (z-index 2) covers its top; .pd-body (z-index 1)
    holds the content above it. pointer-events:none → never overlaps/blocks anything. */
@@ -419,7 +418,6 @@ body.night #fz-export { background:#2c2b28; }
   #fz-silver:hover .fz-check-seal, #fz-silver:focus-visible .fz-check-seal, #fz-silver.fz-check-on .fz-check-seal,
   #fz-normal:hover .fz-check-seal, #fz-normal:focus-visible .fz-check-seal, #fz-normal.fz-check-on .fz-check-seal,
   #fz-pepe:hover .fz-check-seal, #fz-pepe:focus-visible .fz-check-seal,
-  #fz-datablock:hover .fz-check-seal, #fz-datablock:focus-visible .fz-check-seal,
   #fz-xbox:hover .fz-check-seal, #fz-xbox:focus-visible .fz-check-seal { animation:none; }
   #punk-detail.fz-check-bg::before { animation:none; }
   .pk-slot.pk-flip { animation:none; }
@@ -865,7 +863,7 @@ body.night #filter-btn { background:#2c2b28; }
         if (idx >= filteredIds.length) { row = 1e9; break; }
         var id = filteredIds[idx];
         var dx = col * cellPx;
-        var fy = yBase + _floatDy(id, t);
+        var fy = yBase + Math.round(_floatDy(id, t) * DPR) / DPR;   // snap the float bob to the device-pixel grid → no sub-pixel nearest-neighbour shimmer ("tiritar"); yBase untouched so scroll stays smooth
         _blitPunk(id, dx, fy, cellPx);
         if (id === hoverId) { hx = dx; hy = fy; }
       }
@@ -1862,6 +1860,7 @@ function _extractComposition(decodedHtml) {
   }
   // ── Unified animation loop: assignment engines (60fps) + picker previews (~30fps) ──
   var _animRaf = 0, _animN = 0, _animErrs = 0, _exportInFlight = false;
+  var _dbHover = false, _dbIcoTimer = 0;   // datablock icon: hover flag + a small hover-only redraw interval (jitter on hover; active-jitter is driven by _animFrame)
   function _animStop() { if (_animRaf) { cancelAnimationFrame(_animRaf); _animRaf = 0; } }
   function _animWanted() { return _fz.assignments.size > 0 || (_fz.checkMode && !!POST_FX[_fz.fx]); }   // datablock (post-fx) animates the punk even with 0 fused modulos; for the other 6 modes this ≡ assignments.size>0 (no-op)
   function _animStopIfIdle() { if (!_animWanted()) _animStop(); }   // picker is static — assignments OR a live post-fx drive the rAF
@@ -1889,7 +1888,11 @@ function _extractComposition(decodedHtml) {
     for (var cr = 0; cr < _CN; cr++) for (var cc = 0; cc < _CN; cc++) {
       var bx = (cc / DB_BLOCK) | 0, by = (cr / DB_BLOCK) | 0;
       var dx = _dbDelta(bx, by, 0), dy = _dbDelta(bx, by, 1);
-      var scc = ((cc - dx) % _CN + _CN) % _CN, scr = ((cr - dy) % _CN + _CN) % _CN;
+      var scc = cc - dx, scr = cr - dy;
+      if (scc < 0 || scc >= _CN || scr < 0 || scr >= _CN) {        // source off-canvas → leave a HOLE (transparent → bg shows); NO wrap-around to the other edge
+        for (var yh = 0; yh < _CPX; yh++) { var dh = ((cr * _CPX + yh) * 144 + cc * _CPX) * 4; d.fill(0, dh, dh + _CPX * 4); }
+        continue;
+      }
       for (var yy = 0; yy < _CPX; yy++) {
         var di = ((cr * _CPX + yy) * 144 + cc * _CPX) * 4, si = ((scr * _CPX + yy) * 144 + scc * _CPX) * 4;
         d.set(src.subarray(si, si + _CPX * 4), di);
@@ -2133,7 +2136,7 @@ function _extractComposition(decodedHtml) {
           if (_fz.checkMode && !POST_FX[_fz.fx]) pdCtx.drawImage(_fz.comHR, 0, 0);          // 720→720 1:1 (crisp badges/stars); datablock falls to the comCv 144→720 nearest blit (pixel)
           else pdCtx.drawImage(_fz.comCv, 0, 0, 144, 144, 0, 0, PD, PD); // 144→720 nearest (pixel-art CA / datablock)
         }
-        if (_fz.checkMode && _fz.fx === 'datablock') _drawFzDatablockIcon();   // animate the button icon's quadrants only while datablock is the live mode (no extra timer)
+        if (_fz.checkMode && _fz.fx === 'datablock') _drawFzDatablockIcon();   // animate the button icon while datablock is the live mode (hover-jitter is handled separately by the hover interval)
         _animErrs = 0;
       } catch (e) {
         if (++_animErrs === 1) console.error('[fuse] compose', e);      // surface once (was a silent empty catch)
@@ -2142,7 +2145,7 @@ function _extractComposition(decodedHtml) {
     }
     if (_animWanted()) _animRaf = requestAnimationFrame(_animFrame);
   }
-  function _fzTeardown() { _fz.assignments.clear(); _fz.pending.clear(); _fz.selected = null; _fz.punkId = null; _resetCheckModeUI(); _fz.caCv = null; _fz.comCv = null; _fz.caCtx = null; _fz.comCtx = null; _fz.offHR = null; _fz.caHR = null; _fz.comHR = null; _fz.offHRctx = null; _fz.caHRctx = null; _fz.comHRctx = null; _fz.xbOff = null; _fz.xbOffctx = null; _fz.xbCaOff = null; _fz.xbCaCtx = null; _fz.solidCanon = null; _fz.fxSnap = null; _animStopIfIdle(); }   // null the ctx refs too (incl. X-Box scratch; the #fz-xbox-canvas element persists hidden) (a ctx pins its canvas via ctx.canvas) → ~6MB of HR/CA buffers release on close instead of lingering until the next open   // _resetCheckModeUI = flag OFF + button/field classes OFF (never let the UI outlive checkMode, incl. any future in-modal punk switch)
+  function _fzTeardown() { _fz.assignments.clear(); _fz.pending.clear(); _fz.selected = null; _fz.punkId = null; _resetCheckModeUI(); _fz.caCv = null; _fz.comCv = null; _fz.caCtx = null; _fz.comCtx = null; _fz.offHR = null; _fz.caHR = null; _fz.comHR = null; _fz.offHRctx = null; _fz.caHRctx = null; _fz.comHRctx = null; _fz.xbOff = null; _fz.xbOffctx = null; _fz.xbCaOff = null; _fz.xbCaCtx = null; _fz.solidCanon = null; _fz.fxSnap = null; if (_dbIcoTimer) { clearInterval(_dbIcoTimer); _dbIcoTimer = 0; } _dbHover = false; _animStopIfIdle(); }   // null the ctx refs too (incl. X-Box scratch; the #fz-xbox-canvas element persists hidden) (a ctx pins its canvas via ctx.canvas) → ~6MB of HR/CA buffers release on close instead of lingering until the next open   // _resetCheckModeUI = flag OFF + button/field classes OFF (never let the UI outlive checkMode, incl. any future in-modal punk switch)
   function _resetFusion() { _punkBg = PUNK_BG; _pkTeardown(); _fzTeardown(); _resetCheckModeUI(); var p = document.getElementById('fz-panel'); if (p) p.style.display = 'none'; var p2 = document.getElementById('fz-pick'); if (p2) p2.style.display = 'none'; _fzStatus(''); }
   function _clearAllFusion() { if (_exportInFlight) return; _fz.assignments.clear(); _fz.pending.clear(); _pkRedrawLive(); _animStopIfIdle(); _refreshPills(); _drawStaticPunk(); _fzStatus('cleared'); }   // keep check mode sticky across Clear-all (view setting, orthogonal to assignments); _pkRedrawLive honors the current mode
   // ── "check it" mode (badge texture) toggle ──
@@ -2225,16 +2228,20 @@ function _extractComposition(decodedHtml) {
       x.fillStyle = '#ff003a'; x.fillRect(o, o + q, q, q);         // BL red (favicon first-pair c2)
     } catch (e) {}
   }
-  function _drawFzDatablockIcon() {                                 // datablock button = the Modulo favicon 2×2 quadrant mark; the 4 quadrants JITTER (datamosh, reusing _dbDelta) ONLY while datablock is the live mode — else a clean static cube
+  function _drawFzDatablockIcon() {                                 // datablock button = the Modulo favicon 2×2 quadrant mark; the 4 quadrants MOVE like datablock (datamosh jitter, NEVER spins) — ONLY on hover (via _dbIcoTimer) OR while datablock is the live mode (via _animFrame); static otherwise / under reduced-motion
     var sc = document.querySelector('#fz-datablock .fz-check-seal'), tc = document.querySelector('#fz-datablock .fz-check-tick');
     if (tc) try { tc.getContext('2d').clearRect(0, 0, 28, 28); } catch (e) {}
     if (!sc) return;
     try {
       var x = sc.getContext('2d'), q = 9, o = 5; x.clearRect(0, 0, 28, 28); x.imageSmoothingEnabled = false;
-      var live = _fz.checkMode && _fz.fx === 'datablock' && !_reducedMotion;   // jitter only while datablock active (reduced-motion → static)
-      var quads = [[o, o, '#222222'], [o + q, o, '#6363ff'], [o, o + q, '#ff003a'], [o + q, o + q, '#222222']];   // TL/BR dark, TR blue, BL red — the favicon mark
+      var move = !_reducedMotion && (_dbHover || (_fz.checkMode && _fz.fx === 'datablock'));   // animate ONLY on hover OR while datablock is the live mode; else a fixed DISTORTED frame (never a clean cube)
+      var t = (performance.now() / 110) | 0;                        // icon's own datamosh epoch (~9/s), independent of the punk warp clock
+      var quads = [[o, o, '#222222'], [o + q, o, '#19e6c8'], [o, o + q, '#ffe600'], [o + q, o + q, '#222222']];   // glitch palette: cyan TR + yellow BL (≠ normal mode's blue/red mark)
+      var STILL = [[-3, -2], [2, -3], [-2, 3], [3, 2]];             // fixed distorted pose at rest — quadrants pushed OUTWARD (open/torn cube, clearly visible)
       for (var k = 0; k < 4; k++) {
-        var dx = live ? _dbDelta(k, 0, 0) * 2 : 0, dy = live ? _dbDelta(0, k, 1) * 2 : 0;   // reuse the datamosh field (±2px); 0 → clean cube in repose
+        var dx, dy;
+        if (move) { dx = ((_fxHash(k * 7 + 1, t + k) % 3) - 1) * 2; dy = ((_fxHash(k * 13 + 2, t * 3 + k) % 3) - 1) * 2; }   // ±2px staggered jitter per quadrant
+        else { dx = STILL[k][0]; dy = STILL[k][1]; }                // distorted still frame (rest / reduced-motion)
         x.fillStyle = quads[k][2]; x.fillRect(quads[k][0] + dx, quads[k][1] + dy, q, q);
       }
     } catch (e) {}
@@ -2748,6 +2755,11 @@ function _extractComposition(decodedHtml) {
   document.getElementById('fz-xbox').addEventListener('click', function () { _setRenderMode(_fzCurMode() === 'xbox' ? 'normal' : 'xbox'); });   // Tier 5 X-Box toggle (mutually exclusive)
   document.getElementById('fz-pepe').addEventListener('click', function () { _setRenderMode(_fzCurMode() === 'pepe' ? 'normal' : 'pepe'); });   // Tier 6 Pepe toggle (mutually exclusive)
   document.getElementById('fz-datablock').addEventListener('click', function () { _setRenderMode(_fzCurMode() === 'datablock' ? 'normal' : 'datablock'); });   // datablock toggle (per-cell datamosh; mutually exclusive)
+  (function () { var b = document.getElementById('fz-datablock'); if (!b) return;   // datablock icon jitters ON HOVER (replaces the spin): a small interval redraws while hovered/focused, cleared on leave/blur; active-jitter is driven by _animFrame
+    function on() { _dbHover = true; if (!_dbIcoTimer && !_reducedMotion) _dbIcoTimer = setInterval(function () { if (!document.hidden) _drawFzDatablockIcon(); }, 110); }
+    function off() { _dbHover = false; if (_dbIcoTimer) { clearInterval(_dbIcoTimer); _dbIcoTimer = 0; } _drawFzDatablockIcon(); }   // clear + one static redraw
+    b.addEventListener('mouseenter', on); b.addEventListener('mouseleave', off); b.addEventListener('focus', on); b.addEventListener('blur', off);
+  })();
   document.getElementById('fz-normal').addEventListener('click', function () { _setRenderMode('normal'); });   // normal-mode selector — ALWAYS normal (deselecting normal is a no-op, so not a toggle)
   _drawFzBadgeIcon(); _drawFzStarIcon('fz-gold', GOLD_BODY); _drawFzStarIcon('fz-silver', STAR_PALETTES.silver.body); _drawFzXBoxIcon(); _drawFzPepeIcon(); _drawFzDatablockIcon(); _drawFzModuloIcon();   // draw the 7 static fx-button icons (buttons are in static HTML, present at eval); datablock icon animates via _animFrame while active
   // X-Box device-px canvas keep-sized: ONE persistent self-rearming watcher each (no per-enter arming → no listener accumulation/leak); both bail unless X-Box is the live mode
