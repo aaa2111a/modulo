@@ -690,7 +690,7 @@
 
   var gl = null, prog = null, vao = null;
   var voxels = null, ca = null, instCount = 0, bodyCount = 0;
-  var rotXa = 0.16, rotYa = -0.52, dragging = false, px = 0, py = 0, interacted = false, velYaw = 0, velPitch = 0;
+  var rotXa = -0.10, rotYa = -0.52, dragging = false, px = 0, py = 0, interacted = false, velYaw = 0, velPitch = 0;
   var raf = 0, lastStep = 0, STEP_MS = 16;   // CA ~60fps = artifact #20's native step rate
   var SPIN_SLOW = 0.0015, SPIN_FAST = 0.0055;   // idle-spin yaw rate: slow when the face faces the camera, fast through the back (Le) — all modes
   var DPR = Math.min(window.devicePixelRatio || 1, 2);
