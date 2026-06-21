@@ -290,6 +290,13 @@ body.night #pd-overlay { background:rgba(0,0,0,0.62); }
 #fz-xbox-canvas { display:none; position:absolute; left:50%; top:0; transform:translateX(-50%); image-rendering:pixelated; border:0.5px solid var(--border-mid); border-radius:8px; }   /* X-Box overlay: rendered 1:1 device-px (size set inline by _xbResizeCv) → uniform cells, no fractional downscale */
 #pd-canvas { width:min(720px,60vw); height:min(720px,60vw); image-rendering:pixelated; border:0.5px solid var(--border-mid);
   border-radius:8px; background:repeating-conic-gradient(var(--bg-alt) 0% 25%, var(--bg) 0% 50%) 0 / 18px 18px; }
+#pd-3d { display:none; position:absolute; left:50%; top:0; transform:translateX(-50%); width:min(720px,60vw); height:min(720px,60vw); border:0.5px solid var(--border-mid); border-radius:8px; touch-action:none; cursor:grab; background:repeating-conic-gradient(var(--bg-alt) 0% 25%, var(--bg) 0% 50%) 0 / 18px 18px; }   /* 3D voxel view (WebGL2), toggled by #pd-3d-btn */
+#pd-3d-btn { position:absolute; top:-26px; left:calc(50% - min(720px,60vw)/2 - 26px); z-index:6; width:100px; height:100px; padding:0; display:inline-flex; align-items:center; justify-content:center; background:transparent; border:none; border-radius:50%; cursor:pointer; opacity:1; transition:filter 0.18s, transform 0.12s ease; transform-origin:center; }   /* big clean badge STRADDLING the canvas top-left corner — like the collection "check it" #hero-badge. Fully opaque; desaturated when 3D is off (see canvas filter) */
+#pd-3d-btn:hover, #pd-3d-btn:focus-visible { opacity:1; transform:scale(1.08); }
+#pd-3d-btn.on { opacity:1; }
+#pd-3d-btn.on canvas { filter:saturate(1) drop-shadow(0 0 7px rgba(99,99,255,0.95)) drop-shadow(0 2px 3px rgba(0,0,0,0.3)); }   /* active = full colour + blue glow */
+#pd-3d-btn:disabled { opacity:0.3; cursor:default; }
+#pd-3d-btn canvas { display:block; width:100px; height:100px; image-rendering:auto; filter:saturate(0.45) drop-shadow(0 2px 3px rgba(0,0,0,0.35)); }   /* OFF = fully opaque but a bit desaturated (Le); ON adds full saturation + glow. drop-shadow = legible on the light checker bg */
 #pd-name { text-align:center; font-family:'Times New Roman', Times, serif; font-size:36px; letter-spacing:.01em; color:var(--text); margin-bottom:12px; }
 .pd-links { display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap; margin-bottom:8px; }
 .pd-links a { font-size:11px; letter-spacing:.04em; padding:8px 12px; text-decoration:none;
@@ -405,6 +412,11 @@ body.night #fz-export { background:#2c2b28; }
 #fz-datablock:hover, #fz-datablock:focus-visible { transform:scale(1.14); }
 #fz-datablock:active { transform:scale(0.9); }
 #fz-datablock:disabled { opacity:0.3; cursor:default; }
+#fz-halfdot, #fz-halfline { display:inline-flex; align-items:center; padding:0 2px; background:none; border:none; cursor:pointer; opacity:0.55; transition:opacity 0.15s, transform 0.15s ease; }   /* halftone (semitono puntos/líneas) buttons — static CMYK icon, no spin (like datablock) */
+#fz-halfdot:hover, #fz-halfdot:focus-visible, #fz-halfdot.fz-check-on, #fz-halfline:hover, #fz-halfline:focus-visible, #fz-halfline.fz-check-on { opacity:1; }
+#fz-halfdot:hover, #fz-halfdot:focus-visible, #fz-halfline:hover, #fz-halfline:focus-visible { transform:scale(1.14); }
+#fz-halfdot:active, #fz-halfline:active { transform:scale(0.9); }
+#fz-halfdot:disabled, #fz-halfline:disabled { opacity:0.3; cursor:default; }
 /* fx modes (check/gold) = vector glyphs → smooth scaling; normal CA stays pixelated */
 #punk-detail.fz-fx-smooth #pd-canvas, #punk-detail.fz-fx-smooth .pk-cv { image-rendering:auto; }
 .pd-tbar { position:relative; z-index:2; }   /* opaque → hides the field at the top of the modal */
@@ -550,11 +562,11 @@ body.night #filter-btn { background:#2c2b28; }
   <div class="pd-body">
     <div class="pd-links" id="pd-links"></div>
     <div id="pd-name"></div>
-    <div class="pd-punk-wrap"><canvas id="pd-canvas" width="144" height="144"></canvas></div>
+    <div class="pd-punk-wrap"><canvas id="pd-canvas" width="144" height="144"></canvas><canvas id="pd-3d" width="144" height="144" aria-hidden="true"></canvas><button id="pd-3d-btn" type="button" aria-pressed="false" aria-label="3D view" title="3D"><canvas width="200" height="200"></canvas></button></div>
     <div id="fuse-title">Fuse with Modulo Artifacts</div>
     <div id="fz-panel">
       <p class="fz-k">Pick a trait, then pick a modulo to fill it. Several animate at once.</p>
-      <div id="fz-traits"><button id="fz-normal" type="button" aria-pressed="false" aria-label="normal — modulo" title="normal"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-check" type="button" aria-pressed="false" aria-label="check it — toggle badge mode" title="check it"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-gold" type="button" aria-pressed="false" aria-label="gold stars — toggle tier 3" title="gold stars"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-silver" type="button" aria-pressed="false" aria-label="silver stars — toggle tier 4" title="silver stars"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-xbox" type="button" aria-pressed="false" aria-label="windows — toggle tier 5" title="windows"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-pepe" type="button" aria-pressed="false" aria-label="pepe — toggle tier 6" title="pepe"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-datablock" type="button" aria-pressed="false" aria-label="datablock — toggle glitch" title="datablock"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><span class="fz-cdot" aria-hidden="true">·</span></div>
+      <div id="fz-traits"><button id="fz-normal" type="button" aria-pressed="false" aria-label="normal — modulo" title="normal"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-check" type="button" aria-pressed="false" aria-label="check it — toggle badge mode" title="check it"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-gold" type="button" aria-pressed="false" aria-label="gold stars — toggle tier 3" title="gold stars"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-silver" type="button" aria-pressed="false" aria-label="silver stars — toggle tier 4" title="silver stars"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-xbox" type="button" aria-pressed="false" aria-label="windows — toggle tier 5" title="windows"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-pepe" type="button" aria-pressed="false" aria-label="pepe — toggle tier 6" title="pepe"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-datablock" type="button" aria-pressed="false" aria-label="datablock — toggle glitch" title="datablock"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-halfdot" type="button" aria-pressed="false" aria-label="semitono puntos — toggle halftone dots" title="semitono puntos"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-halfline" type="button" aria-pressed="false" aria-label="semitono líneas — toggle halftone lines" title="semitono líneas"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><span class="fz-cdot" aria-hidden="true">·</span></div>
     </div>
     <div id="fz-pick">
       <div id="fz-picker"></div>
@@ -1836,7 +1848,8 @@ function _extractComposition(decodedHtml) {
               assignments: new Map(),  // layerId -> { engine, off, offctx, artifactId } (off = 144×144)
               pending: new Map(),       // layerId -> token (in-flight fetch guard)
               caCv: null, caCtx: null, comCv: null, comCtx: null,
-              offHR: null, offHRctx: null, caHR: null, caHRctx: null, comHR: null, comHRctx: null };   // PD-sized scratch for crisp check-mode compose (lazy)
+              offHR: null, offHRctx: null, caHR: null, caHRctx: null, comHR: null, comHRctx: null,   // PD-sized scratch for crisp check-mode compose (lazy)
+              htCv: null, htCtx: null, htScr: null, htScrCtx: null };   // HT-sized buffers for the halftone (semitono) post-fx — htCv = persistence accumulator (trail), htScr = fresh-frame scratch (lazy)
   // Compose at 6px/cell (144×144 = 24 cells × 6) so the artifact's dx glyphs render.
   function _fzAlloc() {
     if (_fz.caCv) return;
@@ -1848,6 +1861,11 @@ function _extractComposition(decodedHtml) {
     _fz.offHR = _pkOff(PD, PD); _fz.offHRctx = _fz.offHR.getContext('2d'); _fz.offHRctx.imageSmoothingEnabled = false;
     _fz.caHR  = _pkOff(PD, PD); _fz.caHRctx  = _fz.caHR.getContext('2d');  _fz.caHRctx.imageSmoothingEnabled  = false;
     _fz.comHR = _pkOff(PD, PD); _fz.comHRctx = _fz.comHR.getContext('2d'); _fz.comHRctx.imageSmoothingEnabled = false;
+  }
+  function _fzAllocHT() {   // HT-sized buffers for the halftone post-fx (lazy): htCv = trail accumulator, htScr = fresh-frame scratch
+    if (_fz.htCv) return;
+    _fz.htCv = _pkOff(HT, HT); _fz.htCtx = _fz.htCv.getContext('2d'); _fz.htCtx.imageSmoothingEnabled = false;
+    _fz.htScr = _pkOff(HT, HT); _fz.htScrCtx = _fz.htScr.getContext('2d'); _fz.htScrCtx.imageSmoothingEnabled = false;
   }
   function _fzStatus(t) { var e = document.getElementById('fz-status'); if (e) e.textContent = t || ''; }
   function _labelFor(li, i) { if (li === BG_ID) return 'Background'; return i === 0 ? 'Body' : (layerNames[String(li)] || ('#' + li)); }
@@ -1862,16 +1880,19 @@ function _extractComposition(decodedHtml) {
   var _animRaf = 0, _animN = 0, _animErrs = 0, _exportInFlight = false;
   var _dbHover = false, _dbIcoTimer = 0;   // datablock icon: hover flag + a small hover-only redraw interval (jitter on hover; active-jitter is driven by _animFrame)
   function _animStop() { if (_animRaf) { cancelAnimationFrame(_animRaf); _animRaf = 0; } }
-  function _animWanted() { return _fz.assignments.size > 0 || (_fz.checkMode && !!POST_FX[_fz.fx]); }   // datablock (post-fx) animates the punk even with 0 fused modulos; for the other 6 modes this ≡ assignments.size>0 (no-op)
+  function _animWanted() { return _fz.assignments.size > 0 || (_fz.checkMode && !!POST_FX[_fz.fx]) || _fz.threeD; }   // datablock + halfdot + halfline (POST_FX) animate even with 0 fused modulos; 3D always spins (drag/idle)
   function _animStopIfIdle() { if (!_animWanted()) _animStop(); }   // picker is static — assignments OR a live post-fx drive the rAF
-  function _animKick() { if (_exportInFlight) return; if (_fz.checkMode && (_fz.fx === 'xbox' || _fz.fx === 'pepe') && _fz.assignments.size) _xbSetVisible(true); if (!_animRaf && detail.classList.contains('open') && _animWanted()) _animRaf = requestAnimationFrame(_animFrame); }
+  function _animKick() { if (_exportInFlight) return; if (_fz.checkMode && (_fz.fx === 'xbox' || _fz.fx === 'pepe') && _fz.assignments.size && !_fz.threeD) _xbSetVisible(true); if (!_animRaf && detail.classList.contains('open') && _animWanted()) _animRaf = requestAnimationFrame(_animFrame); }   // !_fz.threeD: never re-show the 2D X-Box/Pepe overlay while 3D is active (it's appended last → would cover #pd-3d → modal shows 2D) — mirrors the guard in _setRenderMode
   // ── "datablock" fx (per-cell datamosh): POST-PROCESS on the composed 144 punk (comCv, 6px/cell, 24×24)
   // AFTER the normal z-order/mask compose → silhouette preserved. Macroblocks (DB_BLOCK cells) each sample
   // from a drifting source block (wrap, no holes) → tear. Per-block displacement re-randomizes every DB_HOLD
   // ms, STAGGERED per block → no synchronized loop. DB_MAX=1 (±1 cell → punk stays recognizable). Driven by
   // _fxMs (preview = performance.now / export = frame-index ms) → preview & MP4 match. Runs even with 0 fused
   // modulos (animates the plain punk). The warp must NOT step engines (it only touches the composed buffer).
-  var POST_FX = { datablock: 1 };
+  var POST_FX = { datablock: 1, halfdot: 1, halfline: 1 };   // post-process lane (operate on the composed punk; picker reuses the normal crop)
+  var HALF_FX = { halfdot: 1, halfline: 1 };                  // halftone (semitono) modes → CMYK separation post-fx at HT/PD, smooth blit
+  var PIXEL_FX = { datablock: 1, xbox: 1, pepe: 1, halfdot: 1, halfline: 1 };   // modes blitted PIXELATED (no fz-fx-smooth, nearest) — halftone now sharp/pixel too (Le); check/gold/silver = smooth
+  var HT = 100;                                               // halftone buffer (24 cells × ~4.2px) — very low res + nearest blit = max pixel-sharp (Le, less detail)
   var _fxMs = 0, _CPX = 6, _CN = 24;
   function _fxHash(c, r) { var x = (c * 374761393 + r * 668265263) >>> 0; x = ((x ^ (x >>> 13)) * 1274126177) >>> 0; return x; }
   var DB_BLOCK = 4, DB_MAX = 1, DB_HOLD = 700;   // ms each block holds a displacement before re-randomizing; staggered per block → no synchronized loop
@@ -1900,7 +1921,76 @@ function _extractComposition(decodedHtml) {
     }
     ctx.putImageData(img, 0, 0);
   }
-  function _applyPostFx(fx) { var ctx = _fz.comCtx; if (!ctx) return; if (fx === 'datablock') _pfDatablock(ctx); }
+  // ── "semitono" (halftone) post-fx: CMYK colour separation rendered as primary-ink screens (dots or lines).
+  // Each pixel's colour → C/M/Y/K coverage; a STATIC screen per ink (clustered dots OR angled lines) decides
+  // ink on/off; recombined SUBTRACTIVELY (multiply) so a primary stays solid and a secondary becomes a dither
+  // of the inks that form it (green = cyan+yellow, etc.). One getImageData/putImageData pass (no 4 canvases).
+  // Screen is static (no wall-clock) → MP4 export is deterministic; the "dots breathe" purely from the CA colours.
+  var HT_INK = [[0, 158, 224], [228, 0, 120], [255, 221, 0], [26, 22, 20]];   // C, M, Y, K (riso-ish, the look Le approved)
+  var HT_ANG = [15, 75, 0, 45];                                                // classic screen angles per ink (C15/M75/Y0/K45)
+  var HT_SPEED = 0.03;                                                         // screen drift px/ms (the trama animates, like the internal colours — Le); driven by _fxMs (preview=clock / export=frame-index → deterministic)
+  var HT_FADE = 0.30;                                                          // per-frame trail fade toward transparent (lower = longer ghost trail behind the moving screen — Le)
+  function _pfHalftone(ctx, S, fx) {                                          // animated CMYK screen → ink dots/lines OPAQUE, gaps TRANSPARENT (so the persistence trail shows through behind them)
+    var lines = (fx === 'halfline');
+    var img = ctx.getImageData(0, 0, S, S), d = img.data;
+    var period = Math.max(4, Math.round(S / 48));                              // ~2 screen periods per 24-cell punk cell → coarse/pixel (Le)
+    var off = _fxMs * HT_SPEED, off2 = off * 0.6;                              // animated screen drift (diagonal)
+    var cs = [], sn = []; for (var a = 0; a < 4; a++) { var rd = HT_ANG[a] * Math.PI / 180; cs[a] = Math.cos(rd); sn[a] = Math.sin(rd); }
+    for (var y = 0; y < S; y++) for (var x = 0; x < S; x++) {
+      var i = (y * S + x) * 4; if (d[i + 3] < 8) continue;                     // outside the punk → leave transparent
+      var r1 = d[i] / 255, g1 = d[i + 1] / 255, b1 = d[i + 2] / 255;
+      var k = 1 - Math.max(r1, g1, b1), dn = 1 - k;
+      var cov = [dn > 1e-4 ? (1 - r1 - k) / dn : 0, dn > 1e-4 ? (1 - g1 - k) / dn : 0, dn > 1e-4 ? (1 - b1 - k) / dn : 0, k];
+      var R = 255, G = 255, Bb = 255, any = false;
+      for (var a2 = 0; a2 < 4; a2++) {
+        var c = cov[a2]; if (c <= 0.001) continue;
+        var u = x * cs[a2] + y * sn[a2] + off, on;
+        if (lines) { var pos = ((u % period) + period) % period; on = pos < period * c; }
+        else { var v = -x * sn[a2] + y * cs[a2] + off2, cu = ((u % period) + period) % period - period * 0.5, cv = ((v % period) + period) % period - period * 0.5, rr = period * 0.5 * Math.sqrt(c); on = (cu * cu + cv * cv) <= rr * rr; }
+        if (on) { var nk = HT_INK[a2]; R = R * nk[0] / 255; G = G * nk[1] / 255; Bb = Bb * nk[2] / 255; any = true; }   // subtractive multiply
+      }
+      if (any) { d[i] = R; d[i + 1] = G; d[i + 2] = Bb; d[i + 3] = 255; }      // ink → opaque
+      else { d[i + 3] = 0; }                                                   // gap → transparent → the fading trail (or bg) shows through
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+  // Build ONLY the VISIBLE fused-trait CA into octx (transparent elsewhere), mirroring _composeFusionFrame's per-trait
+  // masking EXACTLY + respecting z-order: fused traits ADD their masked CA (interior-def → interiorBmp, else maskBmp||layerBmp);
+  // non-fused traits ERASE (destination-out) where they'd cover → a higher canon trait correctly occludes the fused trait
+  // below it (so the screen never bleeds onto parts the fused modulo doesn't actually show — the bug Le saw).
+  function _buildFusedLayer(octx, S) {
+    octx.imageSmoothingEnabled = false; octx.globalCompositeOperation = 'source-over'; octx.clearRect(0, 0, S, S);
+    var bgA = _fz.assignments.get(BG_ID);
+    if (bgA) { bgA.engine.paintTo(bgA.off, bgA.offctx); octx.drawImage(bgA.off, 0, 0, 144, 144, 0, 0, S, S); }   // BG fused → full-frame CA base (traits erase where they cover it)
+    for (var i = 0; i < _fz.L.length; i++) {
+      var li = _fz.L[i], a = _fz.assignments.get(li);
+      if (a && layerBmp) {                                                     // fused trait → ADD its masked CA (SAME mask the compose uses)
+        var intr = interiorBmp && INTERIOR_DEF[li];
+        a.engine.paintTo(a.off, a.offctx);
+        _fz.caCtx.globalCompositeOperation = 'source-over'; _fz.caCtx.clearRect(0, 0, 144, 144); _fz.caCtx.drawImage(a.off, 0, 0);
+        _fz.caCtx.globalCompositeOperation = 'destination-in'; _fz.caCtx.drawImage(intr ? interiorBmp : (maskBmp || layerBmp), (li - 1) * 24, 0, 24, 24, 0, 0, 144, 144); _fz.caCtx.globalCompositeOperation = 'source-over';
+        octx.drawImage(_fz.caCv, 0, 0, 144, 144, 0, 0, S, S);
+      } else if (layerBmp) {                                                   // non-fused trait → occludes whatever's below it → ERASE from the fused layer
+        var _sc = _fz.solidCanon && _fz.solidCanon.get(li);
+        octx.globalCompositeOperation = 'destination-out';
+        if (_sc) octx.drawImage(_sc, 0, 0, 24, 24, 0, 0, S, S);
+        else octx.drawImage(layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, S, S);
+        octx.globalCompositeOperation = 'source-over';
+      }
+    }
+  }
+  function _applyHalftone(fx, ctx, S) {                                        // ctx = persistence accumulator (htCv). Screen scoped to the VISIBLE fused-trait pixels (built like the compose → correct z-order / occlusion / interior masks)
+    _fzAllocHT();
+    if (!_fz.assignments.size) { ctx.clearRect(0, 0, S, S); return; }          // nothing fused → no effect (normal base shows; trail cleared)
+    _buildFusedLayer(_fz.htScrCtx, S);                                         // htScr = visible fused CA only, transparent elsewhere
+    _pfHalftone(_fz.htScrCtx, S, fx);                                          // halftone the fused CA (transparent stays transparent → effect ONLY on the fused trait)
+    ctx.globalCompositeOperation = 'destination-out'; ctx.globalAlpha = HT_FADE; ctx.fillStyle = '#000'; ctx.fillRect(0, 0, S, S);   // fade prev → ghost trail (only inside the fused region)
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.drawImage(_fz.htScr, 0, 0);   // stamp fresh over the faded trail
+  }
+  function _applyPostFx(fx) {
+    if (fx === 'datablock') { if (_fz.comCtx) _pfDatablock(_fz.comCtx); return; }
+    if (HALF_FX[fx]) { if (_exportInFlight) return; _fzAllocHT(); _applyHalftone(fx, _fz.htCtx, HT); return; }   // preview → htCv@432; during export skip it (the export branch does its own PD=720 halftone → no wasted 432 pass)
+  }
   // Steps the assignment engines + rebuilds _fz.comCv (144) in z-order: background base, then each
   // layer (masked CA if fused, else static). Single source of truth for preview + MP4 export.
   function _composeFusionFrame() {
@@ -2123,20 +2213,26 @@ function _extractComposition(decodedHtml) {
     _animRaf = 0;
     if (!detail.classList.contains('open')) return;
     _animN++;
-    var _skip = _fz.checkMode && (_animN & 1);                        // check mode → ~30fps: the HR (720) compose is heavy and badge colours don't change perceptibly at 60 vs 30 (export renders separately at full rate)
+    var _skip = _fz.checkMode && (_animN & 1) && !_fz.threeD;          // check mode → ~30fps (heavy HR compose); 3D runs full-rate for a smooth spin
     if (_animWanted() && !_skip) {
       try {
+        if (_fz.threeD) {                                              // 3D voxel view: plain composed punk → 3D render (the fx mode drives the GLYPH; halftone → cubes). #pd-canvas is hidden.
+          _3dSpin(); _composePlain(); _3dRender(performance.now(), null);
+        } else {
         if (_fz.fx === 'gold' || _fz.fx === 'silver') _goldAngle = _reducedMotion ? 0 : (performance.now() / GOLD_SPIN_MS) * 2 * Math.PI;   // shared star spin (gold+silver); absolute wall-clock → skip-frames don't drift; reduced-motion freezes upright
         else if (POST_FX[_fz.fx]) _fxMs = _reducedMotion ? 0 : performance.now();   // datablock datamosh clock; reduced-motion freezes
         _composeFusionFrame();
         if (_fz.checkMode && (_fz.fx === 'xbox' || _fz.fx === 'pepe')) {                       // X-Box/Pepe paint DIRECTLY into the shared on-screen device-px canvas; #pd-canvas is hidden → no blit (comHR/comCv not allocated here → would null-throw)
         } else {
-          pdCtx.clearRect(0, 0, PD, PD); pdCtx.imageSmoothingEnabled = false;
+          pdCtx.clearRect(0, 0, PD, PD);
+          pdCtx.imageSmoothingEnabled = false;
           pdCtx.fillStyle = _punkBg; pdCtx.fillRect(0, 0, PD, PD);      // live status background behind the fused layers
-          if (_fz.checkMode && !POST_FX[_fz.fx]) pdCtx.drawImage(_fz.comHR, 0, 0);          // 720→720 1:1 (crisp badges/stars); datablock falls to the comCv 144→720 nearest blit (pixel)
+          if (_fz.checkMode && HALF_FX[_fz.fx]) { pdCtx.imageSmoothingEnabled = false; pdCtx.drawImage(_fz.comCv, 0, 0, 144, 144, 0, 0, PD, PD); pdCtx.drawImage(_fz.htCv, 0, 0, HT, HT, 0, 0, PD, PD); }   // semitono: NORMAL punk base + halftone overlay ONLY on the fused trait (both nearest)
+          else if (_fz.checkMode && !POST_FX[_fz.fx]) pdCtx.drawImage(_fz.comHR, 0, 0);          // 720→720 1:1 (crisp badges/stars)
           else pdCtx.drawImage(_fz.comCv, 0, 0, 144, 144, 0, 0, PD, PD); // 144→720 nearest (pixel-art CA / datablock)
         }
         if (_fz.checkMode && _fz.fx === 'datablock') _drawFzDatablockIcon();   // animate the button icon while datablock is the live mode (hover-jitter is handled separately by the hover interval)
+        }
         _animErrs = 0;
       } catch (e) {
         if (++_animErrs === 1) console.error('[fuse] compose', e);      // surface once (was a silent empty catch)
@@ -2145,7 +2241,13 @@ function _extractComposition(decodedHtml) {
     }
     if (_animWanted()) _animRaf = requestAnimationFrame(_animFrame);
   }
-  function _fzTeardown() { _fz.assignments.clear(); _fz.pending.clear(); _fz.selected = null; _fz.punkId = null; _resetCheckModeUI(); _fz.caCv = null; _fz.comCv = null; _fz.caCtx = null; _fz.comCtx = null; _fz.offHR = null; _fz.caHR = null; _fz.comHR = null; _fz.offHRctx = null; _fz.caHRctx = null; _fz.comHRctx = null; _fz.xbOff = null; _fz.xbOffctx = null; _fz.xbCaOff = null; _fz.xbCaCtx = null; _fz.solidCanon = null; _fz.fxSnap = null; if (_dbIcoTimer) { clearInterval(_dbIcoTimer); _dbIcoTimer = 0; } _dbHover = false; _animStopIfIdle(); }   // null the ctx refs too (incl. X-Box scratch; the #fz-xbox-canvas element persists hidden) (a ctx pins its canvas via ctx.canvas) → ~6MB of HR/CA buffers release on close instead of lingering until the next open   // _resetCheckModeUI = flag OFF + button/field classes OFF (never let the UI outlive checkMode, incl. any future in-modal punk switch)
+  function _fzTeardown() { _fz.assignments.clear(); _fz.pending.clear(); _fz.selected = null; _fz.punkId = null; _resetCheckModeUI(); _fz.caCv = null; _fz.comCv = null; _fz.caCtx = null; _fz.comCtx = null; _fz.offHR = null; _fz.caHR = null; _fz.comHR = null; _fz.offHRctx = null; _fz.caHRctx = null; _fz.comHRctx = null; _fz.htCv = null; _fz.htCtx = null; _fz.htScr = null; _fz.htScrCtx = null; _fz.xbOff = null; _fz.xbOffctx = null; _fz.xbCaOff = null; _fz.xbCaCtx = null; _fz.solidCanon = null; _fz.fxSnap = null; if (_dbIcoTimer) { clearInterval(_dbIcoTimer); _dbIcoTimer = 0; } _dbHover = false;
+    if (typeof _3d !== 'undefined' && _3d) { try { _3d.teardown(); } catch (e) {} }   // release 3D GPU buffers (the context is kept alive for reuse; destroyed only on page unload)
+    if (typeof _td !== 'undefined' && _td) { _td.on = false; _td.punk = null; _td.maskCv = null; _td.maskCtx = null; } _fz.threeD = false;   // keep _td.inited TRUE → reopen reuses the live context (skips re-init + avoids re-adding the contextlost/restored listeners = leak fix); _td.punk=null still forces setPunk rebuild
+    var _c3 = document.getElementById('pd-3d'); if (_c3) _c3.style.display = 'none';
+    var _pc3 = document.getElementById('pd-canvas'); if (_pc3) _pc3.style.visibility = '';
+    var _b3 = document.getElementById('pd-3d-btn'); if (_b3) { _b3.classList.remove('on'); _b3.setAttribute('aria-pressed', 'false'); }
+    _animStopIfIdle(); }   // null the ctx refs too (incl. X-Box scratch; the #fz-xbox-canvas element persists hidden) (a ctx pins its canvas via ctx.canvas) → ~6MB of HR/CA buffers release on close instead of lingering until the next open   // _resetCheckModeUI = flag OFF + button/field classes OFF (never let the UI outlive checkMode, incl. any future in-modal punk switch)
   function _resetFusion() { _punkBg = PUNK_BG; _pkTeardown(); _fzTeardown(); _resetCheckModeUI(); var p = document.getElementById('fz-panel'); if (p) p.style.display = 'none'; var p2 = document.getElementById('fz-pick'); if (p2) p2.style.display = 'none'; _fzStatus(''); }
   function _clearAllFusion() { if (_exportInFlight) return; _fz.assignments.clear(); _fz.pending.clear(); _pkRedrawLive(); _animStopIfIdle(); _refreshPills(); _drawStaticPunk(); _fzStatus('cleared'); }   // keep check mode sticky across Clear-all (view setting, orthogonal to assignments); _pkRedrawLive honors the current mode
   // ── "check it" mode (badge texture) toggle ──
@@ -2159,6 +2261,8 @@ function _extractComposition(decodedHtml) {
     var bp = document.getElementById('fz-pepe'); if (bp) { var onp = m === 'pepe'; bp.setAttribute('aria-pressed', String(onp)); bp.classList.toggle('fz-check-on', onp); }
     var bn = document.getElementById('fz-normal'); if (bn) { var onn = m === 'normal'; bn.setAttribute('aria-pressed', String(onn)); bn.classList.toggle('fz-check-on', onn); }   // normal button = active iff NO fx on (complement of the 6; no new state var)
     var bd = document.getElementById('fz-datablock'); if (bd) { var ond = m === 'datablock'; bd.setAttribute('aria-pressed', String(ond)); bd.classList.toggle('fz-check-on', ond); }
+    var bhd = document.getElementById('fz-halfdot'); if (bhd) { var onhd = m === 'halfdot'; bhd.setAttribute('aria-pressed', String(onhd)); bhd.classList.toggle('fz-check-on', onhd); }
+    var bhl = document.getElementById('fz-halfline'); if (bhl) { var onhl = m === 'halfline'; bhl.setAttribute('aria-pressed', String(onhl)); bhl.classList.toggle('fz-check-on', onhl); }
     _drawFzDatablockIcon();                                         // redraw the datablock icon for the current state (clean favicon cube when not live; the rAF loop animates it while live)
   }
   function _resetCheckModeUI() {                                    // force fx OFF + both buttons OFF + backdrops/scaling OFF (does NOT redraw the live picker)
@@ -2175,14 +2279,15 @@ function _extractComposition(decodedHtml) {
   function _setRenderMode(target) {                                  // 'normal' | 'check' | 'gold' | 'silver' — mutually exclusive
     var on = target !== 'normal';
     _fz.checkMode = on; if (on) _fz.fx = target;
+    if (HALF_FX[target] && _fz.htCtx) _fz.htCtx.clearRect(0, 0, HT, HT);   // start the persistence trail clean when entering a semitono mode
     _syncFxUI();
     detail.classList.toggle('fz-check-bg', target === 'check');      // check field backdrop (blue checks)
     detail.classList.toggle('fz-gold-bg', target === 'gold');        // gold field backdrop (yellow stars)
     detail.classList.toggle('fz-silver-bg', target === 'silver');    // silver field backdrop (steel stars)
     detail.classList.toggle('fz-xbox-bg', target === 'xbox');        // X-Box field backdrop — the bg classes are per-class booleans → at most one on
     detail.classList.toggle('fz-pepe-bg', target === 'pepe');        // Pepe field backdrop
-    detail.classList.toggle('fz-fx-smooth', on && target !== 'xbox' && target !== 'pepe' && !POST_FX[target]); // smooth scaling for vector glyphs (badge/star); X-Box + Pepe + datablock stay PIXELATED
-    _xbSetVisible((target === 'xbox' || target === 'pepe') && _fz.assignments.size > 0);    // show the shared device-px overlay only when there's a fused modulo to render (else the plain punk stays on #pd-canvas)
+    detail.classList.toggle('fz-fx-smooth', on && !PIXEL_FX[target]); // smooth scaling for vector glyphs (badge/star); X-Box + Pepe + datablock + halftone stay PIXELATED
+    _xbSetVisible((target === 'xbox' || target === 'pepe') && _fz.assignments.size > 0 && !_fz.threeD);    // show the shared device-px overlay only when there's a fused modulo to render (else the plain punk stays on #pd-canvas); never over the 3D view
     _pkRedrawLive();                                                // picker renders the active fx per-thumbnail (X-Box reuses the normal CA thumbnail)
     if (_animWanted()) _animKick();                                 // re-render the preview in the new mode (datablock also animates with 0 assignments)
     else { _animStopIfIdle(); _drawStaticPunk(); }                 // 0 assignments + no post-fx: cancel any pending rAF (avoids a stale datablock frame after turning it off), then redraw the static punk
@@ -2246,6 +2351,24 @@ function _extractComposition(decodedHtml) {
       }
     } catch (e) {}
   }
+  function _drawFzHalfDotIcon() {                                   // static icon = a 2×2 CMYK dot rosette
+    var sc = document.querySelector('#fz-halfdot .fz-check-seal'), tc = document.querySelector('#fz-halfdot .fz-check-tick');
+    if (tc) try { tc.getContext('2d').clearRect(0, 0, 28, 28); } catch (e) {}
+    if (!sc) return;
+    try { var x = sc.getContext('2d'); x.clearRect(0, 0, 28, 28);
+      var dots = [[10, 10, '#00a6e0'], [18, 10, '#e4007a'], [10, 18, '#ffd400'], [18, 18, '#1a1614']];   // C, M, Y, K
+      for (var k = 0; k < 4; k++) { x.fillStyle = dots[k][2]; x.beginPath(); x.arc(dots[k][0], dots[k][1], 3.7, 0, 6.2832); x.fill(); }
+    } catch (e) {}
+  }
+  function _drawFzHalfLineIcon() {                                  // static icon = 4 CMYK line-screen bars
+    var sc = document.querySelector('#fz-halfline .fz-check-seal'), tc = document.querySelector('#fz-halfline .fz-check-tick');
+    if (tc) try { tc.getContext('2d').clearRect(0, 0, 28, 28); } catch (e) {}
+    if (!sc) return;
+    try { var x = sc.getContext('2d'); x.clearRect(0, 0, 28, 28); x.lineWidth = 2.4; x.lineCap = 'round';
+      var cols = ['#00a6e0', '#e4007a', '#ffd400', '#1a1614'];
+      for (var k = 0; k < 4; k++) { x.strokeStyle = cols[k]; var yy = 7 + k * 5; x.beginPath(); x.moveTo(6, yy); x.lineTo(22, yy); x.stroke(); }
+    } catch (e) {}
+  }
   function _refreshPills() {
     var host = document.getElementById('fz-traits'); if (!host) return;
     [].forEach.call(host.querySelectorAll('.fz-pill'), function (pill) {
@@ -2293,6 +2416,7 @@ function _extractComposition(decodedHtml) {
     document.getElementById('fz-pick').style.display = 'block';
     _fzStatus(!layerBmp ? 'layer data unavailable' : (_fz.assignments.size ? '' : 'pick a trait, then a modulo'));
     _syncFxUI();                                                    // reflect the current mode on the fx buttons (incl. #fz-normal active+spin) on EVERY open path — reopen-same-punk skips teardown's sync; idempotent
+    _draw3DBtnIcon();                                               // (re)draw the 3D-glasses toggle icon now that layerBmp is loaded
     _pkInit();
   }
   async function _applyFusion(artifactId, layerId) {
@@ -2601,7 +2725,7 @@ function _extractComposition(decodedHtml) {
     _exportInFlight = true; _animStop();
     var pkWasActive = _pk.active; _pk.active = false;                 // pause the picker (IO/dwell/mount/render all bail on !_pk.active) so its heavy 20-step engine builds don't compete with the export compose → no encoder stall (esp. scrolled to a freshly-mounting region — the "fails if scroll is at the bottom" bug)
     var btn = document.getElementById('fz-export'), origText = btn ? btn.textContent : '↓ MP4';
-    var btnCheck = document.getElementById('fz-check'), btnGold = document.getElementById('fz-gold'), btnSilver = document.getElementById('fz-silver'), btnXbox = document.getElementById('fz-xbox'), btnPepe = document.getElementById('fz-pepe'), btnDatablock = document.getElementById('fz-datablock'), btnNormal = document.getElementById('fz-normal');
+    var btnCheck = document.getElementById('fz-check'), btnGold = document.getElementById('fz-gold'), btnSilver = document.getElementById('fz-silver'), btnXbox = document.getElementById('fz-xbox'), btnPepe = document.getElementById('fz-pepe'), btnDatablock = document.getElementById('fz-datablock'), btnNormal = document.getElementById('fz-normal'), btnHalfdot = document.getElementById('fz-halfdot'), btnHalfline = document.getElementById('fz-halfline');
     if (btn) btn.disabled = true;
     if (btnCheck) btnCheck.disabled = true;   // freeze the mode during export so the MP4 can't switch mid-stream
     if (btnGold) btnGold.disabled = true;     // all fx buttons frozen → renderMode can't change under the frozen isCheck
@@ -2609,17 +2733,22 @@ function _extractComposition(decodedHtml) {
     if (btnXbox) btnXbox.disabled = true;     // freeze X-Box too → can't toggle into it mid-export (its compose has no comHR → would null-throw the export blit)
     if (btnPepe) btnPepe.disabled = true;     // freeze Pepe too (shares the device-px canvas path)
     if (btnDatablock) btnDatablock.disabled = true;   // freeze datablock too → mode can't change mid-export
+    if (btnHalfdot) btnHalfdot.disabled = true;       // freeze semitono modes too
+    if (btnHalfline) btnHalfline.disabled = true;
     if (btnNormal) btnNormal.disabled = true; // freeze the normal selector too → mode can't change mid-export
+    var btn3d = document.getElementById('pd-3d-btn'); if (btn3d) btn3d.disabled = true;   // freeze the 3D toggle during export
     var encoder = null, muxer = null, fileStream = null, _encoderError = null;
     var toDisk = !!window.showSaveFilePicker;   // desktop: native "Save As" + stream (like collection); else mobile share/blob banner
     try {
       var isCheck = _fz.checkMode;                                    // frozen for the whole export (the toggle is disabled above) — gates the check-mode perf path
       var isXbox = (_fz.fx === 'xbox');                               // X-Box export branch: renders its own device-px buffer + 1:1 crop into the card slot (others byte-identical)
       var isPepe = (_fz.fx === 'pepe');                               // Pepe export branch: same path → compose at PD=720 into comHR, then the standard blit
+      var isHalf = !!HALF_FX[_fz.fx];                                 // semitono (halftone) export branch: compose normal → upscale to PD=720 → CMYK screen → smooth blit
+      var isThreeD = !!_fz.threeD;                                    // 3D export branch: render the rotating voxel punk into the GL canvas → blit into the card slot
       var _hq = (preset === 'hq');                                    // desktop high-quality preset (popup); default / mobile = standard
       var W, H, FPS, BITRATE, ladder, codec = null;
       if (_hq) { W = 2000; H = 2000; FPS = 60; BITRATE = 30000000; ladder = ['avc1.640034', 'avc1.640033']; }   // L5.2 / L5.1 — both conformant for 2000²@60 (~937,500 MB/s); non-conformant lower levels excluded so a permissive isConfigSupported can't pick a level that lies about its capacity
-      else { W = 1080; H = 1080; FPS = isCheck ? 30 : 60; BITRATE = 8000000; ladder = ['avc1.64002a', 'avc1.640028', 'avc1.4d4028', 'avc1.42e01f']; }   // standard: check/gold 30fps (heavy 720 compose, slow-moving), normal 60fps
+      else { W = 1080; H = 1080; FPS = (isCheck && !isThreeD) ? 30 : 60; BITRATE = 8000000; ladder = ['avc1.64002a', 'avc1.640028', 'avc1.4d4028', 'avc1.42e01f']; }   // standard: check/gold 30fps (heavy 720 compose); normal + 3D = 60fps (smooth spin)
       var FRAMES = FPS * 20;
       for (var ci = 0; ci < ladder.length; ci++) {
         var sup = null; try { sup = await VideoEncoder.isConfigSupported({ codec: ladder[ci], width: W, height: H, bitrate: BITRATE, framerate: FPS, bitrateMode: 'constant', latencyMode: 'quality', hardwareAcceleration: 'prefer-hardware' }); } catch (_) {}
@@ -2656,6 +2785,7 @@ function _extractComposition(decodedHtml) {
       encoder = new VideoEncoder({ output: function (chunk, meta) { muxer.addVideoChunk(chunk, meta); }, error: function (e) { console.error('[card-export]', e); _encoderError = _encoderError || e; } });
       encoder.configure({ codec: codec, width: W, height: H, bitrate: BITRATE, framerate: FPS, bitrateMode: 'constant', latencyMode: 'quality', hardwareAcceleration: 'prefer-hardware' });
 
+      if (isHalf && !isThreeD) { _fzAllocHT(); _fz.htCtx.clearRect(0, 0, HT, HT); }    // clear the persistence trail so frame 0 starts clean → deterministic MP4 (skipped when 3D supersedes halftone)
       for (var f = 0; f < FRAMES; f++) {
         if (_fz.punkId !== myPunk || !detail.classList.contains('open')) throw new Error('modal changed mid-export');
         if (isXbox) {                                                // X-Box: render the compose at PD=720 into comHR (SAME path as check/gold) → falls through to the standard blit below
@@ -2666,21 +2796,32 @@ function _extractComposition(decodedHtml) {
           _fzAllocHR();
           _fz.assignments.forEach(function (a) { a.engine.step(a.engine.dtOps); a.engine.applyRects(); a.engine.tickRects && a.engine.tickRects(); });
           _composePepeExport(_fz.comHRctx, _fz.offHR, _fz.offHRctx, _fz.caHR, _fz.caHRctx, PD);
+        } else if (isThreeD) {                                        // 3D: plain composed punk into comCv; the GL render + blit happen below. BEFORE isHalf → halftone-3D skips the unused 2D screen pass (reviewer P2-1)
+          _composePlain();
+        } else if (isHalf) {                                          // semitono: normal compose → htCv@HT with the ANIMATED CMYK screen (frame-index → deterministic); nearest blit = pixel-sharp
+          _fzAllocHT();
+          _composeFusionFrame();                                      // builds comCv@144 (the HALF post-fx is skipped during export via the _exportInFlight guard)
+          _fxMs = (f / FPS) * 1000;                                   // animated screen clock, frame-index → exact, deterministic MP4
+          _applyHalftone(_fz.fx, _fz.htCtx, HT);                      // upscale comCv→HT + animated screen
         } else {
           if (_fz.fx === 'gold' || _fz.fx === 'silver') _goldAngle = ((f / FPS) * 1000 / GOLD_SPIN_MS) * 2 * Math.PI;   // shared star spin (gold+silver); frame-index drive → exact period regardless of encode pace
           else if (POST_FX[_fz.fx]) _fxMs = (f / FPS) * 1000;        // datablock datamosh clock; frame-index → exact, matches preview
           _composeFusionFrame();
         }
         cx.fillStyle = punkBg; cx.fillRect(pX, pY, S, S);            // punk-square bg = the modal's bg (status colour); BG modulo overdraws it
-        var _ePost = POST_FX[_fz.fx];                                // datablock composes at 144 (comCv) like normal (pixel), NOT comHR
-        cx.imageSmoothingEnabled = isCheck && !_ePost;              // fx (check/gold/xbox) = smooth; normal + datablock pixel = nearest
-        var _eSrc = (isCheck && !_ePost) ? _fz.comHR : _fz.comCv, _eS = (isCheck && !_ePost) ? PD : 144;   // fx = 720 source (comHR); normal + datablock = 144 (comCv)
-        cx.drawImage(_eSrc, 0, 0, _eS, _eS, pX, pY, S, S);          // fused punk → S slot — IDENTICAL blit for check/gold/silver/xbox
+        if (isThreeD) { var _g3 = _3d.glCanvas(); var _yaw = -0.52 + (f / FRAMES) * 2 * Math.PI; if (_3dRender((f / FPS) * 1000, _yaw) && _g3) { cx.imageSmoothingEnabled = true; cx.drawImage(_g3, 0, 0, _g3.width, _g3.height, pX, pY, S, S); } }   // rotating voxel punk (one full turn over the clip) → card slot
+        else if (isHalf) { cx.imageSmoothingEnabled = false; cx.drawImage(_fz.comCv, 0, 0, 144, 144, pX, pY, S, S); cx.drawImage(_fz.htCv, 0, 0, HT, HT, pX, pY, S, S); }   // normal punk base + halftone overlay ONLY on the fused trait
+        else {
+          var useHR = (isCheck && !POST_FX[_fz.fx]);                // check/gold/silver/xbox/pepe → 720 comHR source (smooth); normal + datablock → 144 comCv (nearest/pixel)
+          cx.imageSmoothingEnabled = useHR;
+          var _eSrc = useHR ? _fz.comHR : _fz.comCv, _eS = useHR ? PD : 144;
+          cx.drawImage(_eSrc, 0, 0, _eS, _eS, pX, pY, S, S);        // fused punk → S slot — IDENTICAL blit for check/gold/silver/xbox/pepe
+        }
         var frame = new VideoFrame(card, { timestamp: Math.round(f * 1000000 / FPS), duration: Math.round(1000000 / FPS) });
         encoder.encode(frame, { keyFrame: f % (FPS * 2) === 0 });    // ~2s GOP in both modes
         frame.close();
         if (_encoderError) throw _encoderError;                      // dead encoder surfaces cleanly instead of encoding into a closed encoder / spinning the stall guard
-        if (isCheck || _hq) await new Promise(function (r) { setTimeout(r, 0); });   // yield each frame so the encoder.output drain (muxer.addVideoChunk, main-thread) interleaves with the heavy 720 compose / 2000² encode → no stall starvation
+        if (isCheck || _hq || isThreeD) await new Promise(function (r) { setTimeout(r, 0); });   // yield each frame so the encoder.output drain (muxer.addVideoChunk, main-thread) interleaves with the heavy 720 compose / 2000² encode / 3D render → no stall starvation
         var stall = 0, STALL_MAX = _hq ? 4000 : 1500;               // hq (2000²/60) encodes slower → more patience before declaring a dead encoder
         while (encoder.encodeQueueSize > 2) { if (++stall > STALL_MAX) throw new Error('VideoEncoder stalled'); await new Promise(function (r) { setTimeout(r, 0); }); }
         if (f % 30 === 0 && btn) { btn.textContent = '▪ ' + Math.round(f / FRAMES * 100) + '%'; await new Promise(function (r) { setTimeout(r, 0); }); }
@@ -2701,7 +2842,10 @@ function _extractComposition(decodedHtml) {
       if (btnXbox) btnXbox.disabled = false;
       if (btnPepe) btnPepe.disabled = false;
       if (btnDatablock) btnDatablock.disabled = false;
+      if (btnHalfdot) btnHalfdot.disabled = false;
+      if (btnHalfline) btnHalfline.disabled = false;
       if (btnNormal) btnNormal.disabled = false;
+      if (btn3d) btn3d.disabled = false;
       if (encoder) { try { encoder.close(); } catch (_) {} }
       if (fileStream) { try { await fileStream.abort(); } catch (_) {} }
       if (detail.classList.contains('open')) {
@@ -2755,13 +2899,567 @@ function _extractComposition(decodedHtml) {
   document.getElementById('fz-xbox').addEventListener('click', function () { _setRenderMode(_fzCurMode() === 'xbox' ? 'normal' : 'xbox'); });   // Tier 5 X-Box toggle (mutually exclusive)
   document.getElementById('fz-pepe').addEventListener('click', function () { _setRenderMode(_fzCurMode() === 'pepe' ? 'normal' : 'pepe'); });   // Tier 6 Pepe toggle (mutually exclusive)
   document.getElementById('fz-datablock').addEventListener('click', function () { _setRenderMode(_fzCurMode() === 'datablock' ? 'normal' : 'datablock'); });   // datablock toggle (per-cell datamosh; mutually exclusive)
+  document.getElementById('fz-halfdot').addEventListener('click', function () { _setRenderMode(_fzCurMode() === 'halfdot' ? 'normal' : 'halfdot'); });   // semitono puntos toggle
+  document.getElementById('fz-halfline').addEventListener('click', function () { _setRenderMode(_fzCurMode() === 'halfline' ? 'normal' : 'halfline'); });   // semitono líneas toggle
   (function () { var b = document.getElementById('fz-datablock'); if (!b) return;   // datablock icon jitters ON HOVER (replaces the spin): a small interval redraws while hovered/focused, cleared on leave/blur; active-jitter is driven by _animFrame
     function on() { _dbHover = true; if (!_dbIcoTimer && !_reducedMotion) _dbIcoTimer = setInterval(function () { if (!document.hidden) _drawFzDatablockIcon(); }, 110); }
     function off() { _dbHover = false; if (_dbIcoTimer) { clearInterval(_dbIcoTimer); _dbIcoTimer = 0; } _drawFzDatablockIcon(); }   // clear + one static redraw
     b.addEventListener('mouseenter', on); b.addEventListener('mouseleave', off); b.addEventListener('focus', on); b.addEventListener('blur', off);
   })();
   document.getElementById('fz-normal').addEventListener('click', function () { _setRenderMode('normal'); });   // normal-mode selector — ALWAYS normal (deselecting normal is a no-op, so not a toggle)
-  _drawFzBadgeIcon(); _drawFzStarIcon('fz-gold', GOLD_BODY); _drawFzStarIcon('fz-silver', STAR_PALETTES.silver.body); _drawFzXBoxIcon(); _drawFzPepeIcon(); _drawFzDatablockIcon(); _drawFzModuloIcon();   // draw the 7 static fx-button icons (buttons are in static HTML, present at eval); datablock icon animates via _animFrame while active
+  // ── 3D renderer module (base auto-assembled from the landing via /tmp/assemble_3d.cjs) ──
+  // ⚠️ MODAL-SPECIFIC post-assembly edits applied by hand (2026-06-21, Le): noSide in buildVoxels+setPunk,
+  //    _fitMargin (init(canvas,margin)/resize), MODES += halfdot/halfline, MESH.subCube, the renderMode
+  //    halftone branch + ht* buffers (initGL/_delGL). A blind regen WILL drop these — mirror them in
+  //    assemble_3d.cjs before re-running, or re-apply. See CHANGELOG 2026-06-21.
+  var _3d = (function(){
+  'use strict';
+  var glCanvas=null, gl=null, prog=null, vao=null, voxels=null;
+  var DPR=Math.min(window.devicePixelRatio||1,2);
+  var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var proj=null, view=null;
+  var uModelLoc,uViewLoc,uProjLoc,uNormLoc,uUseVCLoc,uTransXLoc,uMetalLoc;
+  var aPosLoc,aNormLoc,aVColLoc,aOffLoc,aColLoc;
+  var MESH={};
+  var ncCount=0, canonCount=0, ncOff=null, ncGi=null, ncColorArr=null;
+  var ncOffBuf=null, ncColorBuf=null, canonOffBuf=null, canonColBuf=null;
+  var bkArr=null, bkBufs=[];
+  var ncBx=null, ncBy=null, canonGi=null, cOffStatic=null, canonBkArr=null, canonBkBuf=null;
+  var CANON_SET={};
+  var _pepePerm=[0,1,2,3,4,5,6,7], _compSeed=0, _prim=[1,1,1];
+  var _ready=false, _szW=0;
+  var N=24;
+  var _fitMargin = 1.42;                                                       // camera fit margin; init(canvas,margin) overrides it (modal=1.15, landing default=1.42)
+  var HT_M = 4;                                                                // semitono-3D: sub-cubes per cell per axis (4×4) — coarse/pixel-sharp, ~matches the 2D HT≈4px/cell
+  var HT_INK_3D = [[0,158,224],[228,0,120],[255,221,0],[26,22,20]];            // C,M,Y,K inks (= the 2D HT_INK)
+  var HT_ANG_3D = [15,75,0,45];                                                // per-ink screen angles (= the 2D HT_ANG)
+  var HT_PERIOD = 0.5;                                                         // screen period in world units (~2 periods per cell) — tunable
+  var HT_SPEED_3D = 0.004;                                                     // screen drift world/ms (gentle; the CA colour changes drive the main motion) — tunable
+  var HT_PROUD = 0.5 + 0.5 / HT_M + 0.01;                                      // relief sub-cube |z| (poke proud of the ±0.5 cell faces; +0.01 anti-z-fight clearance)
+  var htSubBuf=null, htColBuf=null, htSubBufGl=null, htColBufGl=null;          // semitono-3D per-frame instance buffers (offsets + ink colours)
+  
+  var HALF = 0.475;
+  var STAR_PAL = {                                   // gold/silver tile (lit/shadow) + star body, as 0..1 RGB
+      gold:   { lit: rgb01('#f3c212'), sh: rgb01('#ce9f1c'), body: rgb01('#ffe600'), edge: rgb01('#e6b400') },
+      silver: { lit: rgb01('#e4eaf2'), sh: rgb01('#7b8fa3'), body: rgb01('#d8dfe8'), edge: rgb01('#8fa0b4') }
+    };
+  var CHECK_BEIGE = rgb01('#dbd8d1'), INK = rgb01('#000000');
+  var XB_SHAPES = {                                  // 10×10 [col,row] pool shapes (verbatim from modulopunks)
+      s1: [[2,2],[7,2],[3,3],[6,3],[4,4],[5,4],[4,5],[5,5],[3,6],[6,6],[2,7],[7,7]],
+      s2: [[2,2],[3,3],[4,4],[5,5],[6,6],[7,7]],
+      s3: [[7,2],[6,3],[5,4],[4,5],[3,6],[2,7]]
+    };
+  var XB_POOL = ['s1', 's2', 's3'];
+  var PEPE_PAL = ['#000000', '#008920', '#ffffff', '#ff1310', '#003eea', '#e9ebf6'].map(rgb01);
+  var PEPE_GLYPHS = [
+      ["1111111111","1111111111","1111111111","1111100000","1111105005","1111105005","0000000000","3333333333","0000000000","3333333333"],
+      ["2002022002","0000000000","3333333333","0000000000","3333333333","0000000000","4444444444","4444444444","4444444444","4444444444"],
+      ["2200022000","2200022000","2200022000","0000022000","1111022000","1111022000","0000000000","3333333333","0000000000","3333333333"],
+      ["2222022222","2222022222","0022000222","0022000222","0000000000","3333333333","0000000000","3333333333","4444444444","4444444444"],
+      ["1111102222","0000002000","2222202000","2200000000","2200003333","0000000000","3333333333","3333333333","0000000000","4444444444"],
+      ["1111022222","1111022222","1111022000","1111022000","1111022000","1111022000","1111000000","1111111111","1111111111","1111111111"],
+      ["2002020022","2002020022","2002020022","2002020022","2002020022","2002020022","2002020022","2002020022","0000000000","1111111111"],
+      ["2220000222","2220000222","2220000222","2220000222","0000000000","1111111111","1111111111","1111111111","1111111111","1111111111"]
+    ];
+  var SEAL_PTS=[[-0.031,-0.473],[-0.068,-0.461],[-0.102,-0.441],[-0.13,-0.414],[-0.151,-0.383],[-0.154,-0.378],[-0.157,-0.376],[-0.163,-0.377],[-0.174,-0.38],[-0.188,-0.383],[-0.204,-0.385],[-0.219,-0.385],[-0.234,-0.384],[-0.285,-0.37],[-0.328,-0.342],[-0.362,-0.301],[-0.384,-0.251],[-0.386,-0.241],[-0.387,-0.231],[-0.388,-0.22],[-0.388,-0.204],[-0.388,-0.187],[-0.387,-0.176],[-0.386,-0.167],[-0.383,-0.157],[-0.382,-0.15],[-0.381,-0.145],[-0.38,-0.141],[-0.381,-0.14],[-0.382,-0.139],[-0.386,-0.137],[-0.39,-0.134],[-0.396,-0.13],[-0.416,-0.114],[-0.435,-0.094],[-0.45,-0.072],[-0.462,-0.049],[-0.468,-0.03],[-0.472,-0.015],[-0.474,0.001],[-0.474,0.022],[-0.474,0.038],[-0.474,0.05],[-0.472,0.059],[-0.47,0.069],[-0.465,0.085],[-0.458,0.102],[-0.45,0.118],[-0.441,0.131],[-0.432,0.142],[-0.422,0.154],[-0.41,0.164],[-0.399,0.173],[-0.388,0.18],[-0.388,0.207],[-0.388,0.221],[-0.387,0.231],[-0.386,0.24],[-0.383,0.25],[-0.372,0.282],[-0.355,0.311],[-0.334,0.336],[-0.309,0.356],[-0.298,0.363],[-0.285,0.369],[-0.271,0.375],[-0.26,0.379],[-0.237,0.383],[-0.214,0.385],[-0.191,0.383],[-0.17,0.378],[-0.166,0.377],[-0.162,0.376],[-0.159,0.375],[-0.157,0.375],[-0.156,0.376],[-0.155,0.377],[-0.153,0.379],[-0.151,0.382],[-0.133,0.41],[-0.109,0.435],[-0.08,0.455],[-0.049,0.468],[-0.027,0.473],[-0.004,0.475],[0.019,0.474],[0.041,0.47],[0.075,0.457],[0.105,0.437],[0.132,0.412],[0.151,0.382],[0.154,0.377],[0.157,0.375],[0.163,0.376],[0.173,0.379],[0.194,0.383],[0.215,0.384],[0.237,0.383],[0.258,0.379],[0.291,0.367],[0.32,0.347],[0.346,0.322],[0.367,0.292],[0.377,0.27],[0.384,0.245],[0.388,0.22],[0.389,0.196],[0.388,0.18],[0.396,0.175],[0.406,0.167],[0.418,0.157],[0.429,0.145],[0.439,0.134],[0.443,0.128],[0.448,0.12],[0.452,0.112],[0.456,0.105],[0.474,0.039],[0.469,-0.027],[0.441,-0.086],[0.393,-0.132],[0.389,-0.135],[0.385,-0.137],[0.382,-0.139],[0.38,-0.14],[0.38,-0.141],[0.38,-0.143],[0.38,-0.147],[0.382,-0.152],[0.387,-0.173],[0.389,-0.196],[0.388,-0.22],[0.385,-0.243],[0.365,-0.296],[0.332,-0.338],[0.287,-0.369],[0.234,-0.384],[0.216,-0.385],[0.198,-0.384],[0.179,-0.381],[0.163,-0.376],[0.155,-0.374],[0.153,-0.379],[0.148,-0.388],[0.141,-0.399],[0.133,-0.411],[0.124,-0.421],[0.107,-0.437],[0.086,-0.451],[0.064,-0.463],[0.041,-0.471],[0.025,-0.474],[0.005,-0.475],[-0.015,-0.475]];
+  var CHECK_PTS=[[0.165,-0.175],[0.175,-0.166],[0.18,-0.153],[0.179,-0.139],[0.127,-0.056],[0.029,0.09],[-0.027,0.172],[-0.03,0.174],[-0.033,0.176],[-0.036,0.178],[-0.045,0.179],[-0.056,0.179],[-0.064,0.177],[-0.098,0.146],[-0.154,0.09],[-0.187,0.055],[-0.191,0.032],[-0.181,0.013],[-0.16,0.005],[-0.147,0.007],[-0.131,0.019],[-0.098,0.051],[-0.077,0.072],[-0.061,0.088],[-0.054,0.093],[-0.042,0.076],[-0.01,0.029],[0.033,-0.037],[0.077,-0.103],[0.11,-0.151],[0.123,-0.171],[0.136,-0.179],[0.15,-0.18]];
+  var CHECK_TRIS=[32,0,1,32,1,2,32,2,3,32,3,4,32,4,5,32,5,6,32,6,7,32,7,8,32,8,9,32,9,10,32,10,11,32,11,12,12,13,14,12,14,15,12,15,16,12,16,17,12,17,18,12,18,19,12,19,20,12,20,21,12,21,22,12,22,23,12,23,24,32,12,24,32,24,25,32,25,26,32,26,27,32,27,28,32,28,29,32,29,30,30,31,32];
+  var VS = '#version 300 es\n' +
+      'precision mediump float;\n' +
+      'in vec3 aPos; in vec3 aNormal; in vec3 aOffset; in vec3 aColor; in vec3 aVertColor;\n' +
+      'uniform mat4 uModel; uniform mat4 uView; uniform mat4 uProj; uniform mat3 uNormalMat;\n' +
+      'uniform float uUseVertColor; uniform float uTransX;\n' +
+      'out vec3 vColor; out vec3 vNormal;\n' +
+      'void main(){\n' +
+      '  vec3 world = (uModel * vec4(aPos + aOffset, 1.0)).xyz;\n' +
+      '  world.x += uTransX;\n' +
+      '  gl_Position = uProj * uView * vec4(world, 1.0);\n' +
+      '  vNormal = uNormalMat * aNormal;\n' +
+      '  vColor = mix(aColor, aVertColor, uUseVertColor);\n' +
+      '}';
+  var FS = '#version 300 es\n' +
+      'precision mediump float;\n' +
+      'in vec3 vColor; in vec3 vNormal;\n' +
+      'uniform float uMetallic;\n' +
+      'out vec4 frag;\n' +
+      'void main(){\n' +
+      '  vec3 nrm = normalize(vNormal);\n' +
+      '  vec3 L = normalize(vec3(0.0, 0.25, 1.0));\n' +                  // key light from the POV (camera +z), a touch above → the visible side is always lit (no "only some angles"); no rightward bias
+      '  float d = 0.80 + 0.20 * max(dot(nrm, L), 0.0);\n' +            // high ambient floor → shaded faces ~20% brighter (Le: colours looked dull); lit faces still = exact collection colour (max 1.0, palette untouched)
+      '  vec3 c = vColor * d;\n' +
+      '  if (uMetallic > 0.5) {\n' +                                    // gold/silver: shiny metallic — a sharp Blinn-Phong glint that sweeps as the punk spins. Pure GLSL (no texture/env-map/eval) → self-contained on-chain.
+      '    vec3 SL = normalize(vec3(1.2, 0.30, 1.0));\n' +             // specular light biased to the RIGHT (separate from the diffuse L, which Le fixed with no x-bias) → glint comes from the right; a face dead-on to the camera no longer glares
+      '    vec3 H = normalize(SL + vec3(0.0, 0.0, 1.0));\n' +          // half-vector (view ≈ camera at +z, far)
+      '    float s = pow(max(dot(nrm, H), 0.0), 26.0);\n' +            // tight specular lobe
+      '    c += s * mix(vec3(1.0), vColor, 0.35) * 1.2;\n' +           // glint, slightly tinted by the metal colour (metals tint their reflection); strength 1.2 (Le)
+      '  }\n' +
+      '  frag = vec4(c, 1.0);\n' +
+      '}';
+  var MODES = ['normal', 'check', 'gold', 'silver', 'windows', 'pepe', 'datablock', 'halfdot', 'halfline'];
+  var DB_BLOCK = 4, DB_MAX = 1, DB_HOLD = 700, DB_NB = Math.ceil(N / DB_BLOCK);
+  var _dbX=new Int8Array(DB_NB*DB_NB), _dbY=new Int8Array(DB_NB*DB_NB);
+  function primRGB(){ return _prim; }
+  
+  function hexToRGB(h) { return [parseInt(h.slice(1,3),16), parseInt(h.slice(3,5),16), parseInt(h.slice(5,7),16)]; }
+  function mulberry32(seed) {
+      return function () {
+        seed |= 0; seed = seed + 1831565813 | 0;
+        var t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      };
+    }
+  function perspective(fovy, aspect, near, far) {
+      var f = 1 / Math.tan(fovy / 2), nf = 1 / (near - far);
+      return [f / aspect,0,0,0, 0,f,0,0, 0,0,(far+near)*nf,-1, 0,0,2*far*near*nf,0];
+    }
+  function lookAt(e, ctr, up) {
+      var z0=e[0]-ctr[0], z1=e[1]-ctr[1], z2=e[2]-ctr[2], zl=Math.hypot(z0,z1,z2)||1; z0/=zl;z1/=zl;z2/=zl;
+      var x0=up[1]*z2-up[2]*z1, x1=up[2]*z0-up[0]*z2, x2=up[0]*z1-up[1]*z0, xl=Math.hypot(x0,x1,x2)||1; x0/=xl;x1/=xl;x2/=xl;
+      var y0=z1*x2-z2*x1, y1=z2*x0-z0*x2, y2=z0*x1-z1*x0;
+      return [x0,y0,z0,0, x1,y1,z1,0, x2,y2,z2,0,
+        -(x0*e[0]+x1*e[1]+x2*e[2]), -(y0*e[0]+y1*e[1]+y2*e[2]), -(z0*e[0]+z1*e[1]+z2*e[2]), 1];
+    }
+  function mul(a, b) { var o = new Array(16); for (var c=0;c<4;c++) for (var r=0;r<4;r++){ var s=0; for (var k=0;k<4;k++) s+=a[k*4+r]*b[c*4+k]; o[c*4+r]=s; } return o; }
+  function rotX(a){ var c=Math.cos(a),s=Math.sin(a); return [1,0,0,0, 0,c,s,0, 0,-s,c,0, 0,0,0,1]; }
+  function rotY(a){ var c=Math.cos(a),s=Math.sin(a); return [c,0,-s,0, 0,1,0,0, s,0,c,0, 0,0,0,1]; }
+  function mat3of(m){ return [m[0],m[1],m[2], m[4],m[5],m[6], m[8],m[9],m[10]]; }
+  function rgb01(h) { var c = hexToRGB(h); return [c[0]/255, c[1]/255, c[2]/255]; }
+  function _xbHash(c, r) { var h = (c * 73856093) ^ (r * 19349663); return (h ^ (h >>> 13)) >>> 0; }
+  function _dbHash(c, r) { var x = (c * 374761393 + r * 668265263) >>> 0; x = ((x ^ (x >>> 13)) * 1274126177) >>> 0; return x; }
+  function _dbDelta(bx, by, axis, ms) {                    // staggered per-block displacement (port of collection's _dbDelta): new value every DB_HOLD ms, phase-offset per block → no synced loop; ms=0 (reduced-motion) → static frame
+      var phase = _dbHash(bx * 7 + axis, by) % DB_HOLD;
+      var epoch = Math.floor((ms + phase) / DB_HOLD);
+      var hv = _dbHash((bx * 131 + axis * 977) ^ epoch, by * 257 + epoch);
+      return (hv % (2 * DB_MAX + 1)) - DB_MAX;
+    }
+  function buildCube(h) {
+      var faces = [
+        { n:[0,0,1],  v:[[-1,-1,1],[1,-1,1],[1,1,1],[-1,-1,1],[1,1,1],[-1,1,1]] },
+        { n:[0,0,-1], v:[[1,-1,-1],[-1,-1,-1],[-1,1,-1],[1,-1,-1],[-1,1,-1],[1,1,-1]] },
+        { n:[1,0,0],  v:[[1,-1,1],[1,-1,-1],[1,1,-1],[1,-1,1],[1,1,-1],[1,1,1]] },
+        { n:[-1,0,0], v:[[-1,-1,-1],[-1,-1,1],[-1,1,1],[-1,-1,-1],[-1,1,1],[-1,1,-1]] },
+        { n:[0,1,0],  v:[[-1,1,1],[1,1,1],[1,1,-1],[-1,1,1],[1,1,-1],[-1,1,-1]] },
+        { n:[0,-1,0], v:[[-1,-1,-1],[1,-1,-1],[1,-1,1],[-1,-1,-1],[1,-1,1],[-1,-1,1]] }
+      ];
+      var a = [];
+      for (var f = 0; f < faces.length; f++) for (var i = 0; i < 6; i++) {
+        var p = faces[f].v[i], nrm = faces[f].n;
+        a.push(p[0]*h, p[1]*h, p[2]*h, nrm[0], nrm[1], nrm[2]);
+      }
+      return new Float32Array(a);
+    }
+  function buildPoly(pts, zF, zB) {
+      var a = [], n = pts.length, i, p0, p1, cx = 0, cy = 0;
+      for (i = 0; i < n; i++) { cx += pts[i][0]; cy += pts[i][1]; } cx /= n; cy /= n;
+      for (i = 0; i < n; i++) { p0 = pts[i]; p1 = pts[(i + 1) % n];
+        a.push(cx,cy,zF, 0,0,1, p0[0],p0[1],zF, 0,0,1, p1[0],p1[1],zF, 0,0,1); }          // front cap
+      for (i = 0; i < n; i++) { p0 = pts[i]; p1 = pts[(i + 1) % n];
+        a.push(cx,cy,zB, 0,0,-1, p1[0],p1[1],zB, 0,0,-1, p0[0],p0[1],zB, 0,0,-1); }        // back cap
+      for (i = 0; i < n; i++) { p0 = pts[i]; p1 = pts[(i + 1) % n];                        // side walls
+        var ex = p1[0]-p0[0], ey = p1[1]-p0[1], nx = ey, ny = -ex, ml = Math.hypot(nx,ny)||1; nx/=ml; ny/=ml;
+        var mx = (p0[0]+p1[0])/2, my = (p0[1]+p1[1])/2; if (nx*(mx-cx) + ny*(my-cy) < 0) { nx = -nx; ny = -ny; }   // outward (vs centroid)
+        a.push(p0[0],p0[1],zF, nx,ny,0, p1[0],p1[1],zF, nx,ny,0, p1[0],p1[1],zB, nx,ny,0,
+               p0[0],p0[1],zF, nx,ny,0, p1[0],p1[1],zB, nx,ny,0, p0[0],p0[1],zB, nx,ny,0); }
+      return { data: new Float32Array(a), stride: 24, count: a.length / 6, baked: false };
+    }
+  function buildBevelTile(half, bev, zF, zB) {
+      var a = [], H = half, I = half - bev, zoF = zF - bev, zoB = zB + bev;          // beveled on BOTH broad faces (front zF + back zB); ±H ring in the middle (zoF..zoB)
+      function nrm(x, y, z) { var l = Math.hypot(x, y, z) || 1; return [x/l, y/l, z/l]; }
+      function q(p0, p1, p2, p3, n) { a.push(p0[0],p0[1],p0[2],n[0],n[1],n[2], p1[0],p1[1],p1[2],n[0],n[1],n[2], p2[0],p2[1],p2[2],n[0],n[1],n[2], p0[0],p0[1],p0[2],n[0],n[1],n[2], p2[0],p2[1],p2[2],n[0],n[1],n[2], p3[0],p3[1],p3[2],n[0],n[1],n[2]); }
+      q([-I,-I,zF],[I,-I,zF],[I,I,zF],[-I,I,zF], [0,0,1]);                          // flat FRONT
+      q([-I,I,zF],[I,I,zF],[H,H,zoF],[-H,H,zoF], nrm(0, bev, bev));                 // front TOP bevel (+y → bright)
+      q([I,-I,zF],[-I,-I,zF],[-H,-H,zoF],[H,-H,zoF], nrm(0, -bev, bev));            // front BOTTOM bevel (-y → dark)
+      q([-I,-I,zF],[-I,I,zF],[-H,H,zoF],[-H,-H,zoF], nrm(-bev, 0, bev));            // front LEFT bevel
+      q([I,I,zF],[I,-I,zF],[H,-H,zoF],[H,H,zoF], nrm(bev, 0, bev));                 // front RIGHT bevel
+      q([H,H,zoF],[H,-H,zoF],[H,-H,zoB],[H,H,zoB], [1,0,0]);                        // +x wall
+      q([-H,-H,zoF],[-H,H,zoF],[-H,H,zoB],[-H,-H,zoB], [-1,0,0]);                   // -x wall
+      q([-H,H,zoF],[H,H,zoF],[H,H,zoB],[-H,H,zoB], [0,1,0]);                        // +y wall
+      q([H,-H,zoF],[-H,-H,zoF],[-H,-H,zoB],[H,-H,zoB], [0,-1,0]);                   // -y wall
+      q([-H,H,zoB],[H,H,zoB],[I,I,zB],[-I,I,zB], nrm(0, bev, -bev));                // back TOP bevel
+      q([H,-H,zoB],[-H,-H,zoB],[-I,-I,zB],[I,-I,zB], nrm(0, -bev, -bev));           // back BOTTOM bevel
+      q([-H,-H,zoB],[-H,H,zoB],[-I,I,zB],[-I,-I,zB], nrm(-bev, 0, -bev));           // back LEFT bevel
+      q([H,H,zoB],[H,-H,zoB],[I,-I,zB],[I,I,zB], nrm(bev, 0, -bev));                // back RIGHT bevel
+      q([I,-I,zB],[-I,-I,zB],[-I,I,zB],[I,I,zB], [0,0,-1]);                         // flat BACK
+      return { data: new Float32Array(a), stride: 24, count: a.length / 6, baked: false };
+    }
+  function starPts(RO) { var RI = RO * 0.42, p = [], i; for (i = 0; i < 10; i++) { var an = -Math.PI/2 + i*Math.PI/5, R = (i % 2 === 0) ? RO : RI; p.push([R*Math.cos(an), R*Math.sin(an)]); } return p; }
+  function flipPts(pts, sx, sy) { var o = [], i; for (i = 0; i < pts.length; i++) o.push([pts[i][0]*sx, pts[i][1]*sy]); return o; }
+  function mirrorCoords(coords) { var o = [], i; for (i = 0; i < coords.length; i++) o.push([9 - coords[i][0], coords[i][1]]); return o; }
+  function buildPixels(on, colFn, zF, zB) {
+      var a = [], step = 1.0 / 10, baseX = -0.5, baseY = 0.5, r, c, col = null;   // full-cell footprint (±0.5) → no gap between pepe cells (Le); also fills the windows pool-glyph cell
+      function v(x, y, z, nx, ny, nz) { a.push(x, y, z, nx, ny, nz); if (col) a.push(col[0], col[1], col[2]); }
+      for (r = 0; r < 10; r++) for (c = 0; c < 10; c++) {
+        if (!on(c, r)) continue;
+        var X0 = baseX + c*step, X1 = X0 + step, Y0 = baseY - r*step, Y1 = Y0 - step; col = colFn ? colFn(c, r) : null;
+        v(X0,Y1,zF,0,0,1); v(X1,Y1,zF,0,0,1); v(X1,Y0,zF,0,0,1); v(X0,Y1,zF,0,0,1); v(X1,Y0,zF,0,0,1); v(X0,Y0,zF,0,0,1);          // front +z
+        v(X0,Y1,zB,0,0,-1); v(X1,Y0,zB,0,0,-1); v(X1,Y1,zB,0,0,-1); v(X0,Y1,zB,0,0,-1); v(X0,Y0,zB,0,0,-1); v(X1,Y0,zB,0,0,-1);    // back -z
+        if (!on(c-1, r)) { v(X0,Y0,zF,-1,0,0); v(X0,Y1,zF,-1,0,0); v(X0,Y1,zB,-1,0,0); v(X0,Y0,zF,-1,0,0); v(X0,Y1,zB,-1,0,0); v(X0,Y0,zB,-1,0,0); }   // -x
+        if (!on(c+1, r)) { v(X1,Y0,zF,1,0,0); v(X1,Y0,zB,1,0,0); v(X1,Y1,zB,1,0,0); v(X1,Y0,zF,1,0,0); v(X1,Y1,zB,1,0,0); v(X1,Y1,zF,1,0,0); }         // +x
+        if (!on(c, r-1)) { v(X0,Y0,zF,0,1,0); v(X0,Y0,zB,0,1,0); v(X1,Y0,zB,0,1,0); v(X0,Y0,zF,0,1,0); v(X1,Y0,zB,0,1,0); v(X1,Y0,zF,0,1,0); }         // +y (row-1 is up)
+        if (!on(c, r+1)) { v(X0,Y1,zF,0,-1,0); v(X1,Y1,zF,0,-1,0); v(X1,Y1,zB,0,-1,0); v(X0,Y1,zF,0,-1,0); v(X1,Y1,zB,0,-1,0); v(X0,Y1,zB,0,-1,0); }   // -y
+      }
+      var stride = colFn ? 36 : 24;
+      return { data: new Float32Array(a), stride: stride, count: a.length / (stride / 4), baked: !!colFn };
+    }
+  function pixSet(coords) { var s = {}, i; for (i = 0; i < coords.length; i++) s[coords[i][0] + ',' + coords[i][1]] = 1; return function (c, r) { return !!s[c + ',' + r]; }; }
+  function pepeOn(c, r) { return c >= 0 && c < 10 && r >= 0 && r < 10; }
+  function pepeCol(g) { return function (c, r) { return PEPE_PAL[+PEPE_GLYPHS[g][r].charAt(c)] || PEPE_PAL[0]; }; }
+  function buildPool(shape) {
+      var f = buildPixels(pixSet(shape), null, 0.55, 0.40);                        // front (pokes out the tile front)
+      var b = buildPixels(pixSet(mirrorCoords(shape)), null, -0.40, -0.55);        // back (pokes out the tile back)
+      var out = new Float32Array(f.data.length + b.data.length); out.set(f.data, 0); out.set(b.data, f.data.length);
+      return { data: out, stride: 24, count: out.length / 6, baked: false };
+    }
+  function buildCheck() {
+      var f = buildPolyTri(flipPts(CHECK_PTS, 1, -1), CHECK_TRIS, 0.56, 0.44);      // front cap pokes out the seal front
+      var b = buildPolyTri(flipPts(CHECK_PTS, -1, -1), CHECK_TRIS, -0.44, -0.56);   // back cap pokes out the seal back
+      var out = new Float32Array(f.data.length + b.data.length); out.set(f.data, 0); out.set(b.data, f.data.length);
+      return { data: out, stride: 24, count: out.length / 6, baked: false };
+    }
+  function buildPolyTri(pts, tris, zF, zB) {
+      var a = [], i, p0, p1, p2, n = pts.length;
+      for (i = 0; i < tris.length; i += 3) { p0 = pts[tris[i]]; p1 = pts[tris[i+1]]; p2 = pts[tris[i+2]];
+        a.push(p0[0],p0[1],zF, 0,0,1, p1[0],p1[1],zF, 0,0,1, p2[0],p2[1],zF, 0,0,1); }            // front cap
+      for (i = 0; i < tris.length; i += 3) { p0 = pts[tris[i]]; p1 = pts[tris[i+1]]; p2 = pts[tris[i+2]];
+        a.push(p0[0],p0[1],zB, 0,0,-1, p2[0],p2[1],zB, 0,0,-1, p1[0],p1[1],zB, 0,0,-1); }          // back cap (reversed)
+      for (i = 0; i < n; i++) { p0 = pts[i]; p1 = pts[(i + 1) % n];                                  // side walls (outline order)
+        var ex = p1[0]-p0[0], ey = p1[1]-p0[1], nx = ey, ny = -ex, ml = Math.hypot(nx,ny)||1; nx/=ml; ny/=ml;
+        a.push(p0[0],p0[1],zF, nx,ny,0, p1[0],p1[1],zF, nx,ny,0, p1[0],p1[1],zB, nx,ny,0,
+               p0[0],p0[1],zF, nx,ny,0, p1[0],p1[1],zB, nx,ny,0, p0[0],p0[1],zB, nx,ny,0); }
+      return { data: new Float32Array(a), stride: 24, count: a.length / 6, baked: false };
+    }
+  function buildVoxels(pixels, seed, noSide) {
+      var body = [];                 // {x,y,z,gi}  gi = grid index (row*N+col) for CA colour
+      for (var r = 0; r < N; r++) for (var c = 0; c < N; c++) {
+        var a = pixels[(r * N + c) * 4 + 3];
+        if (a > 12) {
+          var gi0 = r * N + c;
+          body.push({ x: c - (N - 1) / 2, y: -(r - (N - 1) / 2), z: 0, gi: gi0, r: r, c: c,
+            canon: !!CANON_SET[gi0],                                        // glasses + hair → canon (static atlas colour)
+            cr: pixels[gi0*4]/255, cg: pixels[gi0*4+1]/255, cb: pixels[gi0*4+2]/255 });
+        }
+      }
+      // boundary voxels = an opaque cell with at least one transparent 4-neighbour
+      function opaque(r, c) { if (r < 0 || c < 0 || r >= N || c >= N) return false; return pixels[(r * N + c) * 4 + 3] > 12; }
+      var edges = [];
+      for (var k = 0; k < body.length; k++) {
+        var b = body[k];
+        if (!opaque(b.r - 1, b.c) || !opaque(b.r + 1, b.c) || !opaque(b.r, b.c - 1) || !opaque(b.r, b.c + 1)) edges.push(b);
+      }
+      // seed side-cubes: deterministically grown FLUSH off the silhouette edges (face-adjacent, in-plane,
+      // within the 24×24 footprint) so they read as PART of the punk — NOT random floaters. Static palette colour.
+      var rng = mulberry32(seed ^ 0x2c1b3a55);
+      var side = [], used = {};
+      var nSide = (noSide || !edges.length) ? 0 : (5 + Math.floor(rng() * 6));   // 5..10; modal passes noSide=true → faithful punk (no decorative side-cubes)
+      var dirs = [[1,0],[-1,0],[0,1],[0,-1]];                       // 4-neighbour ONLY → always face-touching (no diagonal gap)
+      for (var s = 0; s < nSide * 5 && side.length < nSide; s++) {  // extra tries: some candidates land on occupied / out-of-frame cells
+        var e = edges[Math.floor(rng() * edges.length)];
+        var dir = dirs[Math.floor(rng() * dirs.length)];
+        var nr = e.r + dir[1], nc = e.c + dir[0];                   // the empty cell just outside the silhouette, touching e
+        if (nr < 0 || nc < 0 || nr >= N || nc >= N) continue;       // keep inside the 24×24 footprint
+        if (opaque(nr, nc)) continue;                               // only grow into empty (non-silhouette) cells
+        var key = nr * N + nc; if (used[key]) continue; used[key] = 1;
+        // gi/r/c so side-cubes also sample the CA + adopt the active mode's glyph (cohesion, not plain cubes)
+        side.push({ x: nc - (N - 1) / 2, y: -(nr - (N - 1) / 2), z: 0, gi: nr * N + nc, r: nr, c: nc, cr: e.cr, cg: e.cg, cb: e.cb });
+      }
+      // recenter on the actual silhouette bbox (punks are top-heavy / off-centre in the 24 grid) + report the
+      // extent → the camera fits the PUNK (not the empty 24 grid) → it fills the screen + is vertically centred.
+      var all = body.concat(side), minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9, q;
+      for (q = 0; q < all.length; q++) { var v2 = all[q]; if (v2.x < minX) minX = v2.x; if (v2.x > maxX) maxX = v2.x; if (v2.y < minY) minY = v2.y; if (v2.y > maxY) maxY = v2.y; }
+      var ccx = (minX + maxX) / 2, ccy = (minY + maxY) / 2;
+      for (q = 0; q < all.length; q++) { all[q].x -= ccx; all[q].y -= ccy; }   // mutates shared body/side objects
+      var extent = Math.max(maxX - minX, maxY - minY) + 1;                     // +1 = cube width
+      return { body: body, side: side, extent: extent };
+    }
+  function compile(type, src) {
+      var sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh);
+      if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error('shader: ' + gl.getShaderInfoLog(sh));
+      return sh;
+    }
+  function mkBuf(arr, usage) { var b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, arr, usage); return b; }
+  function makeMesh(m) { m.buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, m.buf); gl.bufferData(gl.ARRAY_BUFFER, m.data, gl.STATIC_DRAW); return m; }
+  function buildMeshes() {
+      MESH.cube = makeMesh({ data: buildCube(0.5), stride: 24, count: 36, baked: false });   // 0.5 = full cell → cubes flush, no gap (Le experiment); shared faces are interior/hidden → no visible z-fight
+      MESH.disc = makeMesh(buildPoly(SEAL_PTS, HALF, -HALF));                          // check seal — EXACT original verified-badge outline (8 rounded points), full-depth, per-cell colour
+      MESH.tick = makeMesh(buildCheck());                                             // ✓ beige relief on BOTH faces — EXACT original badge check (1:1 size), front + back
+      MESH.star = makeMesh(buildPoly(starPts(0.44), 0.55, -0.55));                     // gold/silver star — full-depth prism → visible on BOTH faces (Le)
+      MESH.tileLit = makeMesh(buildBevelTile(0.5, 0.12, 0.5, -0.5));                    // gold/silver LIT tile — beveled (diagonal) edges, full depth
+      MESH.tileSh = makeMesh(buildBevelTile(0.5, 0.12, 0.5 - 0.22, -(0.5 - 0.22)));      // SHADOW (dull) tile — recessed 0.22 on BOTH faces (thin slab) → the star relief shows over it from front AND back
+      MESH.s1 = makeMesh(buildPool(XB_SHAPES.s1));                                     // windows pool shapes (black relief) — BOTH faces
+      MESH.s2 = makeMesh(buildPool(XB_SHAPES.s2));
+      MESH.s3 = makeMesh(buildPool(XB_SHAPES.s3));
+      MESH.pepe = []; for (var g = 0; g < 8; g++) MESH.pepe.push(makeMesh(buildPixels(pepeOn, pepeCol(g), HALF, -HALF)));   // 8 baked multicolour glyphs
+      MESH.subCube = makeMesh({ data: buildCube(0.5 / HT_M), stride: 24, count: 36, baked: false });   // semitono-3D relief micro-cube (1/HT_M of a cell, flush-tiling)
+    }
+  function bindGeom(m) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, m.buf);
+      gl.enableVertexAttribArray(aPosLoc); gl.vertexAttribPointer(aPosLoc, 3, gl.FLOAT, false, m.stride, 0); gl.vertexAttribDivisor(aPosLoc, 0);
+      gl.enableVertexAttribArray(aNormLoc); gl.vertexAttribPointer(aNormLoc, 3, gl.FLOAT, false, m.stride, 12); gl.vertexAttribDivisor(aNormLoc, 0);
+      if (m.baked) { gl.enableVertexAttribArray(aVColLoc); gl.vertexAttribPointer(aVColLoc, 3, gl.FLOAT, false, m.stride, 24); gl.vertexAttribDivisor(aVColLoc, 0); gl.uniform1f(uUseVCLoc, 1); }
+      else { gl.disableVertexAttribArray(aVColLoc); gl.vertexAttrib3f(aVColLoc, 1, 1, 1); gl.uniform1f(uUseVCLoc, 0); }
+    }
+  function setOffset(buf) { gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.enableVertexAttribArray(aOffLoc); gl.vertexAttribPointer(aOffLoc, 3, gl.FLOAT, false, 0, 0); gl.vertexAttribDivisor(aOffLoc, 1); }
+  function drawPerInst(m, offBuf, colBuf, n) { if (n <= 0) return; bindGeom(m); gl.bindBuffer(gl.ARRAY_BUFFER, colBuf); gl.enableVertexAttribArray(aColLoc); gl.vertexAttribPointer(aColLoc, 3, gl.FLOAT, false, 0, 0); gl.vertexAttribDivisor(aColLoc, 1); setOffset(offBuf); gl.drawArraysInstanced(gl.TRIANGLES, 0, m.count, n); }
+  function drawFlat(m, offBuf, n, col) { if (n <= 0) return; bindGeom(m); gl.disableVertexAttribArray(aColLoc); gl.vertexAttrib3f(aColLoc, col[0], col[1], col[2]); setOffset(offBuf); gl.drawArraysInstanced(gl.TRIANGLES, 0, m.count, n); }
+  function drawBaked(m, offBuf, n) { if (n <= 0) return; bindGeom(m); gl.disableVertexAttribArray(aColLoc); gl.vertexAttrib3f(aColLoc, 1, 1, 1); setOffset(offBuf); gl.drawArraysInstanced(gl.TRIANGLES, 0, m.count, n); }
+  function uploadNC() { gl.bindBuffer(gl.ARRAY_BUFFER, ncColorBuf); gl.bufferData(gl.ARRAY_BUFFER, ncColorArr, gl.DYNAMIC_DRAW); }
+  function fillNormal(rgb) { for (var i = 0; i < ncCount; i++) { var p = ncGi[i]*4; ncColorArr[i*3]=rgb[p]/255; ncColorArr[i*3+1]=rgb[p+1]/255; ncColorArr[i*3+2]=rgb[p+2]/255; } }
+  function fillWindowsTile(rgb, prim, fused) { for (var i = 0; i < ncCount; i++) { var p = ncGi[i]*4; if ((!fused || fused[ncGi[i]]) && rgb[p] < 40 && rgb[p+1] < 40 && rgb[p+2] < 40) { ncColorArr[i*3]=prim[0]; ncColorArr[i*3+1]=prim[1]; ncColorArr[i*3+2]=prim[2]; } else { ncColorArr[i*3]=rgb[p]/255; ncColorArr[i*3+1]=rgb[p+1]/255; ncColorArr[i*3+2]=rgb[p+2]/255; } } }   // fused (optional) = B-guard ONLY on fused cells → non-fused stay plain CA (windows fused-scoped); no mask (landing) → B-guard the whole punk
+  function bucket(slot, pred) { var n = 0, i; for (i = 0; i < ncCount; i++) { if (!pred(i)) continue; bkArr[n*3]=ncOff[i*3]; bkArr[n*3+1]=ncOff[i*3+1]; bkArr[n*3+2]=ncOff[i*3+2]; n++; } gl.bindBuffer(gl.ARRAY_BUFFER, bkBufs[slot]); gl.bufferData(gl.ARRAY_BUFFER, bkArr.subarray(0, n*3), gl.DYNAMIC_DRAW); return n; }
+  function bucketColored(slot, pred, srcRgb) { var n = 0, i; for (i = 0; i < ncCount; i++) { if (!pred(i)) continue; bkArr[n*3]=ncOff[i*3]; bkArr[n*3+1]=ncOff[i*3+1]; bkArr[n*3+2]=ncOff[i*3+2]; var p = ncGi[i]*4; ncColorArr[n*3]=srcRgb[p]/255; ncColorArr[n*3+1]=srcRgb[p+1]/255; ncColorArr[n*3+2]=srcRgb[p+2]/255; n++; } gl.bindBuffer(gl.ARRAY_BUFFER, bkBufs[slot]); gl.bufferData(gl.ARRAY_BUFFER, bkArr.subarray(0, n*3), gl.DYNAMIC_DRAW); gl.bindBuffer(gl.ARRAY_BUFFER, ncColorBuf); gl.bufferData(gl.ARRAY_BUFFER, ncColorArr.subarray(0, n*3), gl.DYNAMIC_DRAW); return n; }   // like bucket() but also fills per-instance CA colour → for the non-fused normal cubes in fused-scoped modes
+  function renderMode(mi, rgb, idx, transX, ts, fused) {
+      gl.uniform1f(uTransXLoc, transX);
+      gl.uniform1f(uMetalLoc, 0);                                                   // default non-metallic (canon + all non-gold/silver draws); gold/silver flips it on for its tiles+star
+      var mode = MODES[mi];
+      if (mode !== 'datablock') drawPerInst(MESH.cube, canonOffBuf, canonColBuf, canonCount);   // canon glasses+hair = solid cube (identity); datablock displaces canon too → done in its branch
+      if (mode === 'normal') {
+        fillNormal(rgb); uploadNC(); drawPerInst(MESH.cube, ncOffBuf, ncColorBuf, ncCount);
+      } else if (mode === 'check') {
+        fillNormal(rgb); uploadNC();
+        drawPerInst(MESH.disc, ncOffBuf, ncColorBuf, ncCount);                  // seal disc = PAL[v]
+        drawFlat(MESH.tick, ncOffBuf, ncCount, CHECK_BEIGE);                    // ✓ beige relief
+      } else if (mode === 'gold' || mode === 'silver') {
+        var pal = STAR_PAL[mode];
+        var isFu = function (k) { return !fused || fused[ncGi[k]]; };             // modal: fx ONLY on the fused trait (punk identity kept); no mask (landing) → whole punk gold
+        if (fused) { gl.uniform1f(uMetalLoc, 0); var nNF = bucketColored(3, function (k) { return !fused[ncGi[k]]; }, rgb); drawPerInst(MESH.cube, bkBufs[3], ncColorBuf, nNF); }   // non-fused cells = normal CA cubes (glasses/hair/skin keep the punk's look)
+        gl.uniform1f(uMetalLoc, 1);                                               // shiny metallic glint for the gold/silver tiles + star (canon/non-fused stay matte)
+        var nLit = bucket(0, function (k) { return isFu(k) && (idx[ncGi[k]] & 2) === 0; });   // LIT tiles (bright) → beveled full-depth cube, pal.lit
+        drawFlat(MESH.tileLit, bkBufs[0], nLit, pal.lit);
+        var nSh = bucket(1, function (k) { return isFu(k) && (idx[ncGi[k]] & 2) !== 0; });    // SHADOW tiles (dull/opaque) → recessed beveled cube, pal.sh
+        drawFlat(MESH.tileSh, bkBufs[1], nSh, pal.sh);
+        var nStar = bucket(2, function (k) { return isFu(k) && (idx[ncGi[k]] & 1) === 0; });  // star subset (full-depth prism) → relief stands proud over the recessed shadow tiles
+        drawFlat(MESH.star, bkBufs[2], nStar, pal.body);
+      } else if (mode === 'windows') {
+        fillWindowsTile(rgb, primRGB(), fused); uploadNC();                     // ALL cells get a cube: non-fused = plain CA (normal punk), fused = B-guarded field tile. uploadNC is for THIS cube; the bucket()s below write only bkBufs[s] (NOT ncColorBuf) and drawFlat uses the flat INK colour → safe.
+        drawPerInst(MESH.cube, ncOffBuf, ncColorBuf, ncCount);
+        var meshes = [MESH.s1, MESH.s2, MESH.s3], si;
+        for (si = 0; si < 3; si++) (function (s) { var n = bucket(s, function (k) { var gi = ncGi[k], v = idx[gi], cc = gi % 24, rr = (gi / 24) | 0; return (!fused || fused[gi]) && ((_xbHash(cc, rr) + v) % 3) === s; }); drawFlat(meshes[s], bkBufs[s], n, INK); })(si);   // glyphs ONLY on the fused trait
+      } else if (mode === 'pepe') {
+        if (fused) { gl.uniform1f(uMetalLoc, 0); var nNFp = bucketColored(8, function (k) { return !fused[ncGi[k]]; }, rgb); drawPerInst(MESH.cube, bkBufs[8], ncColorBuf, nNFp); }   // modal: non-fused cells = normal CA cubes (pepe glyphs ONLY on the fused trait); landing (fused=undefined) → whole-punk pepe. slot 8 reserved (0-7 = glyph buckets)
+        var perm = _pepePerm, seed = _compSeed, g;
+        for (g = 0; g < 8; g++) (function (gg) {
+          var n = bucket(gg, function (k) { var gi = ncGi[k], v = idx[gi], cc = gi % 24, rr = (gi / 24) | 0, h = (_xbHash(cc, rr) ^ seed) >>> 0, gsel = ((h % 100) < 20) ? perm[(v + 1 + (h >>> 9) % 7) % 8] : perm[v % 8]; return (!fused || fused[gi]) && gsel === gg; });   // gate: glyphs only on the fused trait
+          drawBaked(MESH.pepe[gg], bkBufs[gg], n);
+        })(g);
+      } else if (mode === 'datablock') {
+        var dbMs = reduced ? 0 : (ts || 0), bi, di;
+        for (bi = 0; bi < DB_NB * DB_NB; bi++) { var bbx = bi % DB_NB, bby = (bi / DB_NB) | 0; _dbX[bi] = _dbDelta(bbx, bby, 0, dbMs); _dbY[bi] = _dbDelta(bbx, bby, 1, dbMs); }
+        for (di = 0; di < ncCount; di++) { var blk = ncBy[di] * DB_NB + ncBx[di]; bkArr[di*3] = ncOff[di*3] + _dbX[blk]; bkArr[di*3+1] = ncOff[di*3+1] + _dbY[blk]; bkArr[di*3+2] = ncOff[di*3+2]; }
+        gl.bindBuffer(gl.ARRAY_BUFFER, bkBufs[0]); gl.bufferData(gl.ARRAY_BUFFER, bkArr.subarray(0, ncCount*3), gl.DYNAMIC_DRAW);
+        fillNormal(rgb); uploadNC(); drawPerInst(MESH.cube, bkBufs[0], ncColorBuf, ncCount);   // non-canon: COMPOSED CA colour (modal — datamosh the fused artifact, not the static atlas), block-displaced
+        for (di = 0; di < canonCount; di++) { var cg = canonGi[di], cblk = (((cg / N | 0) / DB_BLOCK) | 0) * DB_NB + (((cg % N) / DB_BLOCK) | 0); canonBkArr[di*3] = cOffStatic[di*3] + _dbX[cblk]; canonBkArr[di*3+1] = cOffStatic[di*3+1] + _dbY[cblk]; canonBkArr[di*3+2] = cOffStatic[di*3+2]; }
+        gl.bindBuffer(gl.ARRAY_BUFFER, canonBkBuf); gl.bufferData(gl.ARRAY_BUFFER, canonBkArr.subarray(0, canonCount*3), gl.DYNAMIC_DRAW);
+        drawPerInst(MESH.cube, canonBkBuf, canonColBuf, canonCount);            // canon glasses+hair, SAME block delta → glitches WITH the punk (Le)
+      } else if (mode === 'halfdot' || mode === 'halfline') {
+        // semitono-3D: CMYK halftone as sub-cell relief micro-cubes over a CA base (Le 2026-06-21). FUSED-trait scoped (like 2D — relief only on fused cells; 0 assignments → plain punk, same as gold/silver/pepe); per-frame rebuild; deterministic via ts.
+        var lines = (mode === 'halfline');
+        fillNormal(rgb); uploadNC(); drawPerInst(MESH.cube, ncOffBuf, ncColorBuf, ncCount);   // CA punk base → screen gaps reveal the cube (no hole), like the 2D base+overlay
+        var hoff = (ts || 0) * HT_SPEED_3D, hoff2 = hoff * 0.6, n3 = 0, ha, hcs = [], hsn = [];
+        for (ha = 0; ha < 4; ha++) { var hrd = HT_ANG_3D[ha] * Math.PI / 180; hcs[ha] = Math.cos(hrd); hsn[ha] = Math.sin(hrd); }
+        for (var hci = 0; hci < ncCount; hci++) {
+          var hp = ncGi[hci] * 4; if (rgb[hp + 3] < 8) continue;
+          if (fused && !fused[ncGi[hci]]) continue;   // fused-trait scope (= the 2D semitono): relief ONLY on the fused trait; the whole-punk CA base above shows the rest normally
+          var hR = rgb[hp] / 255, hG = rgb[hp + 1] / 255, hB = rgb[hp + 2] / 255, hk = 1 - Math.max(hR, hG, hB), hdn = 1 - hk;
+          var hcov = [hdn > 1e-4 ? (1 - hR - hk) / hdn : 0, hdn > 1e-4 ? (1 - hG - hk) / hdn : 0, hdn > 1e-4 ? (1 - hB - hk) / hdn : 0, hk];
+          var hcx = ncOff[hci * 3], hcy = ncOff[hci * 3 + 1], hsr, hsc;
+          for (hsr = 0; hsr < HT_M; hsr++) for (hsc = 0; hsc < HT_M; hsc++) {
+            var sx = hcx - 0.5 + (hsc + 0.5) / HT_M, sy = hcy - 0.5 + (hsr + 0.5) / HT_M, Rc = 255, Gc = 255, Bc = 255, hany = false;
+            for (ha = 0; ha < 4; ha++) {
+              var hc = hcov[ha]; if (hc <= 0.001) continue;
+              var hu = sx * hcs[ha] + sy * hsn[ha] + hoff, hon;
+              if (lines) { var hpos = ((hu % HT_PERIOD) + HT_PERIOD) % HT_PERIOD; hon = hpos < HT_PERIOD * hc; }
+              else { var hv = -sx * hsn[ha] + sy * hcs[ha] + hoff2, hcu = ((hu % HT_PERIOD) + HT_PERIOD) % HT_PERIOD - HT_PERIOD * 0.5, hcv = ((hv % HT_PERIOD) + HT_PERIOD) % HT_PERIOD - HT_PERIOD * 0.5, hrr = HT_PERIOD * 0.5 * Math.sqrt(hc); hon = (hcu * hcu + hcv * hcv) <= hrr * hrr; }
+              if (hon) { var hnk = HT_INK_3D[ha]; Rc = Rc * hnk[0] / 255; Gc = Gc * hnk[1] / 255; Bc = Bc * hnk[2] / 255; hany = true; }
+            }
+            if (!hany) continue;
+            htSubBuf[n3*3] = sx; htSubBuf[n3*3+1] = sy; htSubBuf[n3*3+2] = HT_PROUD;  htColBuf[n3*3] = Rc/255; htColBuf[n3*3+1] = Gc/255; htColBuf[n3*3+2] = Bc/255; n3++;   // front relief
+            htSubBuf[n3*3] = sx; htSubBuf[n3*3+1] = sy; htSubBuf[n3*3+2] = -HT_PROUD; htColBuf[n3*3] = Rc/255; htColBuf[n3*3+1] = Gc/255; htColBuf[n3*3+2] = Bc/255; n3++;   // back relief (double-sided → reads in the 360° spin/export)
+          }
+        }
+        gl.bindBuffer(gl.ARRAY_BUFFER, htSubBufGl); gl.bufferData(gl.ARRAY_BUFFER, htSubBuf.subarray(0, n3 * 3), gl.DYNAMIC_DRAW);
+        gl.bindBuffer(gl.ARRAY_BUFFER, htColBufGl); gl.bufferData(gl.ARRAY_BUFFER, htColBuf.subarray(0, n3 * 3), gl.DYNAMIC_DRAW);
+        drawPerInst(MESH.subCube, htSubBufGl, htColBufGl, n3);
+      }
+    }
+  function initGL() {
+      gl = glCanvas.getContext('webgl2', { preserveDrawingBuffer: true, alpha: true, premultipliedAlpha: true, antialias: true, depth: true, stencil: false, powerPreference: 'low-power' });
+      if (!gl) return false;
+      prog = gl.createProgram();
+      gl.attachShader(prog, compile(gl.VERTEX_SHADER, VS));
+      gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FS));
+      gl.linkProgram(prog);
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error('link: ' + gl.getProgramInfoLog(prog));
+      gl.useProgram(prog);
+      uModelLoc = gl.getUniformLocation(prog, 'uModel'); uViewLoc = gl.getUniformLocation(prog, 'uView');
+      uProjLoc = gl.getUniformLocation(prog, 'uProj'); uNormLoc = gl.getUniformLocation(prog, 'uNormalMat');
+      uUseVCLoc = gl.getUniformLocation(prog, 'uUseVertColor'); uTransXLoc = gl.getUniformLocation(prog, 'uTransX'); uMetalLoc = gl.getUniformLocation(prog, 'uMetallic');
+      aPosLoc = gl.getAttribLocation(prog, 'aPos'); aNormLoc = gl.getAttribLocation(prog, 'aNormal');
+      aVColLoc = gl.getAttribLocation(prog, 'aVertColor'); aOffLoc = gl.getAttribLocation(prog, 'aOffset'); aColLoc = gl.getAttribLocation(prog, 'aColor');
+  
+      vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+      buildMeshes();
+  
+      // split cells: non-canon adopt the mode's glyph; canon (glasses+hair) = always a solid cube (identity)
+      var src = [], i, b, nb = voxels.body.length, ns = voxels.side.length;
+      for (i = 0; i < nb; i++) src.push(voxels.body[i]);
+      for (i = 0; i < ns; i++) src.push(voxels.side[i]);
+      var nc = [], cn = [];
+      for (i = 0; i < src.length; i++) (src[i].canon ? cn : nc).push(src[i]);
+      ncCount = nc.length; canonCount = cn.length;
+      ncOff = new Float32Array(ncCount * 3); ncGi = new Uint16Array(ncCount);
+      for (i = 0; i < ncCount; i++) { ncOff[i*3]=nc[i].x; ncOff[i*3+1]=nc[i].y; ncOff[i*3+2]=nc[i].z; ncGi[i]=nc[i].gi; }
+      var cOff = new Float32Array(canonCount * 3), cCol = new Float32Array(canonCount * 3);
+      for (i = 0; i < canonCount; i++) { cOff[i*3]=cn[i].x; cOff[i*3+1]=cn[i].y; cOff[i*3+2]=cn[i].z; cCol[i*3]=cn[i].cr||0; cCol[i*3+1]=cn[i].cg||0; cCol[i*3+2]=cn[i].cb||0; }
+      ncOffBuf = mkBuf(ncOff, gl.STATIC_DRAW); canonOffBuf = mkBuf(cOff, gl.STATIC_DRAW); canonColBuf = mkBuf(cCol, gl.STATIC_DRAW);
+      ncColorArr = new Float32Array(ncCount * 3); ncColorBuf = mkBuf(ncColorArr, gl.DYNAMIC_DRAW);
+      // datablock: precomputed macroblock coords per non-canon cell (the modal datamoshes the COMPOSED CA via ncColorBuf, so the old static own-atlas-colour buffer was removed as dead code)
+      ncBx = new Uint8Array(ncCount); ncBy = new Uint8Array(ncCount);
+      for (i = 0; i < ncCount; i++) { var _g=ncGi[i], _cc=_g%N, _rr=(_g/N)|0; ncBx[i]=(_cc/DB_BLOCK)|0; ncBy[i]=(_rr/DB_BLOCK)|0; }
+      canonGi = new Uint16Array(canonCount); for (i = 0; i < canonCount; i++) canonGi[i] = cn[i].gi;   // canon block coords derived per-frame (datablock displaces canon too)
+      cOffStatic = cOff; canonBkArr = new Float32Array(canonCount * 3); canonBkBuf = mkBuf(canonBkArr, gl.DYNAMIC_DRAW);
+      bkArr = new Float32Array(ncCount * 3); bkBufs = [];
+      for (i = 0; i < 9; i++) { var bb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, bb); gl.bufferData(gl.ARRAY_BUFFER, ncCount * 3 * 4, gl.DYNAMIC_DRAW); bkBufs.push(bb); }   // 0-7 = glyph/pool/tile buckets; 8 = non-fused normal cubes (pepe fused-scope)
+      htSubBuf = new Float32Array(ncCount * HT_M * HT_M * 2 * 3); htColBuf = new Float32Array(ncCount * HT_M * HT_M * 2 * 3);   // semitono-3D: worst-case = every sub-cube on, double-sided
+      htSubBufGl = gl.createBuffer(); htColBufGl = gl.createBuffer();
+  
+      gl.bindVertexArray(null);
+      gl.enable(gl.DEPTH_TEST); gl.clearColor(0, 0, 0, 0);
+      resize();
+      return true;
+    }
+  function resize() {
+      var cw = glCanvas.clientWidth || 720, ch = glCanvas.clientHeight || 720;   // 720 = modal canvas CSS cap; NOT window.innerWidth (display:none → clientWidth 0 → window-sized backing → GPU stall)
+      var w = Math.max(1, Math.round(cw * DPR)), h = Math.max(1, Math.round(ch * DPR));
+      if (glCanvas.width !== w || glCanvas.height !== h) { glCanvas.width = w; glCanvas.height = h; }
+      if (gl) gl.viewport(0, 0, w, h);
+      var fovy = 40 * Math.PI / 180, aspect = w / h;
+      proj = perspective(fovy, aspect, 0.1, 400);
+      // fit the PUNK's actual silhouette extent (recentred in buildVoxels) to the SMALLER viewport dim.
+      // depth-1 → rotation barely grows the extent, so no clipping. Margin = _fitMargin (modal 1.15 = big/close; landing 1.42 leaves bands for the wordmark+buttons).
+      var ext = (voxels && voxels.extent) || 24;
+      var z = (ext * _fitMargin) / (2 * Math.tan(fovy / 2)) / Math.min(1, aspect);
+      view = lookAt([0, 0, z], [0, 0, 0], [0, 1, 0]);
+    }
+  
+  // ---- adapter API (Modulo fusion-modal 3D, ported from the landing renderer) ----
+  function _computePrim(rgb){ var br=-1, pr=[1,1,1]; for(var gi=0;gi<N*N;gi++){ var p=gi*4, r=rgb[p],g=rgb[p+1],b=rgb[p+2], mx=Math.max(r,g,b); if(mx>=40){ var lum=r+g+b; if(lum>br){ br=lum; pr=[r/255,g/255,b/255]; } } } _prim=pr; }
+  function _seedPerm(seed){ var rng=mulberry32((seed^0x9e3779b9)>>>0), a=[0,1,2,3,4,5,6,7], i,j,t; for(i=7;i>0;i--){ j=Math.floor(rng()*(i+1)); t=a[i]; a[i]=a[j]; a[j]=t; } _pepePerm=a; _compSeed=seed>>>0; }
+  function _delGL(){ if(!gl) return; try{ if(prog) gl.deleteProgram(prog); if(vao) gl.deleteVertexArray(vao);
+    [ncOffBuf,ncColorBuf,canonOffBuf,canonColBuf,canonBkBuf,htSubBufGl,htColBufGl].forEach(function(b){ if(b) gl.deleteBuffer(b); });
+    bkBufs.forEach(function(b){ gl.deleteBuffer(b); }); bkBufs=[];
+    Object.keys(MESH).forEach(function(k){ var m=MESH[k]; if(m&&m.buf) gl.deleteBuffer(m.buf); else if(Array.isArray(m)) m.forEach(function(mm){ if(mm&&mm.buf) gl.deleteBuffer(mm.buf); }); }); MESH={};
+    }catch(e){} prog=null; vao=null; }
+  function init(canvas, margin){ glCanvas=canvas; _fitMargin = margin || 1.42; return true; }
+  function setPunk(pixels, seed){
+    if(!glCanvas) return false;
+    CANON_SET={};                                   // modal: the WHOLE punk adopts the fx (all non-canon, like the 2D modes); fused cells animate via the per-frame comCv colour feed
+    voxels = buildVoxels(pixels, seed||0, true); _seedPerm(seed||0);   // modal: no decorative side-cubes (faithful punk)
+    if(gl){ _delGL(); }
+    if(!initGL()){ _ready=false; return false; }
+    _ready=true; _szW=0; return true;
+  }
+  function render(rgb, idx, mi, rxa, rya, ts, fused){
+    if(!_ready || !gl) return;
+    var cw=Math.round((glCanvas.clientWidth||0)*DPR); if(cw && cw!==_szW){ resize(); _szW=cw; }
+    _computePrim(rgb);
+    var model = mul(rotX(rxa), rotY(rya));
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.useProgram(prog); gl.bindVertexArray(vao);
+    gl.uniformMatrix4fv(uModelLoc, false, model); gl.uniformMatrix4fv(uViewLoc, false, view);
+    gl.uniformMatrix4fv(uProjLoc, false, proj); gl.uniformMatrix3fv(uNormLoc, false, mat3of(model));
+    renderMode(mi, rgb, idx, 0, ts, fused);
+    gl.bindVertexArray(null);
+  }
+  function teardown(){ if(gl){ _delGL(); } gl=null; voxels=null; _ready=false; _szW=0; }   // keep the GL context ALIVE (reusable across punk changes); loseContext() poisoned the reused #pd-3d canvas → next getContext returned a LOST ctx → compile "shader: null". _delGL still frees the heavy GPU buffers.
+  function lost(){ _ready=false; gl=null; }
+  return { init:init, setPunk:setPunk, render:render, resize:resize, teardown:teardown, lost:lost,
+    isReady:function(){ return _ready && !!gl; }, modeIndex:function(name){ return Math.max(0, MODES.indexOf(name)); }, glCanvas:function(){ return glCanvas; } };
+  
+  })();
+
+  // ===== 3D voxel mode in the fusion modal (ported landing renderer = the _3d IIFE above; Le 2026-06-21) =====
+  var _td = { on:false, rotXa:-0.10, rotYa:-0.52, drag:false, px:0, py:0, vYaw:0, vPitch:0, punk:null, inited:false, rgb:null, idx:null };
+  var _COLS3D = ['#6363ff','#a040ff','#ff003a','#ff8c00','#ffbd2e','#28c840','#ff4080','#ff63ff','#1100ff','#63ff63','#57686e','#2a0b18','#23242a','#ab0a5f','#0f1021','#000000','#bfbcce','#8b8b8b'].map(function(h){ return [parseInt(h.slice(1,3),16), parseInt(h.slice(3,5),16), parseInt(h.slice(5,7),16)]; });   // Modulo palette (= COLS_DATA[0]; hardcoded here since that const lives in another scope)
+  function _nearestCol3D(r,g,b){ var bi=0, bd=1e9, k; for(k=0;k<_COLS3D.length;k++){ var c=_COLS3D[k], dr=r-c[0], dg=g-c[1], db=b-c[2], d=dr*dr+dg*dg+db*db; if(d<bd){ bd=d; bi=k; } } return bi; }
+  function _3dPunkPixels(){ if(!atlasBmp || _fz.punkId==null) return null; var o=_pkOff(SRC,SRC), c=o.getContext('2d'); c.imageSmoothingEnabled=false; c.drawImage(atlasBmp,(_fz.punkId%ATLAS_COLS)*SRC,Math.floor(_fz.punkId/ATLAS_COLS)*SRC,SRC,SRC,0,0,SRC,SRC); return c.getImageData(0,0,SRC,SRC).data; }
+  function _3dEnsure(){
+    if(typeof _3d==='undefined' || !_3d) return false;
+    var cv=document.getElementById('pd-3d'); if(!cv) return false;
+    if(!_td.inited){ if(!_3d.init(cv, 1.15)) return false;
+      cv.addEventListener('webglcontextlost', function(e){ e.preventDefault(); _3d.lost(); _3dSetOn(false); }, false);
+      cv.addEventListener('webglcontextrestored', function(){ _td.punk=null; _td.inited=true; if(_td.on) _3dEnsure(); }, false);
+      _td.inited=true; }
+    var px=_3dPunkPixels(); if(!px) return false;
+    if(_td.punk!==_fz.punkId){ if(!_3d.setPunk(px, _fz.punkId|0)) return false; _td.punk=_fz.punkId; }
+    return _3d.isReady();
+  }
+  // plain composed punk → comCv@144 (the 3D reads colours from here; the 2D fx mode only drives the 3D GLYPH, not the colours)
+  function _composePlain(){
+    _fz.assignments.forEach(function(a){ a.engine.step(a.engine.dtOps); a.engine.applyRects(); a.engine.tickRects && a.engine.tickRects(); });
+    _fzAlloc(); _fz.comCtx.clearRect(0,0,144,144);
+    var bgA=_fz.assignments.get(BG_ID);
+    if(bgA){ bgA.engine.paintTo(bgA.off,bgA.offctx); _fz.comCtx.drawImage(bgA.off,0,0); }
+    for(var i=0;i<_fz.L.length;i++){ var li=_fz.L[i], a=_fz.assignments.get(li);
+      if(a && layerBmp){ var intr=interiorBmp && INTERIOR_DEF[li];
+        if(intr) _fz.comCtx.drawImage(layerBmp,(li-1)*24,0,24,24,0,0,144,144);
+        a.engine.paintTo(a.off,a.offctx);
+        _fz.caCtx.globalCompositeOperation='source-over'; _fz.caCtx.clearRect(0,0,144,144); _fz.caCtx.drawImage(a.off,0,0);
+        _fz.caCtx.globalCompositeOperation='destination-in'; _fz.caCtx.drawImage(intr?interiorBmp:(maskBmp||layerBmp),(li-1)*24,0,24,24,0,0,144,144); _fz.caCtx.globalCompositeOperation='source-over';
+        _fz.comCtx.drawImage(_fz.caCv,0,0);
+      } else if(layerBmp){ var _sc=_fz.solidCanon && _fz.solidCanon.get(li);
+        if(_sc) _fz.comCtx.drawImage(_sc,0,0,24,24,0,0,144,144);
+        else _fz.comCtx.drawImage(layerBmp,(li-1)*24,0,24,24,0,0,144,144); } }
+  }
+  function _3dCrops(){ var d=_fz.comCtx.getImageData(0,0,144,144).data; if(!_td.rgb){ _td.rgb=new Uint8ClampedArray(576*4); _td.idx=new Uint8Array(576); _td.fused=new Uint8Array(576); }
+    var rgb=_td.rgb, idx=_td.idx, r,c; for(r=0;r<24;r++)for(c=0;c<24;c++){ var gi=r*24+c, sp=((r*6+3)*144+(c*6+3))*4, dp=gi*4, R=d[sp],G=d[sp+1],B=d[sp+2]; rgb[dp]=R; rgb[dp+1]=G; rgb[dp+2]=B; rgb[dp+3]=d[sp+3]; idx[gi]=_nearestCol3D(R,G,B); }
+    // fused-trait mask — gold/silver scope the fx ONLY to the fused trait (2D parity + punk identity, Le 2026-06-21). _buildFusedLayer@24 = visible fused CA (transparent elsewhere) → 1 px/cell alpha.
+    var cm=_fzCurMode();
+    if((cm==='gold'||cm==='silver'||cm==='pepe'||cm==='xbox'||HALF_FX[cm]) && _fz.assignments.size){   // gold/silver + pepe + windows('xbox') + semitono (halfdot/halfline) scope the fx to the fused trait only
+      if(!_td.maskCv){ _td.maskCv=_pkOff(24,24); _td.maskCtx=_td.maskCv.getContext('2d'); _td.maskCtx.imageSmoothingEnabled=false; }
+      _buildFusedLayer(_td.maskCtx,24);
+      var md=_td.maskCtx.getImageData(0,0,24,24).data, q; for(q=0;q<576;q++) _td.fused[q]=md[q*4+3]>8?1:0;
+    } else if(_td.fused) { _td.fused.fill(0); }
+  }
+  function _3dModeIdx(){ var m=_fzCurMode(); if(m==='xbox') m='windows'; return _3d.modeIndex(m); }   // 'xbox' = the modal's internal id for the user-facing "windows" fx; the IIFE MODES (from the landing) calls it 'windows' → alias it or modeIndex('xbox')=-1→0→normal (the bug Le saw: 3D windows fell back to normal). halfdot/halfline match MODES directly.
+  function _3dRender(ts, yaw){ if(!_3dEnsure()) return false; _3dCrops(); _3d.render(_td.rgb, _td.idx, _3dModeIdx(), _td.rotXa, (yaw==null?_td.rotYa:yaw), ts, _td.fused); return true; }
+  function _3dSpin(){ if(_td.drag || _reducedMotion) return;
+    if(_td.vYaw || _td.vPitch){ _td.rotYa+=_td.vYaw; _td.rotXa+=_td.vPitch; _td.rotXa=Math.max(-1.45,Math.min(1.45,_td.rotXa)); _td.vYaw*=0.94; _td.vPitch*=0.94; if(Math.abs(_td.vYaw)<0.0028)_td.vYaw=0; if(Math.abs(_td.vPitch)<0.0028)_td.vPitch=0; }
+    else { var fv=Math.abs(Math.cos(_td.rotYa)); _td.rotYa+=0.0015+(0.0055-0.0015)*(1-fv); } }
+  function _3dSetOn(on){ _td.on=!!on; _fz.threeD=!!on;
+    var cv=document.getElementById('pd-3d'), pc=document.getElementById('pd-canvas'), b=document.getElementById('pd-3d-btn');
+    if(on){ if(cv) cv.style.display='block';   // show FIRST → canvas is laid out so _3dEnsure's resize() reads the real clientWidth (display:none → clientWidth 0 → window.innerWidth fallback → window-sized GL backing for 1 frame → first-activation GPU stall/hang)
+      if(!_3dEnsure()){ _td.on=false; _fz.threeD=false; if(cv) cv.style.display='none'; if(b){ b.setAttribute('aria-pressed','false'); b.classList.remove('on'); } return; }
+      if(pc) pc.style.visibility='hidden'; _xbSetVisible(false);
+      if(b){ b.setAttribute('aria-pressed','true'); b.classList.add('on'); } _animKick(); }
+    else { if(cv) cv.style.display='none'; if(pc) pc.style.visibility=''; if(b){ b.setAttribute('aria-pressed','false'); b.classList.remove('on'); } _animStopIfIdle(); _animKick(); } }
+  var _3dGlassCrop = null;                                           // cached bbox of the REAL "3D Glasses" trait sprite (layerBmp li 72), opaque-pixel bounds
+  function _glassesCrop(){ if(_3dGlassCrop) return _3dGlassCrop; if(!layerBmp) return null;
+    try{ var o=_pkOff(24,24), c=o.getContext('2d'); c.imageSmoothingEnabled=false; c.drawImage(layerBmp,(72-1)*24,0,24,24,0,0,24,24);
+      var d=c.getImageData(0,0,24,24).data, mnx=99,mny=99,mxx=-1,mxy=-1,yy,xx;
+      for(yy=0;yy<24;yy++)for(xx=0;xx<24;xx++){ if(d[(yy*24+xx)*4+3]>20){ if(xx<mnx)mnx=xx; if(xx>mxx)mxx=xx; if(yy<mny)mny=yy; if(yy>mxy)mxy=yy; } }
+      if(mxx<0) return null; _3dGlassCrop={bx:mnx,by:mny,bw:mxx-mnx+1,bh:mxy-mny+1}; return _3dGlassCrop;
+    }catch(e){ return null; } }
+  function _draw3DBtnIcon(){ var b=document.getElementById('pd-3d-btn'); if(!b) return; var cv=b.querySelector('canvas'); if(!cv) return; var x=cv.getContext('2d'); var S=cv.width; x.clearRect(0,0,S,S);
+    try{ _badgeFillSeal(x, S, '#6363ff'); }catch(e){}                 // blue verified seal (= the collection "check it" badge)
+    var cr=_glassesCrop();
+    if(cr && layerBmp){                                              // the REAL "3D Glasses" trait sprite (li 72), bbox-cropped → centred + tilted in the badge (Le)
+      var sc=(S*0.50)/Math.max(cr.bw,cr.bh), dw=cr.bw*sc, dh=cr.bh*sc;
+      x.save(); x.translate(S/2, S*0.5); x.rotate(-10*Math.PI/180); x.imageSmoothingEnabled=false;
+      x.drawImage(layerBmp,(72-1)*24+cr.bx, cr.by, cr.bw, cr.bh, -dw/2, -dh/2, dw, dh); x.restore(); return; }
+    var gw=S*0.56, gh=S*0.25, gx=(S-gw)/2, gy=(S-gh)/2, gap=gw*0.16, lw=(gw-gap)/2, fb=S*0.035;   // fallback (layerBmp not loaded yet)
+    x.fillStyle='#ffffff'; x.fillRect(gx-fb, gy-fb*1.2, gw+fb*2, gh+fb*2.2);
+    x.fillStyle='#fd3232'; x.fillRect(gx, gy, lw, gh); x.fillStyle='#328dfd'; x.fillRect(gx+lw+gap, gy, lw, gh); }
+  (function(){ var cv=document.getElementById('pd-3d'), b=document.getElementById('pd-3d-btn');
+    if(b) b.addEventListener('click', function(){ _3dSetOn(!_td.on); });
+    if(cv){ function dn(e){ _td.drag=true; _td.vYaw=_td.vPitch=0; _td.px=e.clientX; _td.py=e.clientY; try{ cv.setPointerCapture(e.pointerId); }catch(_){} }
+      function mv(e){ if(!_td.drag) return; var dy=(e.clientX-_td.px)*0.01, dx=(e.clientY-_td.py)*0.01; _td.rotYa+=dy; _td.rotXa+=dx; _td.rotXa=Math.max(-1.45,Math.min(1.45,_td.rotXa)); _td.vYaw=Math.max(-0.05,Math.min(0.05,dy)); _td.vPitch=Math.max(-0.05,Math.min(0.05,dx)); _td.px=e.clientX; _td.py=e.clientY; }
+      function up(){ _td.drag=false; }
+      cv.addEventListener('pointerdown',dn); cv.addEventListener('pointermove',mv); cv.addEventListener('pointerup',up); cv.addEventListener('pointercancel',up);
+      window.addEventListener('pointerup', up); } })();   // window-level pointerup = fallback so a release OFF-canvas (if setPointerCapture threw) can't leave _td.drag stuck → frozen idle-spin (added once, page-lifetime)
+  _draw3DBtnIcon();
+
+  _drawFzBadgeIcon(); _drawFzStarIcon('fz-gold', GOLD_BODY); _drawFzStarIcon('fz-silver', STAR_PALETTES.silver.body); _drawFzXBoxIcon(); _drawFzPepeIcon(); _drawFzDatablockIcon(); _drawFzModuloIcon(); _drawFzHalfDotIcon(); _drawFzHalfLineIcon();   // draw the 9 static fx-button icons (buttons are in static HTML, present at eval); datablock icon animates via _animFrame while active
   // X-Box device-px canvas keep-sized: ONE persistent self-rearming watcher each (no per-enter arming → no listener accumulation/leak); both bail unless X-Box is the live mode
   var _xbRzT = 0;
   window.addEventListener('resize', function () { if (!(_fz.checkMode && (_fz.fx === 'xbox' || _fz.fx === 'pepe'))) return; clearTimeout(_xbRzT); _xbRzT = setTimeout(_xbResizeCv, 60); });
