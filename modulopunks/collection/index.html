@@ -412,6 +412,11 @@ body.night #fz-export { background:#2c2b28; }
 #fz-datablock:hover, #fz-datablock:focus-visible { transform:scale(1.14); }
 #fz-datablock:active { transform:scale(0.9); }
 #fz-datablock:disabled { opacity:0.3; cursor:default; }
+#fz-scatter { display:inline-flex; align-items:center; padding:0 2px; background:none; border:none; cursor:pointer; opacity:0.55; transition:opacity 0.15s, transform 0.15s ease; }
+#fz-scatter:hover, #fz-scatter:focus-visible, #fz-scatter.fz-check-on { opacity:1; }
+#fz-scatter:hover, #fz-scatter:focus-visible { transform:scale(1.14); }
+#fz-scatter:active { transform:scale(0.9); }
+#fz-scatter:disabled { opacity:0.3; cursor:default; }
 #fz-halfdot, #fz-halfline { display:inline-flex; align-items:center; padding:0 2px; background:none; border:none; cursor:pointer; opacity:0.55; transition:opacity 0.15s, transform 0.15s ease; }   /* halftone (semitono puntos/líneas) buttons — static CMYK icon, no spin (like datablock) */
 #fz-halfdot:hover, #fz-halfdot:focus-visible, #fz-halfdot.fz-check-on, #fz-halfline:hover, #fz-halfline:focus-visible, #fz-halfline.fz-check-on { opacity:1; }
 #fz-halfdot:hover, #fz-halfdot:focus-visible, #fz-halfline:hover, #fz-halfline:focus-visible { transform:scale(1.14); }
@@ -566,7 +571,7 @@ body.night #filter-btn { background:#2c2b28; }
     <div id="fuse-title">Fuse with Modulo Artifacts</div>
     <div id="fz-panel">
       <p class="fz-k">Pick a trait, then pick a modulo to fill it. Several animate at once.</p>
-      <div id="fz-traits"><button id="fz-normal" type="button" aria-pressed="false" aria-label="normal — modulo" title="normal"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-check" type="button" aria-pressed="false" aria-label="check it — toggle badge mode" title="check it"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-gold" type="button" aria-pressed="false" aria-label="gold stars — toggle tier 3" title="gold stars"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-silver" type="button" aria-pressed="false" aria-label="silver stars — toggle tier 4" title="silver stars"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-xbox" type="button" aria-pressed="false" aria-label="windows — toggle tier 5" title="windows"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-pepe" type="button" aria-pressed="false" aria-label="pepe — toggle tier 6" title="pepe"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-datablock" type="button" aria-pressed="false" aria-label="datablock — toggle glitch" title="datablock"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-halfdot" type="button" aria-pressed="false" aria-label="semitono puntos — toggle halftone dots" title="semitono puntos"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-halfline" type="button" aria-pressed="false" aria-label="semitono líneas — toggle halftone lines" title="semitono líneas"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><span class="fz-cdot" aria-hidden="true">·</span></div>
+      <div id="fz-traits"><button id="fz-normal" type="button" aria-pressed="false" aria-label="normal — modulo" title="normal"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-check" type="button" aria-pressed="false" aria-label="check it — toggle badge mode" title="check it"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-gold" type="button" aria-pressed="false" aria-label="gold stars — toggle tier 3" title="gold stars"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-silver" type="button" aria-pressed="false" aria-label="silver stars — toggle tier 4" title="silver stars"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-xbox" type="button" aria-pressed="false" aria-label="windows — toggle tier 5" title="windows"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-pepe" type="button" aria-pressed="false" aria-label="pepe — toggle tier 6" title="pepe"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-datablock" type="button" aria-pressed="false" aria-label="datablock — toggle glitch" title="datablock"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-halfdot" type="button" aria-pressed="false" aria-label="semitono puntos — toggle halftone dots" title="semitono puntos"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-halfline" type="button" aria-pressed="false" aria-label="semitono líneas — toggle halftone lines" title="semitono líneas"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><button id="fz-scatter" type="button" aria-pressed="false" aria-label="scatter — toggle punk-chunk scatter" title="scatter"><span class="fz-check-icon"><canvas class="fz-check-seal" width="28" height="28"></canvas><canvas class="fz-check-tick" width="28" height="28"></canvas></span></button><span class="fz-cdot" aria-hidden="true">·</span></div>
     </div>
     <div id="fz-pick">
       <div id="fz-picker"></div>
@@ -1849,7 +1854,8 @@ function _extractComposition(decodedHtml) {
               pending: new Map(),       // layerId -> token (in-flight fetch guard)
               caCv: null, caCtx: null, comCv: null, comCtx: null,
               offHR: null, offHRctx: null, caHR: null, caHRctx: null, comHR: null, comHRctx: null,   // PD-sized scratch for crisp check-mode compose (lazy)
-              htCv: null, htCtx: null, htScr: null, htScrCtx: null };   // HT-sized buffers for the halftone (semitono) post-fx — htCv = persistence accumulator (trail), htScr = fresh-frame scratch (lazy)
+              htCv: null, htCtx: null, htScr: null, htScrCtx: null,   // HT-sized buffers for the halftone (semitono) post-fx — htCv = persistence accumulator (trail), htScr = fresh-frame scratch (lazy)
+              scatBig: null, scatPunk: null, scatSnapCv: null, scatSnapCtx: null };   // scatter fx: large-chunk rects (per punk) + the base-snapshot buffer (chunk source)
   // Compose at 6px/cell (144×144 = 24 cells × 6) so the artifact's dx glyphs render.
   function _fzAlloc() {
     if (_fz.caCv) return;
@@ -1889,9 +1895,9 @@ function _extractComposition(decodedHtml) {
   // ms, STAGGERED per block → no synchronized loop. DB_MAX=1 (±1 cell → punk stays recognizable). Driven by
   // _fxMs (preview = performance.now / export = frame-index ms) → preview & MP4 match. Runs even with 0 fused
   // modulos (animates the plain punk). The warp must NOT step engines (it only touches the composed buffer).
-  var POST_FX = { datablock: 1, halfdot: 1, halfline: 1 };   // post-process lane (operate on the composed punk; picker reuses the normal crop)
+  var POST_FX = { datablock: 1, halfdot: 1, halfline: 1, scatter: 1 };   // post-process lane (operate on the composed punk; picker reuses the normal crop)
   var HALF_FX = { halfdot: 1, halfline: 1 };                  // halftone (semitono) modes → CMYK separation post-fx at HT/PD, smooth blit
-  var PIXEL_FX = { datablock: 1, xbox: 1, pepe: 1, halfdot: 1, halfline: 1 };   // modes blitted PIXELATED (no fz-fx-smooth, nearest) — halftone now sharp/pixel too (Le); check/gold/silver = smooth
+  var PIXEL_FX = { datablock: 1, xbox: 1, pepe: 1, halfdot: 1, halfline: 1, scatter: 1 };   // modes blitted PIXELATED (no fz-fx-smooth, nearest) — halftone now sharp/pixel too (Le); check/gold/silver = smooth
   var HT = 100;                                               // halftone buffer (24 cells × ~4.2px) — very low res + nearest blit = max pixel-sharp (Le, less detail)
   var _fxMs = 0, _CPX = 6, _CN = 24;
   function _fxHash(c, r) { var x = (c * 374761393 + r * 668265263) >>> 0; x = ((x ^ (x >>> 13)) * 1274126177) >>> 0; return x; }
@@ -1920,6 +1926,89 @@ function _extractComposition(decodedHtml) {
       }
     }
     ctx.putImageData(img, 0, 0);
+  }
+  // ── "scatter" fx: deconstruct the composed fused punk into chunks — 2-3 LARGE trait-region "heads" + many SMALL
+  // 4×4-cell block-crops — and scatter + replicate them across the WHOLE canvas, each ±1-cell datablock-jittered +
+  // drifting, re-collaging every SC_HOLD ms. A generative collage that still reads as the punk. POST_FX lane (composes
+  // comCv@144, nearest blit). Placement seed folds _fz.punkId (NOT just _compSeed, which is per-ARTIFACT → would make
+  // all ~10k punks scatter identically). Frame-index (_fxMs) → deterministic MP4 (export ↔ re-export bitwise-identical).
+  var SC_HOLD = 1400, SC_FRAG = 3, SC_FRAG_MINCELLS = 1, SC_MED = 6, SC_LRG = 9, N_MED = 6, N_LRG = 3, SC_BIG_N = 3, SC_BIG_MIN = 6, SC_BIG_REP = 2, SC_DRIFT = 1.2, SC_MAXINST = 64, SC_A_BIG = 1, SC_A_SMALL = 1;
+  var _scTraitBbox = null;
+  function _scBuildTraitBbox() {                                   // one-time: per-trait sprite bbox (in cells) by alpha-scanning each 24×24 cell of layerBmp → recognizable "heads"/trait chunks
+    if (_scTraitBbox || !layerBmp) return;
+    _scTraitBbox = {};
+    var n = (layerBmp.width / 24) | 0, tmp = _pkOff(24, 24), tx = tmp.getContext('2d'); tx.imageSmoothingEnabled = false;
+    for (var li = 1; li <= n; li++) {
+      tx.clearRect(0, 0, 24, 24); tx.drawImage(layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, 24, 24);
+      var d = tx.getImageData(0, 0, 24, 24).data, x0 = 24, y0 = 24, x1 = -1, y1 = -1;
+      for (var r = 0; r < 24; r++) for (var c = 0; c < 24; c++) { if (d[(r * 24 + c) * 4 + 3] > 16) { if (c < x0) x0 = c; if (c > x1) x1 = c; if (r < y0) y0 = r; if (r > y1) y1 = r; } }
+      if (x1 >= x0) _scTraitBbox[li] = { c0: x0, r0: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
+    }
+  }
+  function _scatExtractLarge() {                                   // 2-3 LARGE chunk rects for the current punk (trait regions); rects only — pixels re-carved each frame. Always returns ≥ SC_BIG_N (synthetic fallback if layerBmp null / too few traits) so the mode never blanks.
+    var out = [];
+    if (layerBmp && _fz.L) {
+      _scBuildTraitBbox();
+      var cand = [];
+      for (var i = 0; i < _fz.L.length; i++) { var bb = _scTraitBbox && _scTraitBbox[_fz.L[i]]; if (bb && bb.w >= SC_BIG_MIN && bb.h >= SC_BIG_MIN) cand.push(bb); }
+      cand.sort(function (a, b) { return (b.w * b.h) - (a.w * a.h); });
+      for (var j = 0; j < cand.length && out.length < SC_BIG_N; j++) out.push(cand[j]);
+    }
+    while (out.length < SC_BIG_N) { var k = out.length; out.push(k === 0 ? { c0: 0, r0: 0, w: 24, h: 12 } : k === 1 ? { c0: 0, r0: 8, w: 24, h: 12 } : { c0: 4, r0: 4, w: 16, h: 16 }); }
+    return out;
+  }
+  function _scatTier(ctx, base, S, count, opaque, empty, nb, B, sv, salt) {   // one chunk SIZE TIER: place `count` SxS-cell crops sourced from OPAQUE punk regions at scattered grid-aligned dests (±1 datablock jitter, re-rolled per epoch). Pieces of the punk — NOT whole traits.
+    if (!opaque.length) return;
+    var dests = empty.length ? empty : opaque;                     // prefer empty/bg areas (keep the punk core visible); fall back to anywhere
+    for (var n = 0; n < count; n++) {
+      var ph = _fxHash(salt + n * 31, sv) % SC_HOLD, ep = Math.floor((_fxMs + ph) / SC_HOLD);
+      var src = opaque[_fxHash((sv ^ ep) + n * 131 + salt, ep * 257) % opaque.length], sbx = (src / nb) | 0, sby = src % nb;
+      var scx = Math.max(0, Math.min(24 - S, sbx * B)), scy = Math.max(0, Math.min(24 - S, sby * B));   // source top-left (cells), anchored on a punk block
+      var dst = dests[_fxHash((sv ^ (ep * 977)) + n * 97 + salt, ep * 53) % dests.length], dbx = (dst / nb) | 0, dby = dst % nb;
+      var jx = _dbDelta(salt + n, ep, 0), jy = _dbDelta(salt + n, ep, 1);
+      var dcx = Math.max(-S + 1, Math.min(24 - 1, dbx * B - jx)), dcy = Math.max(-S + 1, Math.min(24 - 1, dby * B - jy));
+      ctx.drawImage(base, scx * 6, scy * 6, S * 6, S * 6, dcx * 6, dcy * 6, S * 6, S * 6);
+    }
+  }
+  function _pfScatter(ctx, sd) {                                   // GRID FILL over the already-drawn backdrop. base = scatSnapCv (FOREGROUND source); sd = FG alpha (classification). ctx already holds the bg backdrop → do NOT clear it.
+    var base = _fz.scatSnapCv;                                     // FOREGROUND source; the bg-artifact backdrop is already in ctx (drawn by _composeScatterFrame) → the scattered chunks swarm OVER it, bg shows through the datablock holes
+    ctx.imageSmoothingEnabled = false;
+    var B = SC_FRAG, nb = (24 / B) | 0, sv = _fz.scatSeedV >>> 0, bx, by, rr, cc;
+    var opaque = [], empty = [], isOp = [], THR = Math.max(SC_FRAG_MINCELLS, (B * B * 0.35) | 0);   // classify by FOREGROUND coverage (a fused BG no longer makes every block "punk")
+    for (by = 0; by < nb; by++) for (bx = 0; bx < nb; bx++) {
+      var op = 0;
+      for (rr = 0; rr < B; rr++) for (cc = 0; cc < B; cc++) { if (sd[((((by * B + rr) * 6 + 2) * 144) + ((bx * B + cc) * 6 + 2)) * 4 + 3] > 16) op++; }
+      var o = op >= THR; isOp[by * nb + bx] = o; if (o) opaque.push(bx * nb + by); else empty.push(bx * nb + by);
+    }
+    if (!opaque.length) { ctx.drawImage(base, 0, 0); return; }     // no foreground → just the backdrop + the (transparent-bg) punk
+    for (by = 0; by < nb; by++) for (bx = 0; bx < nb; bx++) {      // grid
+      var isFg = isOp[by * nb + bx];
+      var dx = _dbDelta(bx, by, 0), dy = _dbDelta(bx, by, 1), sbx, sby;   // ±1-cell datablock tear (position + _fxMs keyed → datablock signature)
+      if (isFg) { sbx = bx; sby = by; }                            // foreground block → datablock (its OWN content, displaced) → the punk stays recognizable in place
+      else {                                                       // bg block → fill with a scattered punk chunk (swarms over the bg backdrop / canvas), re-rolled per SC_HOLD epoch
+        var ph = _fxHash(bx * 7 + by * 13, sv) % SC_HOLD, ep = Math.floor((_fxMs + ph) / SC_HOLD);
+        var pk = opaque[_fxHash((sv ^ ep) + bx * 131 + by * 977, ep * 257) % opaque.length];
+        sbx = (pk / nb) | 0; sby = pk % nb;
+      }
+      var sx = Math.max(0, Math.min(24 - B, sbx * B - dx)), sy = Math.max(0, Math.min(24 - B, sby * B - dy));
+      ctx.drawImage(base, sx * 6, sy * 6, B * 6, B * 6, bx * B * 6, by * B * 6, B * 6, B * 6);
+    }
+    _scatTier(ctx, base, SC_MED, N_MED, opaque, empty, nb, B, sv, 300);   // TYPE 2 — medium chunks
+    _scatTier(ctx, base, SC_LRG, N_LRG, opaque, empty, nb, B, sv, 700);   // TYPE 3 — large chunks (pieces of the punk, NOT the whole head)
+  }
+  function _composeScatterFrame() {
+    _composeBaseFrame(true);                                       // comCv = FOREGROUND only (punk traits, transparent where the bg shows) → the scatter source
+    if (_fz.scatPunk !== _fz.punkId) { _fz.scatBig = _scatExtractLarge(); _fz.scatPunk = _fz.punkId; }   // re-carve large-chunk rects on punk change (keyed by punkId)
+    var sv = (_fz.punkId | 0) * 2654435761;                        // per-fusion placement seed from MODAL-scope data: punk id folded with the fused artifact ids. Per-punk variety + stable during export.
+    _fz.assignments.forEach(function (a) { sv = (sv ^ (((a && a.artifactId) | 0) * 40503)) >>> 0; });
+    _fz.scatSeedV = sv >>> 0;
+    var fimg = _fz.comCtx.getImageData(0, 0, 144, 144);            // snapshot the FG → scatter source
+    if (!_fz.scatSnapCv) { _fz.scatSnapCv = _pkOff(144, 144); _fz.scatSnapCtx = _fz.scatSnapCv.getContext('2d'); _fz.scatSnapCtx.imageSmoothingEnabled = false; }
+    _fz.scatSnapCtx.putImageData(fimg, 0, 0);
+    var bgA = _fz.assignments.get(BG_ID); _fz.scatHasBg = !!bgA;
+    _fz.comCtx.clearRect(0, 0, 144, 144);
+    if (bgA) { bgA.engine.paintTo(bgA.off, bgA.offctx); _fz.comCtx.drawImage(bgA.off, 0, 0); }   // bg-artifact = clean full-frame BACKDROP behind the scattered punk (NOT scattered/datablocked → fixes the "acts like datablock when BG fused" bug)
+    _pfScatter(_fz.comCtx, fimg.data);
   }
   // ── "semitono" (halftone) post-fx: CMYK colour separation rendered as primary-ink screens (dots or lines).
   // Each pixel's colour → C/M/Y/K coverage; a STATIC screen per ink (clustered dots OR angled lines) decides
@@ -1995,11 +2084,17 @@ function _extractComposition(decodedHtml) {
   // layer (masked CA if fused, else static). Single source of truth for preview + MP4 export.
   function _composeFusionFrame() {
     _fz.assignments.forEach(function (a) { a.engine.step(a.engine.dtOps); a.engine.applyRects(); a.engine.tickRects && a.engine.tickRects(); });
+    if (_fz.checkMode && _fz.fx === 'scatter') { _composeScatterFrame(); return; }   // scatter: explode the composed punk into chunks scattered/replicated across the whole canvas (own lane — after engine-step, before the HR fork)
     if (_fz.checkMode && !POST_FX[_fz.fx]) { if (_fz.fx === 'xbox') { _composeXBoxFrame(); return; } if (_fz.fx === 'pepe') { _composePepeFrame(); return; } if (_fz.fx === 'gold' || _fz.fx === 'silver') _composeStarsHR(_fz.fx); else _composeCheckHR(); return; }   // xbox/pepe render DIRECTLY into their own device-px canvas; check/gold/silver compose at PD (720) via _fzAllocHR
+    _composeBaseFrame();
+    if (_fz.checkMode && POST_FX[_fz.fx]) _applyPostFx(_fz.fx);   // per-cell post-fx (datablock/halftone) on the composed 144 punk; in-compose → preview + export both apply it
+  }
+  // The normal z-order compose into comCv@144 (background base, then each layer's masked CA if fused / solid-canon or static if not). Extracted so scatter — and the datablock/halftone post-fx — reuse the freshly composed fused punk as their source frame.
+  function _composeBaseFrame(skipBg) {                           // skipBg → compose the FOREGROUND only (traits, transparent where the bg would show) — scatter uses this so the bg-artifact can be a separate backdrop
     _fzAlloc();
     _fz.comCtx.clearRect(0, 0, 144, 144);
     var bgA = _fz.assignments.get(BG_ID);
-    if (bgA) { bgA.engine.paintTo(bgA.off, bgA.offctx); _fz.comCtx.drawImage(bgA.off, 0, 0); }  // full-frame base = background
+    if (bgA && !skipBg) { bgA.engine.paintTo(bgA.off, bgA.offctx); _fz.comCtx.drawImage(bgA.off, 0, 0); }  // full-frame base = background
     for (var i = 0; i < _fz.L.length; i++) {
       var li = _fz.L[i], a = _fz.assignments.get(li);
       if (a && layerBmp) {
@@ -2019,7 +2114,6 @@ function _extractComposition(decodedHtml) {
         else _fz.comCtx.drawImage(layerBmp, (li - 1) * 24, 0, 24, 24, 0, 0, 144, 144);  // static layer upscaled 24→144
       }
     }
-    if (_fz.checkMode && POST_FX[_fz.fx]) _applyPostFx(_fz.fx);   // per-cell post-fx (datablock) on the composed 144 punk; in-compose → preview + export both apply it
   }
   // Check mode: same z-order/masking as the normal path but composed at PD (720) so the vector
   // badge glyphs render crisp & 1-cell-=-1-check (paintToBadge {full:true} = the same centered
@@ -2241,7 +2335,7 @@ function _extractComposition(decodedHtml) {
     }
     if (_animWanted()) _animRaf = requestAnimationFrame(_animFrame);
   }
-  function _fzTeardown() { _fz.assignments.clear(); _fz.pending.clear(); _fz.selected = null; _fz.punkId = null; _resetCheckModeUI(); _fz.caCv = null; _fz.comCv = null; _fz.caCtx = null; _fz.comCtx = null; _fz.offHR = null; _fz.caHR = null; _fz.comHR = null; _fz.offHRctx = null; _fz.caHRctx = null; _fz.comHRctx = null; _fz.htCv = null; _fz.htCtx = null; _fz.htScr = null; _fz.htScrCtx = null; _fz.xbOff = null; _fz.xbOffctx = null; _fz.xbCaOff = null; _fz.xbCaCtx = null; _fz.solidCanon = null; _fz.fxSnap = null; if (_dbIcoTimer) { clearInterval(_dbIcoTimer); _dbIcoTimer = 0; } _dbHover = false;
+  function _fzTeardown() { _fz.assignments.clear(); _fz.pending.clear(); _fz.selected = null; _fz.punkId = null; _resetCheckModeUI(); _fz.caCv = null; _fz.comCv = null; _fz.caCtx = null; _fz.comCtx = null; _fz.offHR = null; _fz.caHR = null; _fz.comHR = null; _fz.offHRctx = null; _fz.caHRctx = null; _fz.comHRctx = null; _fz.htCv = null; _fz.htCtx = null; _fz.htScr = null; _fz.htScrCtx = null; _fz.xbOff = null; _fz.xbOffctx = null; _fz.xbCaOff = null; _fz.xbCaCtx = null; _fz.solidCanon = null; _fz.fxSnap = null; _fz.scatBig = null; _fz.scatPunk = null; _fz.scatSnapCv = null; _fz.scatSnapCtx = null; if (_dbIcoTimer) { clearInterval(_dbIcoTimer); _dbIcoTimer = 0; } _dbHover = false;
     if (typeof _3d !== 'undefined' && _3d) { try { _3d.teardown(); } catch (e) {} }   // release 3D GPU buffers (the context is kept alive for reuse; destroyed only on page unload)
     if (typeof _td !== 'undefined' && _td) { _td.on = false; _td.punk = null; _td.maskCv = null; _td.maskCtx = null; } _fz.threeD = false;   // keep _td.inited TRUE → reopen reuses the live context (skips re-init + avoids re-adding the contextlost/restored listeners = leak fix); _td.punk=null still forces setPunk rebuild
     var _c3 = document.getElementById('pd-3d'); if (_c3) _c3.style.display = 'none';
@@ -2263,6 +2357,7 @@ function _extractComposition(decodedHtml) {
     var bd = document.getElementById('fz-datablock'); if (bd) { var ond = m === 'datablock'; bd.setAttribute('aria-pressed', String(ond)); bd.classList.toggle('fz-check-on', ond); }
     var bhd = document.getElementById('fz-halfdot'); if (bhd) { var onhd = m === 'halfdot'; bhd.setAttribute('aria-pressed', String(onhd)); bhd.classList.toggle('fz-check-on', onhd); }
     var bhl = document.getElementById('fz-halfline'); if (bhl) { var onhl = m === 'halfline'; bhl.setAttribute('aria-pressed', String(onhl)); bhl.classList.toggle('fz-check-on', onhl); }
+    var bsc = document.getElementById('fz-scatter'); if (bsc) { var onsc = m === 'scatter'; bsc.setAttribute('aria-pressed', String(onsc)); bsc.classList.toggle('fz-check-on', onsc); }
     _drawFzDatablockIcon();                                         // redraw the datablock icon for the current state (clean favicon cube when not live; the rAF loop animates it while live)
   }
   function _resetCheckModeUI() {                                    // force fx OFF + both buttons OFF + backdrops/scaling OFF (does NOT redraw the live picker)
@@ -2349,6 +2444,16 @@ function _extractComposition(decodedHtml) {
         else { dx = STILL[k][0]; dy = STILL[k][1]; }                // distorted still frame (rest / reduced-motion)
         x.fillStyle = quads[k][2]; x.fillRect(quads[k][0] + dx, quads[k][1] + dy, q, q);
       }
+    } catch (e) {}
+  }
+  function _drawFzScatterIcon() {                                   // static icon = scattered mini-fragments (chunks strewn around) → reads as "punk pieces everywhere"
+    var sc = document.querySelector('#fz-scatter .fz-check-seal'), tc = document.querySelector('#fz-scatter .fz-check-tick');
+    if (tc) try { tc.getContext('2d').clearRect(0, 0, 28, 28); } catch (e) {}
+    if (!sc) return;
+    try {
+      var x = sc.getContext('2d'); x.clearRect(0, 0, 28, 28); x.imageSmoothingEnabled = false;
+      var frags = [[3, 4, 7, '#222222'], [16, 3, 5, '#6363ff'], [10, 11, 8, '#222222'], [3, 16, 5, '#ff003a'], [19, 17, 6, '#222222'], [13, 20, 4, '#19e6c8']];   // {x,y,size,color}: a few mixed-size chunks scattered (glitch palette accents, ≠ datablock's mark)
+      for (var k = 0; k < frags.length; k++) { x.fillStyle = frags[k][3]; x.fillRect(frags[k][0], frags[k][1], frags[k][2], frags[k][2]); }
     } catch (e) {}
   }
   function _drawFzHalfDotIcon() {                                   // static icon = a 2×2 CMYK dot rosette
@@ -2725,7 +2830,7 @@ function _extractComposition(decodedHtml) {
     _exportInFlight = true; _animStop();
     var pkWasActive = _pk.active; _pk.active = false;                 // pause the picker (IO/dwell/mount/render all bail on !_pk.active) so its heavy 20-step engine builds don't compete with the export compose → no encoder stall (esp. scrolled to a freshly-mounting region — the "fails if scroll is at the bottom" bug)
     var btn = document.getElementById('fz-export'), origText = btn ? btn.textContent : '↓ MP4';
-    var btnCheck = document.getElementById('fz-check'), btnGold = document.getElementById('fz-gold'), btnSilver = document.getElementById('fz-silver'), btnXbox = document.getElementById('fz-xbox'), btnPepe = document.getElementById('fz-pepe'), btnDatablock = document.getElementById('fz-datablock'), btnNormal = document.getElementById('fz-normal'), btnHalfdot = document.getElementById('fz-halfdot'), btnHalfline = document.getElementById('fz-halfline');
+    var btnCheck = document.getElementById('fz-check'), btnGold = document.getElementById('fz-gold'), btnSilver = document.getElementById('fz-silver'), btnXbox = document.getElementById('fz-xbox'), btnPepe = document.getElementById('fz-pepe'), btnDatablock = document.getElementById('fz-datablock'), btnNormal = document.getElementById('fz-normal'), btnHalfdot = document.getElementById('fz-halfdot'), btnHalfline = document.getElementById('fz-halfline'), btnScatter = document.getElementById('fz-scatter');
     if (btn) btn.disabled = true;
     if (btnCheck) btnCheck.disabled = true;   // freeze the mode during export so the MP4 can't switch mid-stream
     if (btnGold) btnGold.disabled = true;     // all fx buttons frozen → renderMode can't change under the frozen isCheck
@@ -2735,6 +2840,7 @@ function _extractComposition(decodedHtml) {
     if (btnDatablock) btnDatablock.disabled = true;   // freeze datablock too → mode can't change mid-export
     if (btnHalfdot) btnHalfdot.disabled = true;       // freeze semitono modes too
     if (btnHalfline) btnHalfline.disabled = true;
+    if (btnScatter) btnScatter.disabled = true;       // freeze scatter too → mode can't change mid-export
     if (btnNormal) btnNormal.disabled = true; // freeze the normal selector too → mode can't change mid-export
     var btn3d = document.getElementById('pd-3d-btn'); if (btn3d) btn3d.disabled = true;   // freeze the 3D toggle during export
     var encoder = null, muxer = null, fileStream = null, _encoderError = null;
@@ -2844,6 +2950,7 @@ function _extractComposition(decodedHtml) {
       if (btnDatablock) btnDatablock.disabled = false;
       if (btnHalfdot) btnHalfdot.disabled = false;
       if (btnHalfline) btnHalfline.disabled = false;
+      if (btnScatter) btnScatter.disabled = false;
       if (btnNormal) btnNormal.disabled = false;
       if (btn3d) btn3d.disabled = false;
       if (encoder) { try { encoder.close(); } catch (_) {} }
@@ -2899,6 +3006,7 @@ function _extractComposition(decodedHtml) {
   document.getElementById('fz-xbox').addEventListener('click', function () { _setRenderMode(_fzCurMode() === 'xbox' ? 'normal' : 'xbox'); });   // Tier 5 X-Box toggle (mutually exclusive)
   document.getElementById('fz-pepe').addEventListener('click', function () { _setRenderMode(_fzCurMode() === 'pepe' ? 'normal' : 'pepe'); });   // Tier 6 Pepe toggle (mutually exclusive)
   document.getElementById('fz-datablock').addEventListener('click', function () { _setRenderMode(_fzCurMode() === 'datablock' ? 'normal' : 'datablock'); });   // datablock toggle (per-cell datamosh; mutually exclusive)
+  { var _bScat = document.getElementById('fz-scatter'); if (_bScat) _bScat.addEventListener('click', function () { _setRenderMode(_fzCurMode() === 'scatter' ? 'normal' : 'scatter'); }); }   // scatter toggle (punk-chunk collage; mutually exclusive)
   document.getElementById('fz-halfdot').addEventListener('click', function () { _setRenderMode(_fzCurMode() === 'halfdot' ? 'normal' : 'halfdot'); });   // semitono puntos toggle
   document.getElementById('fz-halfline').addEventListener('click', function () { _setRenderMode(_fzCurMode() === 'halfline' ? 'normal' : 'halfline'); });   // semitono líneas toggle
   (function () { var b = document.getElementById('fz-datablock'); if (!b) return;   // datablock icon jitters ON HOVER (replaces the spin): a small interval redraws while hovered/focused, cleared on leave/blur; active-jitter is driven by _animFrame
@@ -2924,6 +3032,8 @@ function _extractComposition(decodedHtml) {
   var ncCount=0, canonCount=0, ncOff=null, ncGi=null, ncColorArr=null;
   var ncOffBuf=null, ncColorBuf=null, canonOffBuf=null, canonColBuf=null;
   var bkArr=null, bkBufs=[];
+  var SC3_FRAG=3, SC3_HOLD=1400, SC3_NB=8, SC3_MED=6, SC3_LRG=9, N3_MED=6, N3_LRG=3, SC3_ZTIER=1.2;   // scatter-3D: small grid (FRAG) + epoch + blocks/axis + MEDIUM/LARGE tiers (cells × count) + the tier z-offset (drawn IN FRONT → overlaps the punk like the 2D layers)
+  var cellX=null, cellY=null, scatEmpty=null, scatSrcBlk=null, scatOff=null, scatCol=null, scatOffBuf=null, scatColBuf=null;
   var ncBx=null, ncBy=null, canonGi=null, cOffStatic=null, canonBkArr=null, canonBkBuf=null;
   var CANON_SET={};
   var _pepePerm=[0,1,2,3,4,5,6,7], _compSeed=0, _prim=[1,1,1];
@@ -2995,7 +3105,7 @@ function _extractComposition(decodedHtml) {
       '  }\n' +
       '  frag = vec4(c, 1.0);\n' +
       '}';
-  var MODES = ['normal', 'check', 'gold', 'silver', 'windows', 'pepe', 'datablock', 'halfdot', 'halfline'];
+  var MODES = ['normal', 'check', 'gold', 'silver', 'windows', 'pepe', 'datablock', 'halfdot', 'halfline', 'scatter'];
   var DB_BLOCK = 4, DB_MAX = 1, DB_HOLD = 700, DB_NB = Math.ceil(N / DB_BLOCK);
   var _dbX=new Int8Array(DB_NB*DB_NB), _dbY=new Int8Array(DB_NB*DB_NB);
   function primRGB(){ return _prim; }
@@ -3208,6 +3318,26 @@ function _extractComposition(decodedHtml) {
   function fillWindowsTile(rgb, prim, fused) { for (var i = 0; i < ncCount; i++) { var p = ncGi[i]*4; if ((!fused || fused[ncGi[i]]) && rgb[p] < 40 && rgb[p+1] < 40 && rgb[p+2] < 40) { ncColorArr[i*3]=prim[0]; ncColorArr[i*3+1]=prim[1]; ncColorArr[i*3+2]=prim[2]; } else { ncColorArr[i*3]=rgb[p]/255; ncColorArr[i*3+1]=rgb[p+1]/255; ncColorArr[i*3+2]=rgb[p+2]/255; } } }   // fused (optional) = B-guard ONLY on fused cells → non-fused stay plain CA (windows fused-scoped); no mask (landing) → B-guard the whole punk
   function bucket(slot, pred) { var n = 0, i; for (i = 0; i < ncCount; i++) { if (!pred(i)) continue; bkArr[n*3]=ncOff[i*3]; bkArr[n*3+1]=ncOff[i*3+1]; bkArr[n*3+2]=ncOff[i*3+2]; n++; } gl.bindBuffer(gl.ARRAY_BUFFER, bkBufs[slot]); gl.bufferData(gl.ARRAY_BUFFER, bkArr.subarray(0, n*3), gl.DYNAMIC_DRAW); return n; }
   function bucketColored(slot, pred, srcRgb) { var n = 0, i; for (i = 0; i < ncCount; i++) { if (!pred(i)) continue; bkArr[n*3]=ncOff[i*3]; bkArr[n*3+1]=ncOff[i*3+1]; bkArr[n*3+2]=ncOff[i*3+2]; var p = ncGi[i]*4; ncColorArr[n*3]=srcRgb[p]/255; ncColorArr[n*3+1]=srcRgb[p+1]/255; ncColorArr[n*3+2]=srcRgb[p+2]/255; n++; } gl.bindBuffer(gl.ARRAY_BUFFER, bkBufs[slot]); gl.bufferData(gl.ARRAY_BUFFER, bkArr.subarray(0, n*3), gl.DYNAMIC_DRAW); gl.bindBuffer(gl.ARRAY_BUFFER, ncColorBuf); gl.bufferData(gl.ARRAY_BUFFER, ncColorArr.subarray(0, n*3), gl.DYNAMIC_DRAW); return n; }   // like bucket() but also fills per-instance CA colour → for the non-fused normal cubes in fused-scoped modes
+  function _scat3Tier(rgb, S, count, salt, sMs, n0) {   // scatter-3D tier: place `count` SxS-cube blocks copied from SCATTERED punk regions (cell-by-cell, skip transparent → shaped) at scattered empty anchors. Mirrors the 2D _scatTier.
+    if (!scatSrcBlk || !scatSrcBlk.length) return n0;
+    var n = n0, t, lr, lc;
+    for (t = 0; t < count; t++) {
+      var ep = Math.floor((sMs + (_dbHash(salt + t * 31, _compSeed) % SC3_HOLD)) / SC3_HOLD);
+      var sblk = scatSrcBlk[_dbHash((_compSeed ^ ep) + t * 131 + salt, ep * 257) % scatSrcBlk.length];
+      var sbx = (sblk % SC3_NB) * SC3_FRAG, sby = ((sblk / SC3_NB) | 0) * SC3_FRAG; if (sbx > N - S) sbx = N - S; if (sby > N - S) sby = N - S;   // source region top-left (cells)
+      var dh = _dbHash((_compSeed ^ (ep * 977)) + t * 97 + salt, ep * 53), dcx = dh % N, dcy = (dh >>> 8) % N;   // dest top-left — ANYWHERE incl. OVER the punk (visible area → complete chunks + the "faces overlapping the punk" 2D look)
+      if (dcx > N - S) dcx = N - S; if (dcy > N - S) dcy = N - S;
+      var jx = _dbDelta(salt + t, 0, 0, sMs), jy = _dbDelta(salt + t, 0, 1, sMs);
+      for (lr = 0; lr < S; lr++) for (lc = 0; lc < S; lc++) {
+        if ((n + 1) * 3 > scatOff.length) return n;
+        var sgi = (sby + lr) * N + (sbx + lc), sp = sgi * 4; if (rgb[sp + 3] < 16) continue;   // transparent source cell → no cube (shaped)
+        var dgi = (dcy + lr) * N + (dcx + lc);
+        scatOff[n*3] = cellX[dgi] + jx; scatOff[n*3+1] = cellY[dgi] + jy; scatOff[n*3+2] = SC3_ZTIER;   // z IN FRONT of the punk plane (z=0) → the chunk overlaps/covers the punk (layered, like the 2D drawImage), no z-fight
+        scatCol[n*3] = rgb[sp]/255; scatCol[n*3+1] = rgb[sp+1]/255; scatCol[n*3+2] = rgb[sp+2]/255; n++;
+      }
+    }
+    return n;
+  }
   function renderMode(mi, rgb, idx, transX, ts, fused) {
       gl.uniform1f(uTransXLoc, transX);
       gl.uniform1f(uMetalLoc, 0);                                                   // default non-metallic (canon + all non-gold/silver draws); gold/silver flips it on for its tiles+star
@@ -3280,6 +3410,32 @@ function _extractComposition(decodedHtml) {
         gl.bindBuffer(gl.ARRAY_BUFFER, htSubBufGl); gl.bufferData(gl.ARRAY_BUFFER, htSubBuf.subarray(0, n3 * 3), gl.DYNAMIC_DRAW);
         gl.bindBuffer(gl.ARRAY_BUFFER, htColBufGl); gl.bufferData(gl.ARRAY_BUFFER, htColBuf.subarray(0, n3 * 3), gl.DYNAMIC_DRAW);
         drawPerInst(MESH.subCube, htSubBufGl, htColBufGl, n3);
+      } else if (mode === 'scatter') {
+        // 3D scatter: the punk voxels TEAR in place (±1 datablock per macroblock → it reacts/moves); empty grid cells fill with a SCATTERED source 3×3 REGION copied cell-by-cell (transparent source cells leave NO cube → chunks keep the punk's shape, not solid blocks), re-rolled per epoch. Mirrors the 2D scatter.
+        var sMs = reduced ? 0 : (ts || 0), di, ei;
+        for (di = 0; di < ncCount; di++) {                                       // punk cubes: ±1 datablock tear per SC3 macroblock → the punk moves/reacts (was static)
+          var pg = ncGi[di], pbx = ((pg % N) / SC3_FRAG) | 0, pby = (((pg / N) | 0) / SC3_FRAG) | 0;
+          bkArr[di*3] = ncOff[di*3] + _dbDelta(pbx, pby, 0, sMs); bkArr[di*3+1] = ncOff[di*3+1] + _dbDelta(pbx, pby, 1, sMs); bkArr[di*3+2] = ncOff[di*3+2];
+        }
+        fillNormal(rgb); uploadNC();
+        gl.bindBuffer(gl.ARRAY_BUFFER, bkBufs[0]); gl.bufferData(gl.ARRAY_BUFFER, bkArr.subarray(0, ncCount*3), gl.DYNAMIC_DRAW);
+        drawPerInst(MESH.cube, bkBufs[0], ncColorBuf, ncCount);
+        var nF = 0;                                                              // fill empty cells: copy a scattered source 3×3 region CELL-BY-CELL → shaped chunks (not flat blocks)
+        if (scatSrcBlk && scatSrcBlk.length && scatEmpty) for (ei = 0; ei < scatEmpty.length; ei++) {
+          var egi = scatEmpty[ei], ec = egi % N, er = (egi / N) | 0, ebx = (ec / SC3_FRAG) | 0, eby = (er / SC3_FRAG) | 0, lr = er % SC3_FRAG, lc = ec % SC3_FRAG;
+          var ep = Math.floor((sMs + (_dbHash(ebx * 7 + eby * 13, _compSeed) % SC3_HOLD)) / SC3_HOLD);   // per-macroblock epoch
+          var sblk = scatSrcBlk[_dbHash((_compSeed ^ ep) + ebx * 131 + eby * 977, ep * 257) % scatSrcBlk.length], sbx2 = sblk % SC3_NB, sby2 = (sblk / SC3_NB) | 0;
+          var sgi = (sby2 * SC3_FRAG + lr) * N + (sbx2 * SC3_FRAG + lc), sp = sgi * 4;   // matching cell of the source region
+          if (rgb[sp+3] < 16) continue;                                          // transparent source cell → no cube → chunk keeps the punk's shape (the "formless big cube" fix)
+          var jx = _dbDelta(ebx, eby, 0, sMs), jy = _dbDelta(ebx, eby, 1, sMs);
+          scatOff[nF*3] = cellX[egi] + jx; scatOff[nF*3+1] = cellY[egi] + jy; scatOff[nF*3+2] = 0;
+          scatCol[nF*3] = rgb[sp]/255; scatCol[nF*3+1] = rgb[sp+1]/255; scatCol[nF*3+2] = rgb[sp+2]/255; nF++;
+        }
+        nF = _scat3Tier(rgb, SC3_MED, N3_MED, 300, sMs, nF);   // TYPE 2 — medium chunks
+        nF = _scat3Tier(rgb, SC3_LRG, N3_LRG, 700, sMs, nF);   // TYPE 3 — large chunks
+        gl.bindBuffer(gl.ARRAY_BUFFER, scatOffBuf); gl.bufferData(gl.ARRAY_BUFFER, scatOff.subarray(0, nF*3), gl.DYNAMIC_DRAW);
+        gl.bindBuffer(gl.ARRAY_BUFFER, scatColBuf); gl.bufferData(gl.ARRAY_BUFFER, scatCol.subarray(0, nF*3), gl.DYNAMIC_DRAW);
+        drawPerInst(MESH.cube, scatOffBuf, scatColBuf, nF);
       }
     }
   function initGL() {
@@ -3320,6 +3476,18 @@ function _extractComposition(decodedHtml) {
       cOffStatic = cOff; canonBkArr = new Float32Array(canonCount * 3); canonBkBuf = mkBuf(canonBkArr, gl.DYNAMIC_DRAW);
       bkArr = new Float32Array(ncCount * 3); bkBufs = [];
       for (i = 0; i < 9; i++) { var bb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, bb); gl.bufferData(gl.ARRAY_BUFFER, ncCount * 3 * 4, gl.DYNAMIC_DRAW); bkBufs.push(bb); }   // 0-7 = glyph/pool/tile buckets; 8 = non-fused normal cubes (pepe fused-scope)
+      // scatter-3D: per-punk cell→world map + empty-cell fill targets + punk-cell colour sources (initGL runs per setPunk)
+      cellX = new Float32Array(N * N); cellY = new Float32Array(N * N);
+      var _sbx = ncCount ? (ncOff[0] - (ncGi[0] % N)) : 0, _sby = ncCount ? (ncOff[1] + ((ncGi[0] / N) | 0)) : 0;   // linear map from a reference cube: worldX = c + _sbx, worldY = -r + _sby
+      for (i = 0; i < N * N; i++) { cellX[i] = (i % N) + _sbx; cellY[i] = -((i / N) | 0) + _sby; }
+      var _occ = new Uint8Array(N * N); for (i = 0; i < ncCount; i++) _occ[ncGi[i]] = 1; for (i = 0; i < canonCount; i++) _occ[canonGi[i]] = 1;
+      scatEmpty = []; for (i = 0; i < N * N; i++) if (!_occ[i]) scatEmpty.push(i);   // fill targets = grid cells with no voxel
+      var _blkHas = new Uint8Array(SC3_NB * SC3_NB);                                  // source MACROBLOCKS that contain punk cells → fill copies a whole 3×3 region (shaped chunk), not one flat colour
+      for (i = 0; i < ncCount; i++) { var _bg = ncGi[i]; _blkHas[((((_bg / N) | 0) / SC3_FRAG) | 0) * SC3_NB + (((_bg % N) / SC3_FRAG) | 0)] = 1; }
+      scatSrcBlk = []; for (i = 0; i < SC3_NB * SC3_NB; i++) if (_blkHas[i]) scatSrcBlk.push(i);
+      var _scatMax = scatEmpty.length + N3_MED * SC3_MED * SC3_MED + N3_LRG * SC3_LRG * SC3_LRG;   // small fill + the medium/large tier cubes
+      scatOff = new Float32Array(_scatMax * 3); scatCol = new Float32Array(_scatMax * 3);
+      scatOffBuf = gl.createBuffer(); scatColBuf = gl.createBuffer();
       htSubBuf = new Float32Array(ncCount * HT_M * HT_M * 2 * 3); htColBuf = new Float32Array(ncCount * HT_M * HT_M * 2 * 3);   // semitono-3D: worst-case = every sub-cube on, double-sided
       htSubBufGl = gl.createBuffer(); htColBufGl = gl.createBuffer();
   
@@ -3346,7 +3514,7 @@ function _extractComposition(decodedHtml) {
   function _computePrim(rgb){ var br=-1, pr=[1,1,1]; for(var gi=0;gi<N*N;gi++){ var p=gi*4, r=rgb[p],g=rgb[p+1],b=rgb[p+2], mx=Math.max(r,g,b); if(mx>=40){ var lum=r+g+b; if(lum>br){ br=lum; pr=[r/255,g/255,b/255]; } } } _prim=pr; }
   function _seedPerm(seed){ var rng=mulberry32((seed^0x9e3779b9)>>>0), a=[0,1,2,3,4,5,6,7], i,j,t; for(i=7;i>0;i--){ j=Math.floor(rng()*(i+1)); t=a[i]; a[i]=a[j]; a[j]=t; } _pepePerm=a; _compSeed=seed>>>0; }
   function _delGL(){ if(!gl) return; try{ if(prog) gl.deleteProgram(prog); if(vao) gl.deleteVertexArray(vao);
-    [ncOffBuf,ncColorBuf,canonOffBuf,canonColBuf,canonBkBuf,htSubBufGl,htColBufGl].forEach(function(b){ if(b) gl.deleteBuffer(b); });
+    [ncOffBuf,ncColorBuf,canonOffBuf,canonColBuf,canonBkBuf,htSubBufGl,htColBufGl,scatOffBuf,scatColBuf].forEach(function(b){ if(b) gl.deleteBuffer(b); });
     bkBufs.forEach(function(b){ gl.deleteBuffer(b); }); bkBufs=[];
     Object.keys(MESH).forEach(function(k){ var m=MESH[k]; if(m&&m.buf) gl.deleteBuffer(m.buf); else if(Array.isArray(m)) m.forEach(function(mm){ if(mm&&mm.buf) gl.deleteBuffer(mm.buf); }); }); MESH={};
     }catch(e){} prog=null; vao=null; }
@@ -3459,7 +3627,7 @@ function _extractComposition(decodedHtml) {
       window.addEventListener('pointerup', up); } })();   // window-level pointerup = fallback so a release OFF-canvas (if setPointerCapture threw) can't leave _td.drag stuck → frozen idle-spin (added once, page-lifetime)
   _draw3DBtnIcon();
 
-  _drawFzBadgeIcon(); _drawFzStarIcon('fz-gold', GOLD_BODY); _drawFzStarIcon('fz-silver', STAR_PALETTES.silver.body); _drawFzXBoxIcon(); _drawFzPepeIcon(); _drawFzDatablockIcon(); _drawFzModuloIcon(); _drawFzHalfDotIcon(); _drawFzHalfLineIcon();   // draw the 9 static fx-button icons (buttons are in static HTML, present at eval); datablock icon animates via _animFrame while active
+  _drawFzBadgeIcon(); _drawFzStarIcon('fz-gold', GOLD_BODY); _drawFzStarIcon('fz-silver', STAR_PALETTES.silver.body); _drawFzXBoxIcon(); _drawFzPepeIcon(); _drawFzDatablockIcon(); _drawFzModuloIcon(); _drawFzHalfDotIcon(); _drawFzHalfLineIcon(); _drawFzScatterIcon();   // draw the 10 static fx-button icons (buttons are in static HTML, present at eval); datablock icon animates via _animFrame while active
   // X-Box device-px canvas keep-sized: ONE persistent self-rearming watcher each (no per-enter arming → no listener accumulation/leak); both bail unless X-Box is the live mode
   var _xbRzT = 0;
   window.addEventListener('resize', function () { if (!(_fz.checkMode && (_fz.fx === 'xbox' || _fz.fx === 'pepe'))) return; clearTimeout(_xbRzT); _xbRzT = setTimeout(_xbResizeCv, 60); });
