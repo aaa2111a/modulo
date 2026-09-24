@@ -1,0 +1,223 @@
+/* Project AC — mobile-first (Le 2026-09-24). Tokens from mockup v2: white, SF Mono micro-labels, glass panels,
+   CMYK accents. Desktop = the same column, centred (max 460 px). Inputs ≥16 px (no iOS auto-zoom). */
+:root {
+  --bg: #f4f5f6;                                              /* cool neutral (Le: no warm/beige cast) — sits with the aluminium #f1f4f4 */ --ink: #111; --muted: #8b8b87; --line: rgba(17, 17, 17, .09); --glass: rgba(255, 255, 255, .64); --hi: rgba(255, 255, 255, .95);
+  --c: #00b5e2; --m: #e4007c; --y: #ffd100; --k: #111; --err: #c2185b;
+  --mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  --sans: -apple-system, "SF Pro Text", system-ui, "Segoe UI", sans-serif;
+  --safe-b: env(safe-area-inset-bottom, 0px); --safe-t: env(safe-area-inset-top, 0px);
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--ink); font: 14px/1.5 var(--sans); -webkit-font-smoothing: antialiased; overscroll-behavior: none;
+  background-image: radial-gradient(90vw 60vw at 100% -5%, rgba(0, 181, 226, .12), transparent 60%), radial-gradient(80vw 60vw at -10% 40%, rgba(228, 0, 124, .08), transparent 60%);   /* the yellow glow made the page read café/beige (Le) */
+  background-attachment: fixed;
+}
+[hidden] { display: none !important; }
+button { font: inherit; color: inherit; cursor: pointer; }
+.lbl { font: 500 10px/1.2 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.muted { color: var(--muted); }
+.center { text-align: center; }
+.lbl.center { padding-left: .14em; }                          /* letter-spacing trails the last glyph — re-centre the visible text */
+.brand { font: 600 12px/1 var(--mono); letter-spacing: .32em; }
+.glass { background: var(--glass); border: 1px solid var(--line); backdrop-filter: blur(26px) saturate(170%); -webkit-backdrop-filter: blur(26px) saturate(170%); box-shadow: inset 0 1px 0 var(--hi), 0 16px 44px rgba(0, 0, 0, .08); }
+@supports not (backdrop-filter: blur(1px)) { .glass { background: #fff; } }
+
+/* ── landing: one phone screen ── */
+.land { min-height: 100dvh; display: flex; flex-direction: column; justify-content: space-between; padding: calc(22px + var(--safe-t)) 22px calc(22px + var(--safe-b)); }
+.trio { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 18px 0 26px; }
+.trio span { aspect-ratio: 1; border-radius: 18px; border: 1px solid var(--line); }
+.trio .c { background: var(--c); } .trio .m { background: var(--m); } .trio .y { background: var(--y); } .trio .k { background: var(--k); }
+.land h1 { font: 500 26px/1.18 var(--sans); letter-spacing: -.02em; margin: 0 0 12px; }
+.land h1, .land .lede { text-align: center; text-wrap: balance; }   /* title block centred (Le); balance = no lone last word */
+.land h1 .powered { display: block; margin-top: 8px; font: 500 12px/1.2 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.land h1 .powered a { color: var(--ink); text-decoration: underline; text-decoration-color: rgba(17, 17, 17, .25); text-underline-offset: 3px; }
+.land h1 .powered a:hover, .land h1 .powered a:focus-visible { text-decoration-color: currentColor; }
+.lede { margin: 0; color: #56564f; font-size: 15px; }
+.field { margin-top: 22px; border-radius: 22px; padding: 6px 14px; display: flex; align-items: center; gap: 10px; perspective: 400px; }   /* 14 px = text inset = button inset (Le) */
+.field input { flex: 1; min-width: 0; border: 0; background: transparent; font: 16px var(--mono); color: var(--ink); outline: 0; padding: 12px 0; }
+.field input::placeholder { color: #a3a39e; }
+
+/* ── metal button "01 · Equilibrado" (Le 2026-09-24) — copied from codex/ac-button-explorations/diagonal-motion.html:
+   aluminium with a diagonal fold (.metal), 3D volume (.solid + 15 .slice layers) and reflections driven by the tilt
+   (js/metal.js sets --rx/--ry/--lx/--a/--b through the CSSOM). The 88×88 control is canonical; the field shows it
+   zoomed to 48×48 (same geometry, reflections and depth). The only deviation from the reference: each slice's
+   --layer comes from :nth-child rules below instead of an inline style="" (this page's CSP forbids style attributes). */
+.metal { --rx: 0deg; --ry: 0deg; --lx: 50%; --a: .3; --b: .3; --rot: 135deg; --spread: 12%; --band: .6; position: relative; isolation: isolate; overflow: hidden; width: 88px; height: 88px; border: 1px solid #a9b0b3; border-radius: 20px; color: #242b2d; background: linear-gradient(135deg, #f1f4f4 0 48%, #a9b2b7 49% 52%, #d6dce0 53%); box-shadow: inset 0 1px #fff, 0 2px 0 #98a2a7, 0 10px 15px -10px #26343b88; transform: rotateX(var(--rx)) rotateY(var(--ry)); cursor: pointer; display: grid; place-items: center; padding: 0; }
+.metal::before { content: ''; position: absolute; inset: 0; z-index: -1; background: linear-gradient(135deg, rgba(255, 255, 255, var(--a)) 0 48%, transparent 49% 52%, rgba(30, 45, 53, var(--b)) 53%); }
+.metal::after { content: ''; position: absolute; inset: -70%; z-index: -1; background: linear-gradient(var(--rot), transparent calc(var(--lx) - var(--spread)), rgba(255, 255, 255, var(--band)) var(--lx), transparent calc(var(--lx) + var(--spread))); pointer-events: none; }
+.metal svg { width: 28px; height: 28px; filter: drop-shadow(0 1px #fff9); }
+.metal:focus-visible { outline: 3px solid #006d86; outline-offset: 3px; }
+.metal:active { border-color: #535f66; }
+.solid { --rx: 0deg; --ry: 0deg; --depth: 7px; position: relative; width: 88px; height: 88px; flex: none; border-radius: 20px; transform-style: preserve-3d; transform: rotateX(var(--rx)) rotateY(var(--ry)); }
+.solid .metal { --rx: inherit; --ry: inherit; --lx: inherit; --a: inherit; --b: inherit; position: absolute; inset: 0; width: 100%; height: 100%; border-radius: inherit; transform: translateZ(1px); box-shadow: inset 0 1px #fff, inset 0 -1px #78858b88; backface-visibility: hidden; }
+.solid .slice { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: linear-gradient(120deg, #d1d8db, #879297 45%, #bcc5c9 70%, #727e84); border: 1px solid #89969d; transform: translateZ(calc(var(--layer) * var(--depth) / -14)); }
+.solid .slice:first-child { background: #849096; box-shadow: 0 6px 10px #25313925; border-color: #66757d; }
+.solid .slice:nth-child(1) { --layer: 14; } .solid .slice:nth-child(2) { --layer: 13; } .solid .slice:nth-child(3) { --layer: 12; }
+.solid .slice:nth-child(4) { --layer: 11; } .solid .slice:nth-child(5) { --layer: 10; } .solid .slice:nth-child(6) { --layer: 9; }
+.solid .slice:nth-child(7) { --layer: 8; } .solid .slice:nth-child(8) { --layer: 7; } .solid .slice:nth-child(9) { --layer: 6; }
+.solid .slice:nth-child(10) { --layer: 5; } .solid .slice:nth-child(11) { --layer: 4; } .solid .slice:nth-child(12) { --layer: 3; }
+.solid .slice:nth-child(13) { --layer: 2; } .solid .slice:nth-child(14) { --layer: 1; } .solid .slice:nth-child(15) { --layer: 0; }
+.field .solid { zoom: .54545454545; }                                   /* 88 → 48 px, the whole control scales */
+/* disabled: dim the FACE only — opacity < 1 on .solid (preserve-3d) would flatten the 15 slices (a grouping property) */
+.metal:disabled { cursor: default; filter: brightness(.93) contrast(.8); }
+.metal:disabled svg { opacity: .35; }
+/* the 2D control keeps its pill shape (reference .seg .solid / .seg .metal) */
+.solid.pill { width: 50px; height: 30px; border-radius: 24px; --depth: 4px; }
+.solid.pill .metal { font: 600 10px/1 var(--mono); letter-spacing: .1em; }
+.status { margin-top: 10px; text-align: center; min-height: 2.4em; }
+.status.err { color: var(--err); }
+.status .retry { margin-left: 8px; border: 1px solid currentColor; background: transparent; border-radius: 999px; padding: 2px 10px; font: inherit; }
+
+/* ── app: one screen — bar / stage (flex) / meta / dock ── */
+.app { height: 100dvh; display: flex; flex-direction: column; padding: calc(12px + var(--safe-t)) 14px 0; }
+.bar { display: flex; align-items: center; justify-content: space-between; padding: 4px 4px 12px; }
+.pill { display: flex; align-items: center; gap: 8px; border-radius: 999px; padding: 7px 12px; font: 11px var(--mono); }
+.pill .dot { width: 7px; height: 7px; border-radius: 50%; background: #1db954; box-shadow: 0 0 0 3px rgba(29, 185, 84, .15); }
+.app > * { flex-shrink: 0; }
+.stagewrap { flex: 1 0 240px; min-height: 240px; container-type: size; display: flex; align-items: flex-end; justify-content: center; }
+.stage { width: min(100cqw, 100cqh); height: min(100cqw, 100cqh); border-radius: 30px; padding: 10px; }
+.canvasbox { position: relative; width: 100%; height: 100%; border-radius: 22px; overflow: hidden; border: 1px solid var(--line); background: #fff; }
+#stage { width: 100%; height: 100%; display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+.stageimg { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; image-rendering: crisp-edges; background: #fff; }
+.empty.err { color: var(--err); }
+/* loading screen inside the stage card (Le 2026-09-24): the landing's CMYK quartet pulsing, one pixel at a time */
+.loader { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; background: var(--bg); z-index: 2; }
+.loader .pix { display: grid; grid-template-columns: repeat(2, 18px); gap: 5px; }
+.loader .pix span { width: 18px; height: 18px; border-radius: 5px; animation: acpulse 1.2s steps(2, jump-none) infinite; }   /* pixel blink (Le); only the loader's entry/exit fade is smooth */
+.loader .pix .c { background: var(--c); } .loader .pix .m { background: var(--m); animation-delay: .3s; }
+.loader .pix .k { background: var(--k); animation-delay: .6s; } .loader .pix .y { background: var(--y); animation-delay: .9s; }
+.loader .lbl { text-align: center; padding: 0 16px; }
+@keyframes acpulse { 0% { opacity: 1; } 100% { opacity: .15; } }
+@container (max-width: 260px) { .loader .pix { grid-template-columns: repeat(2, 12px); gap: 4px; } .loader .pix span { width: 12px; height: 12px; border-radius: 3px; } }
+.btn:disabled { opacity: .35; cursor: default; }
+.note { z-index: 3; pointer-events: none; }                    /* an error is never hidden under the loading screen, and never blocks the HUD (text only — Codex review P2 + GO) */
+.note { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; background: rgba(245, 245, 243, .86); font: 500 11px/1.6 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: #555; }
+.note.err { color: var(--err); }
+.pip { position: absolute; right: 12px; top: 12px; width: 70px; border-radius: 16px; padding: 4px; background: rgba(255, 255, 255, .82); border: 1px solid var(--line); backdrop-filter: blur(16px); box-shadow: 0 8px 20px rgba(0, 0, 0, .12); }
+.pip img { width: 100%; border-radius: 12px; display: block; }
+.pip .lbl { display: block; font-size: 8px; text-align: center; margin-top: 4px; }
+.hud { position: absolute; left: 12px; right: 12px; bottom: 12px; display: flex; justify-content: space-between; }
+.seg { display: inline-flex; align-items: center; gap: 5px; padding: 3px; border-radius: 999px; background: rgba(255, 255, 255, .75); border: 1px solid var(--line); backdrop-filter: blur(18px); perspective: 400px; }
+.seg b { font: 600 10px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; padding: 9px 12px; border-radius: 999px; color: var(--muted); }
+.seg-alt { border: 0; background: transparent; padding: 0; border-radius: 999px; }   /* the other view's label — a second hit area for the toggle */
+.seg-alt:disabled { cursor: default; } .seg-alt:disabled b { opacity: .45; }
+/* Sliding latch: the metal face travels between two fixed positions. */
+.seg:has(> .solid.pill) { position: relative; width: 112px; height: 38px; flex: none; }
+.seg > .solid.pill { position: absolute; left: 3px; top: 3px; translate: 0 0; transition: translate 280ms cubic-bezier(.22, 1, .36, 1); }
+.seg:has(#viewBtn[aria-pressed="true"]) > .solid.pill { translate: 54px 0; }
+.seg > .seg-alt { position: absolute; right: 3px; top: 3px; width: 50px; height: 30px; display: grid; place-items: center; }
+.seg > .seg-alt b { padding: 0; font-size: 9px; }
+.seg:has(#viewBtn[aria-pressed="true"]) > .seg-alt { right: auto; left: 3px; }
+@media (prefers-reduced-motion: reduce) { .seg > .solid.pill { transition: none; } }
+/* Cubes (chunk 7c): the GL canvas sits right after #stage (G4 — .pip/.hud have no z-index and paint after it by DOM
+   order). touch-action: pan-y → a horizontal swipe rotates, a vertical one still scrolls the page (Le). */
+.cubes { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: pan-y; cursor: grab; }
+.cubes:active { cursor: grabbing; }
+.cubes[hidden] { display: none; }
+/* short phones (SE): the stage shrinks to ~150 px — the PiP and the HUD shrink with it so the Argonaut stays visible */
+.canvasbox { container-type: inline-size; }
+.pip { width: clamp(40px, 22cqw, 76px); right: clamp(6px, 4cqw, 12px); top: clamp(6px, 4cqw, 12px); }
+@container (max-width: 260px) {
+  .hud { left: 6px; right: 6px; bottom: 6px; }
+  .seg b { padding: 6px 8px; font-size: 9px; }
+  .seg-alt { display: none; }                                  /* tiny stage: the metal pill alone toggles */
+  .pip { padding: 2px; border-radius: 10px; }
+  .pip img { border-radius: 8px; }
+  .pip .lbl { display: none; }
+}
+.meta { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; min-height: 36px; padding: 12px 6px 4px; }
+.meta .t { font: 500 17px/1 var(--mono); }
+.tags { display: flex; gap: 6px; flex-wrap: wrap; align-content: flex-start; padding: 6px; height: 4.25rem; overflow: auto; scrollbar-width: thin; }
+.tag { font: 10px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; border: 1px solid var(--line); border-radius: 999px; padding: 6px 9px; color: #555; background: rgba(255, 255, 255, .6); }
+.tag.credit { border-color: rgba(0, 181, 226, .35); }
+
+.dock { margin: 10px -14px 0; padding: 10px 14px calc(12px + var(--safe-b)); border-radius: 28px 28px 0 0; border-bottom: 0; }
+.tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 3px; border-radius: 16px; background: rgba(17, 17, 17, .05); margin-bottom: 12px; }
+.tabs button { border: 0; background: transparent; border-radius: 13px; padding: 10px 0; font: 600 10px/1 var(--mono); letter-spacing: .12em; color: var(--muted); text-transform: uppercase; }
+.tabs button.on { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(0, 0, 0, .08); }
+.panel { display: none; height: calc(9.5rem + var(--dock-fill, 0px)); overflow: auto; padding: 3px; scrollbar-color: var(--muted) transparent; } .panel.on { display: block; }
+.ph { display: flex; justify-content: space-between; margin: 0 2px 10px; }
+.strip { display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 2px 2px 6px; scrollbar-width: none; min-height: 104px; }
+.strip::-webkit-scrollbar { display: none; }
+.tile { flex: 0 0 auto; width: 78px; scroll-snap-align: start; border-radius: 18px; padding: 5px; background: rgba(255, 255, 255, .75); border: 1px solid var(--line); text-align: center; }
+.tile canvas, .tile img { width: 100%; aspect-ratio: 1; border-radius: 13px; background: #fff; display: block; image-rendering: pixelated; }
+.tile .n { font: 9px/1 var(--mono); color: var(--muted); margin-top: 6px; letter-spacing: .06em; }
+.tile.on { background: #fff; border-color: rgba(17, 17, 17, .6); box-shadow: 0 0 0 3px rgba(17, 17, 17, .06); }
+.tile.more { display: grid; place-items: center; font: 600 10px var(--mono); color: var(--muted); letter-spacing: .1em; }
+.tile.na { opacity: .45; }
+.chips { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.chip { border: 1px solid var(--line); background: rgba(255, 255, 255, .8); border-radius: 16px; padding: 14px; text-align: left; }
+.chip b { display: block; font: 600 11px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+.chip span { display: block; margin-top: 6px; font: 11px var(--mono); color: var(--muted); }
+.chip.on { border-color: var(--ink); background: #fff; box-shadow: 0 0 0 3px rgba(17, 17, 17, .06); }
+.empty { font: 11px/1.6 var(--mono); color: var(--muted); letter-spacing: .06em; padding: 18px 4px; }
+.foot { text-align: center; margin-top: 12px; font-size: 8.5px; line-height: 1.5; }
+/* Extra dock space is cancelled in layout so the artwork never moves. */
+.app { --dock-fill: 0px; }
+.dock { margin-bottom: calc(-1 * var(--dock-fill)); }   /* the fill itself goes to the scrollable panel (.panel height, Codex) */
+
+@media (min-width: 760px) { .land, .app { max-width: 460px; margin: 0 auto; } }
+/* Mouse/trackpad (Le): a sideways strip with a hidden scrollbar looks like "only 5 Credits" — there, the strips wrap
+   into a grid and the (fixed-height) panel scrolls vertically with the wheel. Touch keeps the swipe strip. */
+@media (pointer: fine) {
+  .strip { flex-wrap: wrap; justify-content: center; overflow-x: visible; scroll-snap-type: none; min-height: 0; }
+  .tile { scroll-snap-align: none; }
+  .panel { scrollbar-width: thin; }
+}
+/* Desktop: centre the complete artwork + controls, not the empty flex space above it. */
+@media (min-width: 1024px) and (min-height: 960px) {
+  .app { position: relative; height: auto; min-height: 100dvh; justify-content: center; padding-top: 72px; padding-bottom: 72px; }
+  .app > .bar { position: absolute; top: 12px; left: 18px; right: 18px; }
+  .stagewrap { flex: 0 0 432px; height: 432px; min-height: 432px; }
+}
+.land:not([hidden]) { animation: ac-fade 320ms ease-out; }
+/* App entry (Le: "más suave, con scale"): the blocks rise in, one after another, instead of the whole screen at once.
+   opacity/transform only — never on the .solid itself (preserve-3d); dock-space.js measures offsets, which ignore it. */
+.app:not([hidden]) > * { animation: ac-rise 620ms cubic-bezier(.22, 1, .36, 1) both; }
+.app:not([hidden]) > .bar { --rise-s: .98; animation-delay: 0ms; }
+.app:not([hidden]) > .stagewrap { --rise-s: .9; --rise-y: 14px; animation-delay: 60ms; }
+.app:not([hidden]) > .meta { animation-delay: 150ms; }
+.app:not([hidden]) > .tags { animation-delay: 200ms; }
+.app:not([hidden]) > .dock { --rise-s: .97; --rise-y: 18px; animation-delay: 250ms; }
+@keyframes ac-rise { from { opacity: 0; transform: translateY(var(--rise-y, 10px)) scale(var(--rise-s, .94)); } to { opacity: 1; transform: none; } }
+/* boot screen: its quartet pops in, and it leaves by softly growing + fading (no hard cut) */
+.loader.page-loader:not([hidden]) { animation: ac-fade 260ms ease-out; }
+.page-loader:not([hidden]) .pix { animation: ac-rise 520ms cubic-bezier(.22, 1, .36, 1) both; --rise-s: .7; --rise-y: 0px; }
+.page-loader { position: fixed; min-height: 100dvh; outline: none; }
+.boot-cancel { margin-top: 8px; border: 1px solid var(--line); background: rgba(255, 255, 255, .7); border-radius: 999px; padding: 8px 14px; }
+.land.screen-leaving, .app.screen-leaving, .page-loader.screen-leaving { animation: ac-screen-out 220ms ease-in forwards; pointer-events: none; }
+.loader.page-loader.screen-leaving { animation: ac-screen-out-grow 220ms cubic-bezier(.4, 0, .2, 1) forwards; }
+@keyframes ac-screen-out-grow { from { opacity: 1; transform: none; } to { opacity: 0; transform: scale(1.04); } }
+.panel.on { animation: ac-enter 170ms ease-out; }
+.note:not([hidden]):not(.err), .pip:not([hidden]) { animation: ac-fade 150ms ease-out; }
+.loader:not([hidden]) { animation: ac-fade 140ms ease-out; transition: opacity 140ms ease-out; }
+.loader.leaving { opacity: 0; pointer-events: none; }
+.tile, .chip, .tabs button { transition: background-color 150ms ease-out, border-color 150ms ease-out, box-shadow 150ms ease-out, color 150ms ease-out; }
+.tile.pending, .chip.pending { border-style: dashed; }
+/* Thumbnails (Le): a tile stays invisible until its thumbnail is ready, then scales in smoothly. It keeps its place in
+   the layout (opacity/transform only), so the lazy IntersectionObserver still sees it. */
+/* An ANIMATION (not a transition) keyed on "ready AND its panel visible": thumbs that finished while their tab was
+   closed still scale in when the tab opens (a transition never runs on a display:none element). 0.5 → 1 + fade (Le). */
+.tile { opacity: 0; }
+/* not ready = not there: no click, no Tab focus on an invisible tile (fable+opus GO). The IntersectionObserver still
+   sees visibility:hidden elements, so lazy loading is unaffected. */
+.tile:not(.ready):not(.more) { visibility: hidden; }
+.panel.on .tile.ready, .panel.on .tile.more { animation: ac-tile-in 640ms cubic-bezier(.22, 1, .36, 1) both; }
+.tile.ready.na { --tile-o: .45; }
+@keyframes ac-tile-in { from { opacity: 0; transform: scale(.5); } to { opacity: var(--tile-o, 1); transform: none; } }
+.panel.on .tile:nth-child(2) { animation-delay: 30ms; } .panel.on .tile:nth-child(3) { animation-delay: 60ms; }
+.panel.on .tile:nth-child(4) { animation-delay: 90ms; } .panel.on .tile:nth-child(5) { animation-delay: 120ms; }
+.panel.on .tile:nth-child(6) { animation-delay: 150ms; } .panel.on .tile:nth-child(7) { animation-delay: 180ms; }
+.panel.on .tile:nth-child(8) { animation-delay: 210ms; } .panel.on .tile:nth-child(n+9) { animation-delay: 240ms; }
+.stage-changing #stage { animation: ac-fade 150ms ease-out; }
+@keyframes ac-enter { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes ac-screen-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes ac-fade { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  * { scroll-behavior: auto !important; }
+  .land, .app, .app > *, .panel.on, .note, .pip, .loader, .loader .pix, .loader .pix span, .stage-changing #stage { animation: none !important; transition: none !important; }
+  .panel.on .tile.ready, .panel.on .tile.more { animation: none !important; opacity: var(--tile-o, 1); }
+  .tile, .chip, .tabs button { transition: none; }
+}

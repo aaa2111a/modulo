@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- CSP: no inline script/style at all (every script/style is a same-origin file). connect-src 'self' = the Modulo
+     Worker at /rpc (this is the published build: no other RPC endpoint).
+     frame-ancestors cannot live in a meta CSP → js/frame-guard.js + the site's X-Frame-Options header. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; base-uri 'none'; form-action 'none'; manifest-src 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f4f5f6">
+<meta name="description" content="Argonauts + Credits, powered by Modulo — three fully on-chain works, rendered live from Ethereum.">
+<title>Argonauts + Credits — powered by Modulo</title>
+<!-- Modulo's favicon (16×16 square + centred 8×8 square) in two of this page's greys: --muted #8b8b87 / --ink #111 -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%238b8b87'/%3E%3Crect x='4' y='4' width='8' height='8' fill='%23111'/%3E%3C/svg%3E">
+<script src="js/frame-guard.js"></script>
+<link rel="stylesheet" href="css/app.css?v=23">
+<script type="module" src="js/main.js?v=19"></script>
+</head>
+<body>
+
+<section id="landing" class="land">
+  <div class="brand">AC</div>
+  <div>
+    <div class="trio" aria-hidden="true"><span class="c"></span><span class="m"></span><span class="y"></span><span class="k"></span></div>
+    <h1>Argonauts + Credits<span class="powered">powered by <a href="https://modulo.ubk.art/">Modulo</a></span></h1>
+    <p class="lede">Three fully on-chain works, rendered live from Ethereum.</p>
+    <form id="walletForm" class="field glass" autocomplete="off">
+      <input id="walletInput" name="wallet" inputmode="text" autocapitalize="off" spellcheck="false" placeholder="0x… or name.eth" aria-label="Wallet address or ENS name">
+      <div class="solid">
+        <i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i>
+        <i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i>
+        <i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i>
+        <button id="walletGo" class="metal" type="submit" aria-label="Read wallet"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      </div>
+    </form>
+    <div id="walletStatus" class="status lbl" role="status" aria-live="polite">Paste any wallet · read only</div>
+  </div>
+  <div class="lbl center">Argonauts · Credits · Modulo</div>
+</section>
+
+<section id="pageLoader" class="loader page-loader" role="status" aria-live="polite" tabindex="-1" hidden>
+  <div class="pix" aria-hidden="true"><span class="c"></span><span class="m"></span><span class="y"></span><span class="k"></span></div>
+  <span class="lbl">Preparing your artwork…</span>
+  <button id="bootCancel" class="boot-cancel lbl" type="button">Change wallet</button>
+</section>
+
+<main id="app" class="app" hidden>
+  <div class="bar">
+    <div class="brand">AC</div>
+    <button id="walletPill" class="pill glass" type="button" aria-label="Change wallet"><span class="dot"></span><span id="walletShort"></span><span class="muted">⇄</span></button>
+  </div>
+
+  <div class="stagewrap"><div class="stage glass">
+    <div class="canvasbox">
+      <canvas id="stage" aria-label="Argonaut stage"></canvas>
+      <canvas id="cubes" class="cubes" aria-label="Argonaut in cubes — drag sideways to rotate" hidden></canvas>
+      <img id="stageImg" class="stageimg" alt="On-chain image" hidden>
+      <div id="stageLoader" class="loader" role="status" aria-live="polite" hidden>
+        <div class="pix" aria-hidden="true"><span class="c"></span><span class="m"></span><span class="y"></span><span class="k"></span></div>
+        <span id="loaderText" class="lbl"></span>
+      </div>
+      <div id="stageNote" class="note" hidden></div>
+      <button id="pip" class="pip" type="button" aria-label="Credit" hidden><img id="pipImg" alt=""><span id="pipLabel" class="lbl"></span></button>
+      <div class="hud">
+        <div class="seg">
+          <div class="solid pill">
+            <i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i>
+            <i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i>
+            <i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i>
+            <button id="viewBtn" class="metal" type="button" aria-pressed="false" aria-label="View: 2D. Switch to cubes" disabled>2D</button>
+          </div>
+          <button id="viewAlt" class="seg-alt" type="button" tabindex="-1" aria-hidden="true" disabled><b>Cubes</b></button>
+        </div>
+        <button id="pngBtn" class="seg btn" type="button"><b>PNG ↓</b></button>
+      </div>
+    </div>
+  </div></div>
+
+  <div class="meta"><span id="argoTitle" class="t"></span><span id="engineLabel" class="lbl"></span></div>
+  <div id="tags" class="tags"></div>
+
+  <div class="dock glass">
+    <div class="tabs" role="tablist">
+      <button role="tab" data-p="argo" class="on">Argo</button><button role="tab" data-p="credit">Credit</button><button role="tab" data-p="layer">Layer</button><button role="tab" data-p="engine">Engine</button>
+    </div>
+    <div class="panel on" data-p="argo"><div class="ph"><span class="lbl">Your Argonauts</span><span id="argoCount" class="lbl"></span></div><div id="argoStrip" class="strip"></div></div>
+    <div class="panel" data-p="credit"><div class="ph"><span class="lbl">Your Credits</span><span id="creditCount" class="lbl"></span></div><div id="creditStrip" class="strip"></div></div>
+    <div class="panel" data-p="layer"><div class="ph"><span class="lbl">Layer to animate</span><span id="layerCount" class="lbl"></span></div><div id="layerChips" class="chips"></div></div>
+    <div class="panel" data-p="engine"><div class="ph"><span class="lbl">Engine · Modulo Artifacts</span><span id="engineCount" class="lbl"></span></div><div id="engineStrip" class="strip"></div></div>
+    <div class="foot lbl">Argonauts · ack.eth / Muse Facktory — Credits · Jack Butcher — Modulo · ubk — unofficial</div>
+  </div>
+</main>
+
+</body>
+</html>
