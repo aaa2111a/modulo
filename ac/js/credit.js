@@ -2,8 +2,8 @@
 // plus the engine input derived from a Credit (delta synthesis D4/D5, Le's FD1-FD4, amendments A6/A7).
 // The port is proven by tests/test-credit.mjs: `creditSvg(seed, paidAt)` must equal the chain's
 // `CreditArt.svg(seed, paidAt)` STRING, byte for byte, on ≥50 fixtures covering every rule.
-import { sha256 } from './sha256.js';
-import { GRID_W, GRID_H, VIEW } from './engine-ac.js';
+import { sha256 } from './sha256.js?v=7d4b8416df';
+import { GRID_W, GRID_H, VIEW } from './engine-ac.js?v=8410dea0c1';
 
 const INKS = [0x00b5e2, 0xe4007c, 0xffd100, 0x111111];   // C M Y K
 export const WHITE = 0xffffff, BLACK_GROUND = 0x111111;

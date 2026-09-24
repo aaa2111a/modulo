@@ -3,16 +3,17 @@
 // modal, extracted VERBATIM by text anchors (itself a hand-patched copy of the landing's renderer — see its header).
 // header block sha256 (LF): 07d9d869b1415d16eca2f2baa78caa2ce0e506df04b18c108ab4a72dfe7a8415
 // extracted span sha256 (LF): 1fbece3d308c83ae7f925d3e964802b8a2d362f25e3e450b7a487dc2076d901a
-// AC-DELTA: exactly 7 declared lines — the IIFE becomes `export function create3d()` (2 wrapper lines);
+// AC-DELTA: exactly 8 declared lines — the IIFE becomes `export function create3d(opts)` (2 wrapper lines);
+// opts.dpr overrides the DPR (the MP4 exporter's detached canvas: clientWidth 0 → resize()'s 720 fallback × dpr = exact size);
 // buildVoxels/setPunk take `back` → 576 back-slab voxels at z=-1 (gi 576..1151) for an animated Background, and
 // `raised` (Uint8Array 576) → a second cube at z=+1 for every cell covered by a layer above Bones (D7, same gi/colour).
 // AC calls render() with mode 'normal' (mi=0) ONLY; a back-slab build is invalid in any other mode.
 // Only caller in the app: cubes.js. Design: app-plan/13-chunk7-synthesis.md
 /* eslint-disable */
-export function create3d() {   // AC-DELTA: the IIFE becomes a factory (one instance per canvas)
+export function create3d(opts) {   // AC-DELTA: the IIFE becomes a factory (one instance per canvas); opts.dpr (chunk 9c MP4)
   'use strict';
   var glCanvas=null, gl=null, prog=null, vao=null, voxels=null;
-  var DPR=Math.min(window.devicePixelRatio||1,2);
+  var DPR=(opts&&opts.dpr)||Math.min(window.devicePixelRatio||1,2);   // AC-DELTA: 9c N8 — a detached MP4 canvas reads clientWidth 0 → the 720 fallback × dpr = the exact export size
   var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var proj=null, view=null;
   var uModelLoc,uViewLoc,uProjLoc,uNormLoc,uUseVCLoc,uTransXLoc,uMetalLoc;

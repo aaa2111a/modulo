@@ -1,7 +1,7 @@
 // Minimal, STRICT ABI codec for Project AC's read calls. Every decoder validates the exact returndata
 // length/shape and THROWS on anything malformed — an empty `0x` (RPC hiccup, revert passthrough) must
 // surface as an error, never as "0" / "[]" / the zero address (synthesis E2: empty ≠ error).
-import { keccak256, utf8 } from './keccak.js';
+import { keccak256, utf8 } from './keccak.js?v=231a6f8be6';
 
 export class AbiError extends Error { constructor(msg) { super(msg); this.name = 'AbiError'; } }
 

@@ -11,12 +11,52 @@
 //  - spin = Punks' curve (faster edge-on), scaled by dt so it is frame-rate independent; reduced motion: no idle spin
 //    and no inertia, drag only (the single reduced-motion source for the loop gate, 7b G8 deviation).
 // Contract with the stage: draw() never calls back into the stage (it may only request kick() OUTSIDE draw).
-import { create3d } from './cubes-core.js';
-import { figureMask, raisedMask, countCells, silhouettePixels, sampleCells, RGB_CELLS, CELLS } from './cubes-feed.js';
+import { create3d } from './cubes-core.js?v=f3f5934deb';
+import { figureMask, raisedMask, countCells, silhouettePixels, sampleCells, RGB_CELLS, CELLS } from './cubes-feed.js?v=36e2245c37';
 
 const MARGIN = 1.15, MARGIN_SLAB = 1.5;                        // Punks modal fit; wider with the back slab (G18)
 const START_PITCH = -0.10, START_YAW = -0.52;                   // Punks _td initial pose
 const FRAME_MS = 1000 / 60;
+
+/**
+ * MP4 (chunk 9c, app-plan/18-… M4 + N8): a DISPOSABLE second core instance on a DETACHED canvas, exactly size² — its
+ * clientWidth is 0, so resize() takes the 720 fallback × opts.dpr (delta 8); asserted, never assumed. Same build as the
+ * live view (figure mask, raised relief, back slab, margins), but the pose is a pure function of the frame index:
+ * one full turn over the clip (yaw = START_YAW + 2π·f/N), pitch fixed. Lives here so cubes.js stays the ONLY importer of
+ * the core (CC4). Throws Error('empty' | 'webgl' | 'size') — the exporter maps them to messages.
+ */
+export function createCubesExport({ layers, back }, size, env = globalThis) {
+  const mask = figureMask(layers);
+  if (!countCells(mask)) throw new Error('empty');
+  const canvas = env.document.createElement('canvas');
+  const core = create3d({ dpr: size / 720 });
+  const gl = () => { try { return canvas.getContext('webgl2'); } catch { return null; } };
+  const release = () => {                                       // the canvas is disposable → releasing its context is fine here
+    try { core.teardown(); } catch { /* already gone */ }
+    try { const g = gl(); const ext = g && g.getExtension('WEBGL_lose_context'); if (ext) ext.loseContext(); } catch { /* best effort */ }
+  };
+  // 9c GO (opus P3-1 + fable P2): a compile/link THROW inside setPunk comes after the context exists → release on ANY
+  // failure, or retries pile up contexts until the browser drops the oldest (maybe the live #cubes one). setPunk's false
+  // = no context at all. Size: the DRAWING BUFFER, not canvas.width (always = size) — a GPU may clamp it (opus P3-2).
+  try {
+    core.init(canvas, back ? MARGIN_SLAB : MARGIN);
+    if (!core.setPunk(silhouettePixels(mask), 0, back, raisedMask(layers))) throw new Error('webgl');
+    const g = gl();
+    if (!g || g.drawingBufferWidth !== size || g.drawingBufferHeight !== size) throw new Error('size');
+  } catch (e) { release(); throw e; }
+  const rgb = new Uint8ClampedArray(RGB_CELLS * 4), idx = new Uint8Array(CELLS);
+  return {
+    canvas,
+    /** frame f of N: colours from the composed frame (+ the Background frame for the slab), pose from the index */
+    render(frame, bgFrame, f, N, fps) {
+      sampleCells(frame, rgb, 0);
+      if (back) sampleCells(bgFrame, rgb, CELLS);
+      core.render(rgb, idx, 0, START_PITCH, START_YAW + 2 * Math.PI * f / N, f * 1000 / fps, null);   // G21: mode 'normal'
+    },
+    lost() { const g = gl(); return !g || g.isContextLost(); },
+    dispose: release,
+  };
+}
 
 /**
  * @param canvas  the #cubes canvas (sibling right after #stage, G4)

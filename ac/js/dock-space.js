@@ -2,13 +2,30 @@
 // Write an external stylesheet rule through CSSOM, never a style attribute.
 const app = document.getElementById('app');
 const dock = app.querySelector('.dock');
+const bar = app.querySelector('.bar');
+const wrap = app.querySelector('.stagewrap');
+const hud = app.querySelector('.hud');
 const sheet = [...document.styleSheets].find(s => s.href && new URL(s.href).pathname.endsWith('/css/app.css'));
 const rule = sheet && [...sheet.cssRules].find(r => r.selectorText === '.app' && r.style.getPropertyValue('--dock-fill'));
 if (rule) {
   let fill = 0, queued = false;
+  let shift = 0;
+  const pageTop = element => {
+    let top = 0;
+    for (let node = element; node; node = node.offsetParent) top += node.offsetTop;
+    return top;
+  };
   function measure() {
     queued = false;
     if (app.hidden) return;
+    // offsetTop ignores entry animations. Subtract our previous displacement
+    // so repeated measurements cannot accumulate or oscillate the correction.
+    const naturalHudTop = pageTop(hud) - shift;
+    const nextShift = Math.max(0, pageTop(bar) + bar.offsetHeight + 8 - naturalHudTop);
+    if (Math.abs(nextShift - shift) >= 1) {
+      shift = nextShift;
+      rule.style.setProperty('--controls-shift', `${shift}px`);
+    }
     // offset geometry ignores the screen's entry transform and page scroll.
     let top = 0;
     for (let node = dock; node; node = node.offsetParent) top += node.offsetTop;
@@ -27,7 +44,7 @@ if (rule) {
     if (!queued) { queued = true; requestAnimationFrame(measure); }
   }
   const observer = new ResizeObserver(schedule);
-  observer.observe(app); observer.observe(dock);
+  observer.observe(app); observer.observe(dock); observer.observe(bar); observer.observe(wrap); observer.observe(hud);
   new MutationObserver(schedule).observe(app, { attributes: true, attributeFilter: ['hidden'] });
   window.addEventListener('resize', schedule);
   schedule();

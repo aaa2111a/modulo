@@ -8,12 +8,24 @@
 // the end of every composed frame. The loop stays ONE loop: `tick` and `schedule` share wantsFrame() (engine OR a view
 // that wants frames — spin/drag). With a view, the 2D canvas becomes the flat backdrop (the Background layer, or the
 // page grey while the engine animates the Background = back slab), and a view failure never reaches onError (G2).
-import { makeAcEngine } from './engine-ac.js';
-import { prepareLayers, composeFrame, OUT, OUT_PX } from './compose.js';
-import { backgroundLayers, wantsBackSlab } from './cubes-feed.js';
+import { makeAcEngine } from './engine-ac.js?v=8410dea0c1';
+import { prepareLayers, composeFrame, OUT, OUT_PX } from './compose.js?v=2eedc96065';
+import { backgroundLayers, wantsBackSlab } from './cubes-feed.js?v=36e2245c37';
 
-const STEP_MS = 1000 / 60;                                   // dt for advance() and the first frame (G12)
+export const STEP_MS = 1000 / 60;                            // one engine step = 1/60 s, live AND in the MP4 (chunk 9a, Le: same speed on every screen)
 const BACKDROP_GREY = [0xf4, 0xf5, 0xf6];                    // --bg: behind the back slab (Le 2026-09-24)
+const STEP_SLACK_MS = 1.5;                                   // rAF jitter tolerance: a 60 Hz tick of 16.5 ms still steps once
+const MAX_STEPS = 6;                                         // dt is clamped to 100 ms → at most 6 steps catch up in one tick
+
+/** ONE frame of the 2D pipeline, shared by the stage and the MP4 exporter (chunk 9 N3) so they are byte-identical by
+ *  construction: n engine steps → paintTo 144×144 (the artifact's dither/glyphs) → compose into the animated slot.
+ *  Returns the engine's RGBA (for the view sink / the back slab). The caller owns target, cap and frame. */
+export function stepPaintCompose(engine, n, target, cap, layers, marks, slot, frame) {
+  for (let k = 0; k < n; k++) { engine.step(engine.dtOps); engine.applyRects(); if (engine.tickRects) engine.tickRects(); }
+  engine.paintTo(target, cap);
+  composeFrame(layers, marks, slot, cap.last.data, frame);
+  return cap.last.data;
+}
 
 export function createStage(display, { onError = null, onViewError = null } = {}) {
   display.width = OUT; display.height = OUT;                 // intrinsic 144×144; size it with CSS + image-rendering:pixelated
@@ -30,7 +42,9 @@ export function createStage(display, { onError = null, onViewError = null } = {}
   const engCanvas = document.createElement('canvas'); engCanvas.width = OUT; engCanvas.height = OUT;
 
   let layers = null, bgLayers = [], marks = [], slot = null, engine = null, raf = 0, frames = 0, t0 = 0, destroyed = false;
-  let view = null, lastTs = 0;
+  let view = null, lastTs = 0, acc = 0, held = false;
+  let engIn = null;                                          // {comp, credit, slot} of the engine that is RUNNING (N2: the MP4 snapshot's one source)
+  const noEngine = () => { engine = null; engIn = null; acc = 0; };
 
   const put = () => dctx.putImageData(img, 0, 0);
   /** the sink: 2D → the frame; with a view → backdrop on the 2D canvas + the view draws its own canvas.
@@ -56,12 +70,7 @@ export function createStage(display, { onError = null, onViewError = null } = {}
     put();
   }
   function drawStatic(dtMs = 0) { if (layers) { composeFrame(layers, marks, null, null, frame); out(null, dtMs); } }
-  function stepAndDraw(n, dtMs) {
-    for (let k = 0; k < n; k++) { engine.step(engine.dtOps); engine.applyRects(); if (engine.tickRects) engine.tickRects(); }
-    engine.paintTo(target, cap);
-    composeFrame(layers, marks, slot, cap.last.data, frame);
-    out(cap.last.data, dtMs);
-  }
+  function stepAndDraw(n, dtMs) { out(stepPaintCompose(engine, n, target, cap, layers, marks, slot, frame), dtMs); }
   /** recompose + sink the CURRENT state without stepping (view switch, G3) */
   function redraw() {
     if (!layers) return;
@@ -69,18 +78,28 @@ export function createStage(display, { onError = null, onViewError = null } = {}
     composeFrame(layers, marks, eng ? slot : null, eng, frame);
     out(eng, 0);
   }
-  const wantsFrame = () => !!engine || !!(view && layers && view.wantsFrame());   // G1: ONE gate for tick and schedule
-  function fail(e) { stop(); engine = null; drawStatic(); if (onError) onError(e); schedule(); }
+  const wantsFrame = () => !held && (!!engine || !!(view && layers && view.wantsFrame()));   // G1: ONE gate for tick and schedule; N6: hold
+  function fail(e) { stop(); noEngine(); drawStatic(); if (onError) onError(e); schedule(); }
   function tick(now) {
     raf = 0;
     if (destroyed || !wantsFrame()) { lastTs = 0; return; }   // 7b GO opus P3-1: an idle loop restarts with a fresh dt
     const dt = lastTs ? Math.min(now - lastTs, 100) : STEP_MS; lastTs = now;
-    if (engine) { try { stepAndDraw(1, dt); frames++; } catch (e) { fail(e); return; } }
+    if (engine) {
+      // chunk 9a (Le): the engine advances at 60 steps/s on EVERY display (a 120 Hz rAF used to run it twice as fast),
+      // the same speed as the MP4. Ticks between steps redraw nothing in 2D; with a view they re-sink the last frame (spin).
+      acc += dt;
+      let n = Math.floor((acc + STEP_SLACK_MS) / STEP_MS);
+      if (n > MAX_STEPS) { n = MAX_STEPS; acc = 0; } else acc -= n * STEP_MS;
+      try {
+        if (n > 0) { stepAndDraw(n, dt); frames++; }
+        else if (view && cap.last) out(cap.last.data, dt);
+      } catch (e) { fail(e); return; }
+    }
     else { try { drawStatic(dt); } catch (e) { stop(); return; } }
     schedule();
   }
   function schedule() { if (!raf && !destroyed && !document.hidden && wantsFrame()) raf = requestAnimationFrame(tick); }
-  function stop() { if (raf) cancelAnimationFrame(raf); raf = 0; lastTs = 0; }
+  function stop() { if (raf) cancelAnimationFrame(raf); raf = 0; lastTs = 0; acc = 0; }
   const onVis = () => (document.hidden ? stop() : schedule());
   document.addEventListener('visibilitychange', onVis);
 
@@ -88,7 +107,7 @@ export function createStage(display, { onError = null, onViewError = null } = {}
     /** Show an Argonaut: `argo` = renderVerified() result, `blobOf` = id → blob. Static until setEngine(). */
     setArgonaut(argo, blobOf) {
       const next = prepareLayers(argo.drawList, blobOf);   // may throw → the previous Argonaut stays, and stays static
-      stop(); engine = null;
+      stop(); noEngine();
       layers = next; bgLayers = backgroundLayers(next); marks = argo.marks;
       if (view && view.onArgonaut) view.onArgonaut(layers);   // G15: the view rebuilds lazily on its next draw
       drawStatic();
@@ -97,17 +116,24 @@ export function createStage(display, { onError = null, onViewError = null } = {}
     /** Animate `animSlot` with the artifact `comp` fed by the Credit `credit` ({pal, init}). Throws on bad input
      *  (the stage then shows the static Argonaut — never the previous engine frozen). */
     setEngine(comp, credit, animSlot) {
-      stop(); engine = null;
+      stop(); noEngine();
       if (!layers) throw new Error('setArgonaut first');
       try { engine = makeAcEngine(engCanvas, comp, credit); }
-      catch (e) { drawStatic(); schedule(); throw e; }
+      catch (e) { noEngine(); drawStatic(); schedule(); throw e; }
       slot = animSlot; frames = 0; t0 = performance.now();
-      try { stepAndDraw(1, 0); } catch (e) { stop(); engine = null; drawStatic(); schedule(); throw e; }   // first frame now (even hidden); a failure is THROWN to the caller (not also sent to onError)
+      try { stepAndDraw(1, 0); } catch (e) { stop(); noEngine(); drawStatic(); schedule(); throw e; }   // first frame now (even hidden); a failure is THROWN to the caller (not also sent to onError)
+      engIn = { comp, credit, slot: animSlot };             // only once the engine really produced its first frame
       schedule();
     },
-    clearEngine() { stop(); engine = null; drawStatic(); schedule(); },
+    clearEngine() { stop(); noEngine(); drawStatic(); schedule(); },
     /** forget the Argonaut and blank the canvas (chunk-6 GO: the canvas/PNG must never show a previous Argonaut) */
-    reset() { stop(); engine = null; layers = null; bgLayers = []; marks = []; slot = null; if (view && view.onReset) view.onReset(); dctx.clearRect(0, 0, OUT, OUT); },
+    reset() { stop(); noEngine(); layers = null; bgLayers = []; marks = []; slot = null; if (view && view.onReset) view.onReset(); dctx.clearRect(0, 0, OUT, OUT); },
+    /** N6: pause the live loop (an MP4 export runs); hold(false) re-arms it — never leaves the stage frozen */
+    hold(on) { held = !!on; if (held) stop(); else schedule(); },
+    /** N2: everything that produced the pixels NOW, for the MP4 exporter's own instance (null without an Argonaut).
+     *  engine = {comp, credit, slot} of the RUNNING engine, or null (static Argonaut). The arrays are never mutated
+     *  by the stage (setArgonaut replaces them), and makeAcEngine copies the Credit's init/palette. */
+    exportInputs() { return layers ? { layers, bgLayers, marks, engine: engIn } : null; },
     /** attach / detach the Cubes view (null = plain 2D). Redraws synchronously so neither canvas keeps a stale frame (G3). */
     setView(v) {
       stop(); view = v || null;
@@ -134,9 +160,10 @@ export function createStage(display, { onError = null, onViewError = null } = {}
     /** the last composed frames, or null without an Argonaut (7b GO opus P3-2: never a previous Argonaut's pixels).
      *  bgFrame is only current while a view is attached; the Cubes PNG must use the view's own built state. */
     lastFrames() { return layers ? { frame, bgFrame, back: wantsBackSlab(engine, slot) } : null; },
-    /** rAF frames per second since the last setEngine (advance() steps are not counted) */
+    /** PAINTED frames per second since the last setEngine (ticks that took ≥1 step; advance() not counted). Since 9a the
+     *  engine runs 60 steps/s whatever the display rate, so this is ≤60 and is not the rAF rate (9a GO opus P3-2). */
     fps() { const dt = (performance.now() - t0) / 1000; return dt > 0 ? frames / dt : 0; },
     running() { return !!raf; },
-    destroy() { destroyed = true; stop(); engine = null; document.removeEventListener('visibilitychange', onVis); },
+    destroy() { destroyed = true; stop(); noEngine(); document.removeEventListener('visibilitychange', onVis); },   // 9a GO opus P3-1
   };
 }

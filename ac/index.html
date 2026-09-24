@@ -13,14 +13,14 @@
 <title>Argonauts + Credits — powered by Modulo</title>
 <!-- Modulo's favicon (16×16 square + centred 8×8 square) in two of this page's greys: --muted #8b8b87 / --ink #111 -->
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%238b8b87'/%3E%3Crect x='4' y='4' width='8' height='8' fill='%23111'/%3E%3C/svg%3E">
-<script src="js/frame-guard.js"></script>
-<link rel="stylesheet" href="css/app.css?v=23">
-<script type="module" src="js/main.js?v=19"></script>
+<script src="js/frame-guard.js?v=7ff609b8d2"></script>
+<link rel="stylesheet" href="css/app.css?v=e09ec138a1">
+<script type="module" src="js/main.js?v=050d2192d3"></script>
 </head>
 <body>
 
 <section id="landing" class="land">
-  <div class="brand">AC</div>
+  <div><button class="pill glass whats" type="button" data-how aria-haspopup="dialog">What's this?</button></div>
   <div>
     <div class="trio" aria-hidden="true"><span class="c"></span><span class="m"></span><span class="y"></span><span class="k"></span></div>
     <h1>Argonauts + Credits<span class="powered">powered by <a href="https://modulo.ubk.art/">Modulo</a></span></h1>
@@ -47,11 +47,28 @@
 
 <main id="app" class="app" hidden>
   <div class="bar">
-    <div class="brand">AC</div>
+    <button class="pill glass whats" type="button" data-how aria-haspopup="dialog">What's this?</button>
     <button id="walletPill" class="pill glass" type="button" aria-label="Change wallet"><span class="dot"></span><span id="walletShort"></span><span class="muted">⇄</span></button>
   </div>
 
-  <div class="stagewrap"><div class="stage glass">
+  <div class="stagewrap">
+    <!-- the HUD sits in a row right ABOVE the render (Le 2026-09-24): same left/right layout as it had inside it -->
+    <div class="hud">
+      <div class="seg">
+        <div class="solid pill">
+          <i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i>
+          <i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i>
+          <i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i>
+          <button id="viewBtn" class="metal" type="button" aria-pressed="false" aria-label="View: 2D. Switch to cubes" disabled>2D</button>
+        </div>
+        <button id="viewAlt" class="seg-alt" type="button" tabindex="-1" aria-hidden="true" disabled><b>Cubes</b></button>
+      </div>
+      <div class="hud-r">
+        <button id="mp4Btn" class="seg btn" type="button" aria-live="polite" disabled><b>MP4 ↓</b></button>
+        <button id="pngBtn" class="seg btn" type="button"><b>PNG ↓</b></button>
+      </div>
+    </div>
+    <div class="stage glass">
     <div class="canvasbox">
       <canvas id="stage" aria-label="Argonaut stage"></canvas>
       <canvas id="cubes" class="cubes" aria-label="Argonaut in cubes — drag sideways to rotate" hidden></canvas>
@@ -62,23 +79,10 @@
       </div>
       <div id="stageNote" class="note" hidden></div>
       <button id="pip" class="pip" type="button" aria-label="Credit" hidden><img id="pipImg" alt=""><span id="pipLabel" class="lbl"></span></button>
-      <div class="hud">
-        <div class="seg">
-          <div class="solid pill">
-            <i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i>
-            <i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i>
-            <i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i><i class="slice" aria-hidden="true"></i>
-            <button id="viewBtn" class="metal" type="button" aria-pressed="false" aria-label="View: 2D. Switch to cubes" disabled>2D</button>
-          </div>
-          <button id="viewAlt" class="seg-alt" type="button" tabindex="-1" aria-hidden="true" disabled><b>Cubes</b></button>
-        </div>
-        <button id="pngBtn" class="seg btn" type="button"><b>PNG ↓</b></button>
-      </div>
     </div>
   </div></div>
 
-  <div class="meta"><span id="argoTitle" class="t"></span><span id="engineLabel" class="lbl"></span></div>
-  <div id="tags" class="tags"></div>
+  <div class="meta"><span id="argoTitle" class="t"></span><button id="traitsBtn" class="meta-btn lbl" type="button" aria-haspopup="dialog" disabled>Traits</button></div>
 
   <div class="dock glass">
     <div class="tabs" role="tablist">
@@ -91,6 +95,57 @@
     <div class="foot lbl">Argonauts · ack.eth / Muse Facktory — Credits · Jack Butcher — Modulo · ubk — unofficial</div>
   </div>
 </main>
+
+<!-- sheets: direct children of <body> (a modal inside a hidden/inert screen would be invisible or dead — chunk 8 H1) -->
+<dialog id="traitsDlg" class="sheet" aria-labelledby="traitsTitle">
+  <div class="sheet-in">
+    <div class="sheet-h"><span id="traitsTitle" class="t">Traits</span><button class="sheet-x" type="button" data-close aria-label="Close">×</button></div>
+    <ul id="traitsList" class="tags"></ul>
+    <div id="engineLabel" class="engine lbl"></div>
+  </div>
+</dialog>
+<dialog id="howDlg" class="sheet" aria-labelledby="howTitle">
+  <div class="sheet-in">
+    <div class="sheet-h"><span id="howTitle" class="t">What's this?</span><button class="sheet-x" type="button" data-close aria-label="Close">×</button></div>
+    <!-- two pages behind a toggle with the look of the dock's category tabs (Le 2026-09-24). Its own class: main.js
+         wires every `.tabs button` to the dock panels -->
+    <div class="pagetabs" role="tablist" aria-label="Pages">
+      <button id="howTabDetails" role="tab" type="button" class="on" aria-selected="true" aria-controls="howDetails">Details</button><button id="howTabModulo" role="tab" type="button" aria-selected="false" aria-controls="howModulo" tabindex="-1">What's Modulo?</button>
+    </div>
+    <section id="howDetails" class="about" role="tabpanel" aria-labelledby="howTabDetails">
+      <p>AC brings three on-chain art projects together on one screen.</p>
+      <p>Paste a wallet and the page finds its Argonauts and Credits. Pick one of each, choose a layer of the Argonaut, and a Modulo Artifact brings that layer to life. It moves with the Artifact's rules and is painted in the Credit's colors.</p>
+      <p><strong>Where it comes from.</strong> Everything is read straight from Ethereum: the Argonaut's pixels, the Credit's colors and the Artifact's rules. No database, no images stored somewhere else. Before animating, the page redraws your Argonaut and checks that it matches the one on-chain. If it doesn't, you just see the original.</p>
+      <p><strong>Nothing to sign.</strong> The page only reads. It never connects to your wallet or asks for a signature, and it works with any wallet, because all of this is public.</p>
+      <p><strong>How it connects to Modulo.</strong> The motion is Modulo's own engine, the same one behind Modulo Punks. It's rebuilt in your browser from the Artifact's data on-chain, and the page reaches Ethereum through Modulo's connection.</p>
+      <p class="lbl">Unofficial. Argonauts by ack.eth / Muse Facktory · Credits by Jack Butcher · Modulo by ubk.</p>
+    </section>
+    <section id="howModulo" class="about" role="tabpanel" aria-labelledby="howTabModulo" hidden>
+      <p>Modulo is an art project by ubk that lives entirely on Ethereum. Fully on-chain, self-contained.</p>
+      <p>Each Modulo token carries a small program: a grid of cells that changes frame by frame, following simple rules. The rules never change, but the result never stops moving.</p>
+      <p>Tokens are placed together in a modulo, and their rules mix. When a modulo is settled, that mix is written to Ethereum for good as an Artifact: a recipe for motion anyone can replay straight from the chain.</p>
+      <p><strong>Why it fits with Argonauts and Credits.</strong> All three are made of pixels and live fully on-chain, and each one brings what the others are missing:</p>
+      <ul>
+        <li>An Argonaut is pixel art built in layers, so any layer can become the canvas.</li>
+        <li>A Credit is its own generative piece, and its colors and pattern become the paint and the starting point.</li>
+        <li>An Artifact is pure motion with no picture of its own. It needs a canvas and paint.</li>
+      </ul>
+      <p class="lbl"><a href="https://modulo.ubk.art/" target="_blank" rel="noopener">modulo.ubk.art</a></p>
+    </section>
+  </div>
+</dialog>
+
+<!-- MP4 size (Le 2026-09-24): the three sizes, the ones this device cannot encode are disabled (asked up front) -->
+<dialog id="mp4Dlg" class="sheet" aria-labelledby="mp4Title">
+  <div class="sheet-in">
+    <div class="sheet-h"><span id="mp4Title" class="t">MP4 · 20 seconds</span><button class="sheet-x" type="button" data-close aria-label="Close">×</button></div>
+    <div class="sizes">
+      <button type="button" data-size="2016" data-sub="Best quality"><b>2016 × 2016</b><span>Best quality</span></button>
+      <button type="button" data-size="1440" data-sub="Standard"><b>1440 × 1440</b><span>Standard</span></button>
+      <button type="button" data-size="1152" data-sub="Lighter file"><b>1152 × 1152</b><span>Lighter file</span></button>
+    </div>
+  </div>
+</dialog>
 
 </body>
 </html>

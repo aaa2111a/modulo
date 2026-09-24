@@ -1,7 +1,7 @@
 // The ONLY constructor of artifact engines in the app (delta A4): every engine the app builds — stage, PNG,
 // cubes, thumbnails — goes through makeAcEngine, so none can forget the Credit injection and silently paint
 // the artifact's own colours. tests/test-engine.mjs greps app/ for any other `_createArtifactEngine(` call.
-import { _createArtifactEngine, _normalizeComposition, _extractComposition } from './engine.js';
+import { _createArtifactEngine, _normalizeComposition, _extractComposition } from './engine.js?v=2778c97ee4';
 
 export const GRID_W = 450, GRID_H = 250, GRID_CELLS = GRID_W * GRID_H;
 export const VIEW = Object.freeze({ x: 213, y: 113, w: 24, h: 24 });   // the 24×24 window Punks shows (1 cell = 1 px)

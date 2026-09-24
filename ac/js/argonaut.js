@@ -7,7 +7,7 @@
 // The per-id variance marks come from the oracle: the ONLY allowed difference between our string and
 // `renderSeeded` is ONE insertion right after the BODY rects, made of 0 or 3 1×1 rects with the exact
 // literals of RendererV5.sol:297-298 (unmistakable: `_opacity` always prints 3 digits, the marks 2).
-import { ADDR, selectorOf, word, strip, decString, decBytes, decAddress, decSmallUint, decUint8x7 } from './abi.js';
+import { ADDR, selectorOf, word, strip, decString, decBytes, decAddress, decSmallUint, decUint8x7 } from './abi.js?v=00a5fa96ea';
 
 export class ArgonautError extends Error {
   constructor(code, message, cause) { super(message); this.name = 'ArgonautError'; this.code = code; if (cause) this.cause = cause; }

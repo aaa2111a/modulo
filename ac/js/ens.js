@@ -1,8 +1,8 @@
 // ENS forward resolution, fully on-chain through the same RPC (delta D7 + A10): name → namehash → Registry.resolver
 // → resolver.addr. Only lowercase-ASCII `.eth` names (ASCII uppercase is folded, as ENSIP-15 does); anything else →
 // "use a 0x address". Off-chain (CCIP-Read / wildcard ENSIP-10) names are NOT supported and report "not found".
-import { keccak256, utf8 } from './keccak.js';
-import { selectorOf, decAddress, AbiError } from './abi.js';
+import { keccak256, utf8 } from './keccak.js?v=231a6f8be6';
+import { selectorOf, decAddress, AbiError } from './abi.js?v=00a5fa96ea';
 
 export const ENS_REGISTRY = '0x00000000000c2e074ec69a0dfb2997ba6c7d2e1e';
 const SEL = { resolver: selectorOf('resolver(bytes32)'), addr: selectorOf('addr(bytes32)') };

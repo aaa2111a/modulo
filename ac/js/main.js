@@ -5,22 +5,23 @@
 // every async step carries a turn/generation token so a stale answer never paints over a newer choice; what the UI
 // shows as selected is what the stage shows (a failed switch reverts the highlight); chain SVGs only as
 // <img src="data:…">; DOM only through el()/textContent; engines only via makeAcEngine (A4).
-import { createRpc } from './rpc.js';
-import { RPC_URL, MAX_BATCH } from './config.js';
-import { normalizeAddress, toChecksumAddress, ADDR } from './abi.js';
-import { looksLikeEns, resolveEns, EnsError } from './ens.js';
-import { readArgonauts, readCredits, readCreditData, readArgonautTraits } from './holdings.js';
-import { loadRendererConfig, createBlobStore, renderVerified, drawList, LAYER, LAYER_LABEL, ArgonautError } from './argonaut.js';
-import { prepareLayers, composeFrame, downsample, offeredLayers, OUT } from './compose.js';
-import { creditEngineInput, creditSvg } from './credit.js';
-import { readTotalArtifacts, readArtifactComposition } from './artifacts.js';
-import { makeAcEngine } from './engine-ac.js';
-import { createStage } from './stage.js';
-import { createCubes } from './cubes.js';
-import { el, $, svgDataUrl, shortAddr } from './dom.js';
-import './metal.js';                                          // tilt + light of the metal buttons (wallet arrow, 2D)
-import './dock-space.js';
-import { createLoadingUI } from './loading-ui.js';
+import { createRpc } from './rpc.js?v=3037fe4613';
+import { RPC_URL, MAX_BATCH } from './config.js?v=761d2a9845';
+import { normalizeAddress, toChecksumAddress, ADDR } from './abi.js?v=00a5fa96ea';
+import { looksLikeEns, resolveEns, EnsError } from './ens.js?v=d745329552';
+import { readArgonauts, readCredits, readCreditData, readArgonautTraits } from './holdings.js?v=e4a26ea314';
+import { loadRendererConfig, createBlobStore, renderVerified, drawList, LAYER, LAYER_LABEL, ArgonautError } from './argonaut.js?v=820452ee1f';
+import { prepareLayers, composeFrame, downsample, offeredLayers, OUT } from './compose.js?v=2eedc96065';
+import { creditEngineInput, creditSvg } from './credit.js?v=0a4863eedb';
+import { readTotalArtifacts, readArtifactComposition } from './artifacts.js?v=5f9603d689';
+import { makeAcEngine } from './engine-ac.js?v=8410dea0c1';
+import { createStage } from './stage.js?v=0c44884967';
+import { createCubes, createCubesExport } from './cubes.js?v=1d561732b6';
+import { supported as mp4Supported, prepare2D, prepareCubes, runExport, probeSizes } from './mp4.js?v=05f787e21e';
+import { el, $, svgDataUrl, shortAddr } from './dom.js?v=cc96e51d51';
+import './metal.js?v=7488ca6bd5';                                          // tilt + light of the metal buttons (wallet arrow, 2D)
+import './dock-space.js?v=3b537f7f7b';
+import { createLoadingUI } from './loading-ui.js?v=3c31eafae4';
 
 const rpc = createRpc(RPC_URL, { maxBatch: MAX_BATCH, timeoutMs: 30000 });
 let storage = null;
@@ -48,7 +49,11 @@ reducedMotion.addEventListener('change', () => syncLoader(true));
 document.addEventListener('visibilitychange', () => { if (document.hidden) syncLoader(true); });
 let appliedEngine = null, pipRevision = 0, stageReveal = 0;
 let screenTimer = 0, finishScreen = null;
+/** the sheets (<dialog> children of <body>): every screen change closes them first (chunk 8 H2) */
+const SHEETS = ['traitsDlg', 'howDlg', 'mp4Dlg'];
+function closeSheets() { for (const id of SHEETS) { const d = $(id); if (d && d.open) d.close(); } }
 function changeScreen(from, to, focus, onHidden = () => {}) {
+  closeSheets();
   if (finishScreen) finishScreen();
   from.inert = true;
   const finish = () => {
@@ -100,6 +105,153 @@ function setViewMode(mode) {
   }
   syncViewUI();
 }
+// ── MP4 (chunk 9b, app-plan/18-…) ── idle "MP4 ↓" → busy "Cancel · NN%" → done "Save MP4" (a fresh tap = a fresh user
+// gesture for share/download, N5). The export reads ONLY its click-time snapshot (own engine), so the UI stays live;
+// a wallet change (S.gen) aborts it. The live stage is held (paused) meanwhile and always released (N6).
+// 9c: in the Cubes view the clip is the Cubes view (one full turn, M4); a static Argonaut is fine there (it still spins).
+const MP4 = { state: 'idle', pct: 0, abort: false, file: null, note: '', at: 0 };
+const IN_WEBVIEW = /\bwv\b/.test(navigator.userAgent);        // Android in-app WebView: cannot save a file (9b GO P3: say so BEFORE the 20 s)
+function mp4State(state) { MP4.state = state; MP4.at = performance.now(); }   // `at`: a double tap right after a change is ignored
+/** 9c GO fable P3 (+ delta P1): "Save MP4" is offered ONLY while the stage shows the content the clip was made from
+ *  (Argonaut / engine / layer — the key is taken at the CLICK, with the same applied state as the file name). Otherwise the
+ *  button is a plain "MP4 ↓" but the clip is KEPT: back on that content, "Save MP4" returns; a new export replaces it.
+ *  The 2D/Cubes view is not part of the key (peeking at the other view keeps it; the name already says -cubes). */
+const mp4Key = () => S.argo ? pngName(S.argo, appliedEngine, false) + '@' + (appliedEngine ? appliedEngine.slot : '') : '';
+const mp4Ready = () => MP4.state === 'done' && !!MP4.file && (MP4.saving || MP4.key === mp4Key());
+function syncMp4UI() {
+  const b = $('mp4Btn'); if (!b) return;                      // H10: an old cached index.html has no MP4 button
+  const label = b.querySelector('b') || b;
+  if (MP4.state === 'busy') {
+    label.textContent = `Cancel · ${MP4.pct}%`; b.disabled = false; b.title = 'Cancel the MP4';
+    b.setAttribute('aria-label', `Cancel the MP4 · ${MP4.pct - MP4.pct % 5}%`);   // 9b GO P3: a screen reader hears 5 % steps, not every 1 %
+    return;
+  }
+  b.removeAttribute('aria-label');
+  if (mp4Ready()) { label.textContent = 'Save MP4'; b.disabled = false; b.title = MP4.file ? MP4.file.name : ''; return; }
+  label.textContent = 'MP4 ↓';
+  const inp = S.argo ? stage.exportInputs() : null, cubed = S.view === 'cubes';
+  const why = !mp4Supported() ? 'MP4 needs Chrome, Edge or Safari 16.4+' : IN_WEBVIEW ? 'Open this page in Chrome to make the MP4' : !inp ? ''
+    : cubed ? (cubes.available() ? '' : 'Cubes are unavailable on this device') : !inp.engine ? 'MP4 needs a running engine' : '';
+  b.disabled = !inp || !!why; b.title = why;
+}
+function mp4Note(text, err = false) {                         // only ever clears its OWN note (never an engine / Cubes error)
+  if (text) { MP4.note = text; note(text, err); } else { if (MP4.note && $('stageNote').textContent === MP4.note) note(''); MP4.note = ''; }
+}
+// the size menu (Le 2026-09-24): which sizes this device can encode is asked ONCE, up front; until it answers the
+// choices say "Checking…"; if the check itself fails, every size stays tappable (the export then reports what it can't do)
+let sizeCheck = null;
+function checkMp4Sizes() {
+  if (sizeCheck || !mp4Supported()) return;
+  sizeCheck = probeSizes().then(m => { MP4.sizes = m; }, () => { MP4.sizes = null; }).finally(syncMp4Sizes);
+}
+function syncMp4Sizes() {
+  document.querySelectorAll('#mp4Dlg [data-size]').forEach(b => {
+    const r = MP4.sizes === undefined ? undefined : MP4.sizes && MP4.sizes.get(+b.dataset.size);
+    const sub = r === undefined ? 'Checking…' : r === null && MP4.sizes ? 'Not supported on this device' : b.dataset.sub + (r && r.fps === 30 ? ' · 30 fps' : '');
+    b.disabled = r === undefined || (r === null && !!MP4.sizes);
+    b.querySelector('span').textContent = sub;
+  });
+}
+function startMp4(size) {
+  const inp = S.argo ? stage.exportInputs() : null, cubed = S.view === 'cubes';
+  if (!inp || (cubed ? !cubes.available() : !inp.engine)) return;
+  let job;
+  try { job = cubed ? prepareCubes(inp, createCubesExport) : prepare2D(inp); }   // N2: the export's own engine, built NOW (before any await)
+  catch (e) { mp4Note('MP4 unavailable · ' + msg(e), true); return; }
+  const name = pngName(S.argo, appliedEngine, cubed).replace(/\.png$/, '.mp4');   // named from the same applied state (+ -cubes)
+  const gen = S.gen, key = mp4Key();                           // both from THIS tap (the picker may stay open a while)
+  // Desktop = the Modulo Punks way (Le 2026-09-24: "tap MP4, it finishes, nothing happens" is not intuitive): "Save as"
+  // opens IN this tap — before any await, it needs the tap's activation — and the video is written straight into the
+  // chosen file. Cancelling it = nothing happens. Denied / failed → the in-memory export + "Save MP4" (the phone flow).
+  if (!matchMedia('(pointer: coarse)').matches && !IN_WEBVIEW && typeof window.showSaveFilePicker === 'function') {
+    MP4.saving = true; MP4.at = performance.now(); syncMp4UI();
+    let picked;
+    try { picked = window.showSaveFilePicker({ suggestedName: name, types: [{ description: 'MP4 video', accept: { 'video/mp4': ['.mp4'] } }] }); }
+    catch (e) { picked = Promise.reject(e); }                  // a sync throw never leaves `saving` stuck
+    picked.then(h => h.createWritable()).then(w => {
+      MP4.saving = false;
+      if (gen !== S.gen) { w.abort().catch(() => {}); job.dispose(); return; }   // the wallet changed while the dialog was open
+      encodeMp4(job, name, gen, key, w, size);
+    }, e => {
+      MP4.saving = false;
+      if (gen !== S.gen || (e && e.name === 'AbortError')) { job.dispose(); return; }   // cancelled: nothing happens
+      encodeMp4(job, name, gen, key, null, size);             // no file dialog here → the video is kept for "Save MP4"
+    }).finally(() => { MP4.at = performance.now(); syncMp4UI(); });
+    return;
+  }
+  encodeMp4(job, name, gen, key, null, size);
+}
+/** the export itself. `writable` = a file from "Save as" (desktop): written as it encodes, closed at the end, discarded
+ *  (abort) on any failure or cancel — never a half file. Without it: in memory, then "Save MP4" (phones, no picker). */
+function encodeMp4(job, name, gen, key, writable, size) {
+  Object.assign(MP4, { pct: 0, abort: false, file: null, plain: false, key }); mp4State('busy');
+  stage.hold(true); mp4Note('Exporting MP4 · keep this tab open'); syncMp4UI();
+  runExport(job, {
+    shouldAbort: () => MP4.abort || gen !== S.gen,
+    onProgress: p => { const pct = Math.floor(p * 100); if (pct !== MP4.pct) { MP4.pct = pct; syncMp4UI(); } },
+    writable, size,                                            // size: the menu's choice (undefined → the best this device can)
+  }).then(async r => {
+    if (writable) {                                            // the file is complete: keep it even if the screen moved on
+      await writable.close(); writable = null;
+      if (gen === S.gen) { const text = 'MP4 saved'; mp4Note(text); setTimeout(() => { if (MP4.note === text) mp4Note(''); }, 4000); }
+      return;
+    }
+    if (gen !== S.gen) return;
+    if (MP4.abort) { mp4Note(''); return; }                    // 9b GO P3: Cancel tapped after the last check = cancelled, not "Save"
+    MP4.file = new File([r.blob], name, { type: 'video/mp4' }); mp4State('done');
+    const text = 'Video ready · tap Save MP4';                 // the second tap is unavoidable without a file dialog: say so
+    mp4Note(text); setTimeout(() => { if (MP4.note === text) mp4Note(''); }, 6000);
+  }).catch(e => {
+    if (writable) writable.abort().catch(() => {});             // no half-written file is left behind…
+    // …but the browser created the picked file (0 bytes) when "Save as" was confirmed: say it can go (GO opus P3-1)
+    const empty = writable ? ' · the empty file you picked can be deleted' : '';
+    if (gen === S.gen) mp4Note(e && e.code === 'cancelled' ? (empty ? 'MP4 cancelled' + empty : '') : 'MP4 failed · ' + msg(e) + empty, !(e && e.code === 'cancelled'));
+  }).finally(() => {
+    if (MP4.state !== 'done') { mp4State('idle'); MP4.file = null; }
+    stage.hold(false); syncMp4UI();
+  });
+}
+function saveMp4() {
+  const f = MP4.file;
+  const finish = () => { MP4.file = null; MP4.plain = false; mp4State('idle'); syncMp4UI(); };
+  if (!f) return finish();
+  if (IN_WEBVIEW) { mp4Note('Open this page in Chrome to save the video', true); return; }   // Android in-app WebView
+  // The plain download ALWAYS runs inside a tap (a script-clicked blob link without the tap's activation is what Chrome
+  // dropped silently for Le) and KEEPS the clip armed: if nothing arrived, "Save MP4" is still there (save GO opus P2/P3).
+  const download = () => {
+    const url = URL.createObjectURL(f), a = el('a', { href: url, download: f.name });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    const text = 'Download started · tap Save MP4 again if nothing arrived';
+    mp4Note(text); setTimeout(() => { if (MP4.note === text) mp4Note(''); }, 6000);   // the note covers the render: short-lived
+  };
+  if (MP4.plain) { download(); return; }                      // a dialog failed earlier → this tap is the fresh gesture
+  // One OS dialog at a time, opened with NO await before it (the tap's user activation). Closing it yourself (AbortError)
+  // keeps "Save MP4" armed as it was. Anything else — incl. NotAllowedError, which can mean the permission is BLOCKED, not
+  // just an expired tap (Codex review: retrying the same dialog would fail again) — never downloads from here (no gesture
+  // left) and never loops: it says why, and the NEXT tap downloads directly (MP4.plain). `saving` blocks a 2nd tap meanwhile.
+  const viaDialog = (open, done) => {
+    MP4.saving = true;
+    let p;
+    try { p = open(); } catch (e) { p = Promise.reject(e); }   // a sync throw never leaves `saving` stuck
+    p.then(done).then(finish, e => {
+      if (e && e.name === 'AbortError') return;
+      MP4.plain = true;
+      mp4Note((e && e.name === 'NotAllowedError' ? 'This browser did not allow saving there' : 'Saving there failed') + ' · tap Save MP4 again to download', true);
+    }).finally(() => { MP4.saving = false; MP4.at = performance.now(); syncMp4UI(); });
+  };
+  const coarse = matchMedia('(pointer: coarse)').matches;
+  // N5: phones → the share sheet (desktop canShare() opens an OS share dialog instead of saving)
+  if (coarse && navigator.canShare && navigator.canShare({ files: [f] })) { viaDialog(() => navigator.share({ files: [f] }), () => {}); return; }
+  // Desktop → the native "Save as" dialog, the Modulo / Punks way (CHANGELOG MP4 card export: desktop = showSaveFilePicker):
+  // Chrome may drop a script-clicked blob download without a word (Le 2026-09-24, localhost Chrome).
+  if (!coarse && typeof window.showSaveFilePicker === 'function') {
+    viaDialog(() => window.showSaveFilePicker({ suggestedName: f.name, types: [{ description: 'MP4 video', accept: { 'video/mp4': ['.mp4'] } }] }),
+      async h => { const w = await h.createWritable(); try { await w.write(f); await w.close(); } catch (e) { try { await w.abort(); } catch { /* gone */ } throw e; } });
+    return;
+  }
+  download();                                                 // no share / no picker (Firefox, older Safari): inside this tap
+}
 function syncViewUI() {
   // D4 + 7c GO sonnet P3: no verified Argonaut (chain image only / none) → the control shows 2D and is disabled; the
   // 'cubes' preference itself is kept and resumes with the next verified Argonaut (G6)
@@ -111,6 +263,7 @@ function syncViewUI() {
   b.disabled = !can;
   alt.replaceChildren(el('b', { text: on ? '2D' : 'Cubes' }));
   alt.disabled = !can;
+  syncMp4UI();
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden) finishScreen?.(); });
 
@@ -139,8 +292,12 @@ function syncLoader(immediate = false) {
   loadingUI(text, immediate || document.hidden);
 }
 function chainImage(svg) { const i = $('stageImg'); i.hidden = !svg; if (svg) i.src = svgDataUrl(svg); else i.removeAttribute('src'); }
-function syncEngineLabel() {
-  $('engineLabel').textContent = S.engineOn !== null ? 'Engine ' + pad(S.engineOn, 2) : S.shown && !S.argo ? 'on-chain image only' : '';
+function syncEngineLabel() {                                  // the engine state now lives in the Traits sheet (chunk 8; H7 loading text)
+  const label = $('engineLabel');
+  if (label) label.textContent = S.engineOn !== null ? 'Engine ' + pad(S.engineOn, 2) : S.shown && !S.argo ? 'On-chain image only'
+    : S.loadingEngine ? 'Starting engine…' : S.shown ? 'No engine' : '';
+  const tb = $('traitsBtn'), dlg = $('traitsDlg');
+  if (tb) tb.disabled = !S.shown && !(dlg && dlg.open);        // H8: never disable the button whose sheet is open (focus returns there)
   $('pngBtn').disabled = !S.argo;                             // PNG only of a verified Argonaut actually on the canvas
   syncViewUI();
 }
@@ -243,7 +400,7 @@ async function openApp() {
   $('walletPill').title = S.wallet;
   $('argoCount').textContent = String(S.argoIds.length);
   $('creditCount').textContent = String(S.creditIds.length);
-  $('argoTitle').textContent = ''; $('tags').replaceChildren(); $('layerChips').replaceChildren(); $('layerCount').textContent = '';
+  $('argoTitle').textContent = ''; $('traitsList')?.replaceChildren(); $('layerChips').replaceChildren(); $('layerCount').textContent = '';
   $('pip').hidden = true; $('pipImg').removeAttribute('src'); chainImage(null); note('');   // no previous wallet's PiP to decode
   stage.reset(); syncEngineLabel();
   const thumbnails = renderArgoStrip(); renderCreditStrip(true);
@@ -345,11 +502,13 @@ async function selectArgo(id) {
     if (turn === S.argoTurn) { S.loadingArgo = false; syncLoader(); }
   }
 }
-function renderTags(argo) {                                   // only the layers the renderer actually draws
+function renderTags(argo) {                                   // only the layers the renderer actually draws → the Traits sheet (chunk 8)
+  const list = $('traitsList'); if (!list) return;             // H10: an old cached index.html without the sheet never breaks the app
   const drawn = argo ? [...new Set(argo.drawList.map(d => d.slot))].filter(s => typeof s === 'number').sort((a, b) => a - b) : [];
-  const tags = drawn.map(layer => el('span', { class: 'tag', text: `${LAYER_LABEL[layer]} ${argo.traits[layer]}` }));
-  if (S.creditInput) tags.push(el('span', { class: 'tag credit', text: `Credit #${S.credit} · ${S.creditInput.pal.length} inks` }));
-  $('tags').replaceChildren(...tags);
+  const tags = drawn.map(layer => el('li', { class: 'tag', text: `${LAYER_LABEL[layer]} ${argo.traits[layer]}` }));
+  if (S.creditInput) tags.push(el('li', { class: 'tag credit', text: `Credit #${S.credit} · ${S.creditInput.pal.length} inks` }));
+  list.replaceChildren(...tags);
+  const title = $('traitsTitle'); if (title) title.textContent = argo ? 'Argonaut #' + pad(argo.tokenId, 4) : 'Traits';
 }
 
 // ── 3. layers ──
@@ -500,7 +659,7 @@ async function startEngine() {
   }
   const { argo, creditInput, credit, slot, artifactId } = S;
   ++pipRevision; pendingEngine(true);
-  S.loadingEngine = 'Starting engine ' + pad(artifactId, 2); syncLoader();
+  S.loadingEngine = 'Starting engine ' + pad(artifactId, 2); syncLoader(); syncEngineLabel();
   try {
     const comp = await getComp(artifactId);
     if (turn !== S.engTurn || argo !== S.argo) return;
@@ -538,6 +697,8 @@ $('walletForm').addEventListener('submit', ev => { ev.preventDefault(); submitWa
 function changeWallet(from) {
   S.walletTurn++; S.argoTurn++; S.engTurn++; S.gen++;
   S.booting = false;
+  MP4.abort = true; if (MP4.state === 'done') { mp4State('idle'); MP4.file = null; }   // a running export stops (S.gen); a finished one is dropped
+  stage.hold(false);                                          // 9b GO P3: never wait on the export's own finally to un-hold
   setViewMode('2d');                                          // the Cubes preference does not carry over to another wallet
   appliedEngine = null; ++pipRevision; S.argo = null; S.shown = null; S.engineOn = null; S.loadingArgo = S.loadingEngine = false; syncLoader(true);
   argoLazy?.disconnect(); engineLazy?.disconnect();
@@ -555,11 +716,57 @@ document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click
 $('pngBtn').addEventListener('click', () => {
   if (!S.argo || !stage.hasArgonaut()) return;
   const cubed = S.view === 'cubes';
-  const href = cubed ? cubes.png($('stage')) : stage.snapshot();   // Cubes: 1152² (8 × 144), render-then-read (D6/G10)
+  const href = cubed ? cubes.png($('stage'), 2016) : stage.snapshot(14);   // 2016² = 14 × 144 (Le 2026-09-24); Cubes: render-then-read (D6/G10)
   if (!href) { note('Cubes PNG unavailable right now · try again', true); return; }
   const a = el('a', { href, download: pngName(S.argo, appliedEngine, cubed) });
   document.body.append(a); a.click(); a.remove();
 });
+$('mp4Btn')?.addEventListener('click', () => {
+  if (MP4.saving || performance.now() - MP4.at < 400) return;   // 9b GO P3: the 2nd tap of a double tap would cancel / save at once
+  if (MP4.state === 'busy') { MP4.abort = true; return; }
+  if (mp4Ready()) { saveMp4(); return; }
+  // pick a size first (Le 2026-09-24); the choice's own tap then starts the export (and opens "Save as" on desktop).
+  // Also from 'done' on OTHER content: the new clip replaces the kept one.
+  checkMp4Sizes(); syncMp4Sizes(); openSheet('mp4Dlg');
+});
 $('viewBtn').addEventListener('click', () => setViewMode(S.view === 'cubes' ? '2d' : 'cubes'));
 $('viewAlt').addEventListener('click', () => setViewMode(S.view === 'cubes' ? '2d' : 'cubes'));
 $('pip').addEventListener('click', () => document.querySelector('.tabs button[data-p="credit"]').click());
+// sheets (chunk 8): native modal <dialog> — Esc and focus trapping come with showModal(); the close button and a click on
+// the backdrop close it. H3: the dialog has no padding (the content sits in .sheet-in), and a click only counts as
+// "backdrop" when BOTH its pointerdown and the click landed on the <dialog> itself (a drag-select from inside doesn't).
+for (const id of SHEETS) {
+  const d = $(id); if (!d) continue;                          // H10
+  let downOnBackdrop = false;
+  d.addEventListener('pointerdown', e => { downOnBackdrop = e.target === d; });
+  d.addEventListener('click', e => { if (e.target === d && downOnBackdrop) d.close(); downOnBackdrop = false; });
+  d.querySelector('[data-close]')?.addEventListener('click', () => d.close());
+  d.addEventListener('close', () => syncEngineLabel());       // re-evaluate the Traits button once its sheet is gone (H8)
+}
+const openSheet = id => { const d = $(id); if (d && !d.open) d.showModal(); };
+document.querySelectorAll('#mp4Dlg [data-size]').forEach(b => b.addEventListener('click', () => {
+  $('mp4Dlg').close();
+  if (MP4.state !== 'busy') startMp4(+b.dataset.size);         // synchronous: "Save as" (desktop) still has THIS tap
+}));
+checkMp4Sizes();                                              // ask the device once, early — the menu is ready when opened
+$('traitsBtn')?.addEventListener('click', () => { if (S.shown) openSheet('traitsDlg'); });
+// "What's this?" (Le 2026-09-24): two pages behind tabs (ARIA tabs: click, ←/→ between them). Always opens on Details.
+const HOW_PAGES = [['howTabDetails', 'howDetails'], ['howTabModulo', 'howModulo']];
+function howPage(i, focus = false) {
+  HOW_PAGES.forEach(([tab, panel], k) => {
+    const t = $(tab), on = k === i; if (!t) return;          // H10: an old cached index.html has no tabs
+    t.classList.toggle('on', on); t.setAttribute('aria-selected', String(on)); t.tabIndex = on ? 0 : -1;
+    $(panel).hidden = !on;
+    if (on && focus) t.focus();
+  });
+  const d = $('howDlg'); if (d) d.scrollTop = 0;               // the sheet scrolls: a new page starts at its top
+}
+HOW_PAGES.forEach(([tab], k) => {
+  $(tab)?.addEventListener('click', () => howPage(k));
+  $(tab)?.addEventListener('keydown', e => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    const n = HOW_PAGES.length;                               // GO sonnet P3: ← goes back, → forward (right for any page count)
+    e.preventDefault(); howPage((k + (e.key === 'ArrowRight' ? 1 : n - 1)) % n, true);
+  });
+});
+document.querySelectorAll('[data-how]').forEach(b => b.addEventListener('click', () => { howPage(0); openSheet('howDlg'); }));
