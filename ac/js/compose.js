@@ -7,7 +7,7 @@
 //    normally (keeps e.g. Cloak 1's faint semi pixels — chunk-5 GO P2);
 //  - masks: alpha ≥ 128 → in (Le 2026-09-24: Cloak/Bones binarized; other semi layers are not offered);
 //  - the per-id variance marks go right after BODY (A9), with the renderer's opacities (0.14 / 0.11).
-import { LAYER, SMOKE_SLOT, layerPixels, blobHasSemi } from './argonaut.js?v=820452ee1f';
+import { LAYER, SMOKE_SLOT, layerPixels, blobHasSemi } from './argonaut.js?v=29531b221c';
 
 export const SIZE = 24, PX = SIZE * SIZE, SCALE = 6, OUT = SIZE * SCALE, OUT_PX = OUT * OUT;   // 144×144
 const MARK_A = [Math.round(0.14 * 255), Math.round(0.14 * 255), Math.round(0.11 * 255)];   // 36, 36, 28

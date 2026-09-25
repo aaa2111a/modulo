@@ -7,7 +7,7 @@
 // The per-id variance marks come from the oracle: the ONLY allowed difference between our string and
 // `renderSeeded` is ONE insertion right after the BODY rects, made of 0 or 3 1×1 rects with the exact
 // literals of RendererV5.sol:297-298 (unmistakable: `_opacity` always prints 3 digits, the marks 2).
-import { ADDR, selectorOf, word, strip, decString, decBytes, decAddress, decSmallUint, decUint8x7 } from './abi.js?v=00a5fa96ea';
+import { ADDR, selectorOf, word, strip, decString, decBytes, decAddress, decSmallUint, decUint8x7 } from './abi.js?v=37c56b03cf';
 
 export class ArgonautError extends Error {
   constructor(code, message, cause) { super(message); this.name = 'ArgonautError'; this.code = code; if (cause) this.cause = cause; }
@@ -27,7 +27,7 @@ const SEL = {
   vapeBlueberryBlob: S('vapeBlueberryBlob()'), vapeDragonsBlob: S('vapeDragonsBlob()'),
   bandHeadIndex: S('bandHeadIndex()'), crownHeadIndex: S('crownHeadIndex()'), crownClipBlob: S('crownClipBlob(uint8)'),
   smokerMouth: S('smokerMouth(uint8)'), smokeTone: S('smokeTone(uint8)'), isDragonsBreath: S('isDragonsBreath(uint256)'),
-  renderSeeded: S('renderSeeded(uint8[7],uint256)'), traitsOf: S('traitsOf(uint256)'),
+  renderSeeded: S('renderSeeded(uint8[7],uint256)'), traitsOf: S('traitsOf(uint256)'), base: S('base()'),
 };
 const call = (to, data, block) => ({ method: 'eth_call', params: [{ to, data }, block] });
 const u8 = h => decSmallUint(h, 255);
@@ -48,6 +48,28 @@ export function parseLayout(bytes) {
 }
 
 /**
+ * Which Argonauts.renderer() we draw for (2026-09-25). AC reads the art straight from the pinned V5, so the only
+ * question is whether the collection's image is still the V5's:
+ *  - the V5 itself → yes;
+ *  - ArgonautsBreathRenderer (ADDR.ARGO_BREATH, verified source) → yes IF its base() is the V5: its tokenURI is
+ *    base.tokenURI with an animation_url spliced in on the owner-chosen token(s); `base` is immutable → checked once
+ *    per page. Its "the image never changes" is a comment, not a guarantee (the payload is spliced unescaped, so the
+ *    owner could shadow `image` on one token — GO opus P3); AC never reads art from the wrapper, it draws from the V5;
+ *  - anything else → ArgonautError('renderer-changed'): the art may have changed, fail closed as before.
+ */
+const breathOk = new WeakMap();                               // rpc → memo of the (immutable) base() check: once per page
+async function acceptRenderer(rpc, renderer, block) {
+  if (renderer === PINNED_RENDERER) return;
+  if (renderer === ADDR.ARGO_BREATH) {
+    if (!breathOk.has(rpc)) breathOk.set(rpc, rpc.batchAll([call(ADDR.ARGO_BREATH, SEL.base, block)])
+      .then(([b]) => decAddress(b) === PINNED_RENDERER)
+      .catch(e => { breathOk.delete(rpc); throw e; }));        // a failed read OR an empty/odd answer is retried next time (GO opus P2)
+    if (await breathOk.get(rpc).catch(fail('rpc', 'could not read the renderer'))) return;
+  }
+  throw new ArgonautError('renderer-changed', `Argonauts.renderer() is ${renderer}, expected the pinned V5 or its Breath wrapper`);
+}
+
+/**
  * Everything the compositor needs, once per session (~140 eth_calls, batched).
  * ArgonautError('renderer-changed') if Argonauts.renderer() is not the pinned, locked V5 — the UI then shows
  * only the chain's own image (no layer engine).
@@ -56,7 +78,7 @@ export async function loadRendererConfig(rpc, { block = 'latest' } = {}) {
   const r = await rpc.batchAll([call(ADDR.ARGONAUTS, SEL.renderer, block), call(PINNED_RENDERER, SEL.locked, block), call(PINNED_RENDERER, SEL.blobCount, block)])
     .catch(fail('rpc', 'could not read the renderer'));
   const renderer = dec('renderer()', () => decAddress(r[0]));
-  if (renderer !== PINNED_RENDERER) throw new ArgonautError('renderer-changed', `Argonauts.renderer() is ${renderer}, expected the pinned V5`);
+  await acceptRenderer(rpc, renderer, block);
   if (!dec('locked()', () => bool(r[1]))) throw new ArgonautError('renderer-changed', 'renderer is not locked');
   const blobCount = dec('blobCount()', () => decSmallUint(r[2], 255));
 
@@ -228,7 +250,7 @@ export async function renderVerified(rpc, cfg, blobs, tokenId, { block = 'latest
     call(PINNED_RENDERER, SEL.isDragonsBreath + word(tokenId), block),
   ]).catch(fail('rpc', 'could not read the token'));
   const renderer = dec('renderer()', () => decAddress(pre[0]));
-  if (renderer !== PINNED_RENDERER) throw new ArgonautError('renderer-changed', `Argonauts.renderer() is ${renderer}, expected the pinned V5`);
+  await acceptRenderer(rpc, renderer, block);
   const traits = dec('traitsOf()', () => decUint8x7(pre[1]));
   const dragons = dec('isDragonsBreath()', () => bool(pre[2]));
   const [raw] = await rpc.batchAll([call(PINNED_RENDERER, SEL.renderSeeded + traits.map(word).join('') + word(tokenId), block)])

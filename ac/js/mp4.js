@@ -11,9 +11,9 @@
 //    at most ≈60 MB (2016 at 24 Mb/s × 20 s; ≈30 MB at 1440), far from the ArrayBufferTarget OOM zone.
 // Everything the browser provides is injectable (env) so tests/test-mp4.mjs runs the real loop in Node.
 import { makeAcEngine } from './engine-ac.js?v=8410dea0c1';
-import { stepPaintCompose } from './stage.js?v=0c44884967';
-import { OUT, OUT_PX, composeFrame } from './compose.js?v=2eedc96065';
-import { wantsBackSlab } from './cubes-feed.js?v=36e2245c37';
+import { stepPaintCompose } from './stage.js?v=3f7c249e59';
+import { OUT, OUT_PX, composeFrame } from './compose.js?v=329af6516e';
+import { wantsBackSlab } from './cubes-feed.js?v=d93f8f08b3';
 
 export const MUXER_SRC = 'js/vendor/mp4-muxer-5.1.3.js?v=5.1.3';                   // document-relative (N10)
 export const MUXER_SRI = 'sha256-u6iAggU1EbiYySHnGoZUeIIaZ013m6DHAox4ySH+yvY=';   // = sha256 bba88082… (tests/test-mp4.mjs)
