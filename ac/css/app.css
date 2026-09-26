@@ -27,8 +27,39 @@ button { font: inherit; color: inherit; cursor: pointer; }
 /* ── landing: one phone screen ── */
 .land { min-height: 100dvh; display: flex; flex-direction: column; justify-content: space-between; padding: calc(22px + var(--safe-t)) 22px calc(22px + var(--safe-b)); }
 .trio { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 18px 0 26px; }
-.trio span { aspect-ratio: 1; border-radius: 18px; border: 1px solid var(--line); }
-.trio .c { background: var(--c); } .trio .m { background: var(--m); } .trio .y { background: var(--y); } .trio .k { background: var(--k); }
+.trio span { position: relative; aspect-ratio: 1; }
+.trio .c { color: var(--c); } .trio .m { color: var(--m); } .trio .y { color: var(--y); } .trio .k { color: var(--k); }
+.trio span::before { content: ''; position: absolute; inset: 0; border-radius: 18px; border: 1px solid var(--line); background: currentColor; }
+.trio .bd { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; }
+.svgdefs { position: absolute; width: 0; height: 0; overflow: hidden; }
+/* Le 2026-09-26: 3 s after the page opens a verified check (rounded-lobe seal + tick) FALLS from above onto each square
+   and replaces it, one after the other; 3 s later the square falls back in and replaces the check; loop.
+   Cycle 7 s: fall + settle ≈ 0.85 s · check ≈ 2.6 s · fall back · square (+ the 3 s start delay, + 0.14 s per square).
+   Each keyframe carries its own easing: ease-in while falling (gravity), a small squash + bounce on landing. */
+.trio span::before, .trio .bd { transform-origin: 50% 100%; animation: 7s linear 3s infinite both; }
+.trio span::before { animation-name: trioSquare; }
+.trio .bd { animation-name: trioBadge; }
+.trio .m::before, .trio .m .bd { animation-delay: 3.14s; }
+.trio .y::before, .trio .y .bd { animation-delay: 3.28s; }
+.trio .k::before, .trio .k .bd { animation-delay: 3.42s; }
+@keyframes trioBadge {
+  0% { opacity: 0; transform: translateY(-150%); animation-timing-function: cubic-bezier(.5, 0, 1, .6); }
+  2% { opacity: 1; animation-timing-function: cubic-bezier(.5, 0, 1, .6); }
+  7% { opacity: 1; transform: translateY(0) scale(1.06, .88); animation-timing-function: ease-out; }
+  9.5% { transform: translateY(-7%) scale(.98, 1.03); animation-timing-function: ease-in; }
+  12%, 55% { opacity: 1; transform: none; animation-timing-function: ease-in; }
+  59%, 100% { opacity: 0; transform: translateY(18%) scale(.7); }
+}
+@keyframes trioSquare {
+  0%, 5.5% { opacity: 1; transform: none; animation-timing-function: ease-in; }
+  9.5% { opacity: 0; transform: translateY(18%) scale(.7); }
+  50% { opacity: 0; transform: translateY(-150%); animation-timing-function: cubic-bezier(.5, 0, 1, .6); }
+  52% { opacity: 1; animation-timing-function: cubic-bezier(.5, 0, 1, .6); }
+  57% { opacity: 1; transform: translateY(0) scale(1.06, .88); animation-timing-function: ease-out; }
+  59.5% { transform: translateY(-7%) scale(.98, 1.03); animation-timing-function: ease-in; }
+  62%, 100% { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) { .trio span::before, .trio .bd { animation: none; } }
 .land h1 { font: 500 26px/1.18 var(--sans); letter-spacing: -.02em; margin: 0 0 12px; }
 .land h1, .land .lede { text-align: center; text-wrap: balance; }   /* title block centred (Le); balance = no lone last word */
 .land h1 .powered { display: block; margin-top: 8px; font: 500 12px/1.2 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
@@ -110,16 +141,45 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .pip .lbl { display: block; font-size: 8px; text-align: center; margin-top: 4px; }
 .seg { display: inline-flex; align-items: center; gap: 5px; padding: 3px; border-radius: 999px; background: rgba(255, 255, 255, .75); border: 1px solid var(--line); backdrop-filter: blur(18px); perspective: 400px; }
 .seg b { font: 600 10px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; padding: 9px 12px; border-radius: 999px; color: var(--muted); }
-.seg-alt { border: 0; background: transparent; padding: 0; border-radius: 999px; }   /* the other view's label — a second hit area for the toggle */
-.seg-alt:disabled { cursor: default; } .seg-alt:disabled b { opacity: .45; }
-/* Sliding latch: the metal face travels between two fixed positions. */
-.seg:has(> .solid.pill) { position: relative; width: 112px; height: 38px; flex: none; }
+/* Sliding latch: the metal face travels between fixed positions (the 2-position 2D/Cubes latch became the 3-position
+   selector below on 2026-09-26; its #viewBtn / .seg-alt rules went with it). */
 .seg > .solid.pill { position: absolute; left: 3px; top: 3px; translate: 0 0; transition: translate 280ms cubic-bezier(.22, 1, .36, 1); }
-.seg:has(#viewBtn[aria-pressed="true"]) > .solid.pill { translate: 54px 0; }
-.seg > .seg-alt { position: absolute; right: 3px; top: 3px; width: 50px; height: 30px; display: grid; place-items: center; }
-.seg > .seg-alt b { padding: 0; font-size: 9px; }
-.seg:has(#viewBtn[aria-pressed="true"]) > .seg-alt { right: auto; left: 3px; }
 @media (prefers-reduced-motion: reduce) { .seg > .solid.pill { transition: none; } }
+/* three positions (Le 2026-09-26): 2D · Cubes · Checks — the labels are the buttons (3 × 50px), the metal knob slides
+   under the active one and never takes a click (pointer-events: none) */
+.seg.views { position: relative; width: 112px; height: 38px; flex: none; gap: 4px; }
+.seg.views > .seg-lab { position: relative; z-index: 0; width: 50px; height: 30px; display: grid; place-items: center; border: 0; background: transparent; padding: 0; border-radius: 999px; cursor: pointer; }
+.seg.views > .seg-lab b { padding: 0; font-size: 9px; }
+.seg.views > .seg-lab[aria-pressed="true"] b { visibility: hidden; }   /* the knob carries the active label */
+.seg.views > .seg-lab:disabled { cursor: default; } .seg.views > .seg-lab:disabled b { opacity: .45; }
+.seg.views > .seg-lab:focus-visible { outline: 2px solid #006d86; outline-offset: 2px; }
+.seg.views > .solid.pill { pointer-events: none; z-index: 1; }
+.seg.views:has([data-view="cubes"][aria-pressed="true"]) > .solid.pill { translate: 54px 0; }
+.seg.views:has(> .seg-lab:disabled[aria-pressed="true"]) .metal { filter: brightness(.93) contrast(.8); }   /* no verified Argonaut: the knob dims like a disabled metal button */
+.seg.views .metal { display: grid; place-items: center; font: 600 9px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+/* Checks & Stars: their own crisp canvas over the 2D one (720 px, 30 px per cell) + the style pill (bottom-left) */
+.fxcv { position: absolute; inset: 0; width: 100%; height: 100%; display: block; image-rendering: auto; }
+.fxcv[hidden] { display: none; }
+.stylepill { position: absolute; left: clamp(6px, 4cqw, 12px); bottom: clamp(6px, 4cqw, 12px); display: flex; gap: 4px; padding: 4px; border-radius: 999px; background: rgba(255, 255, 255, .82); border: 1px solid var(--line); backdrop-filter: blur(16px); z-index: 2; }
+.stylepill[hidden] { display: none; }
+.stylepill button { width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 999px; background: transparent; padding: 0; cursor: pointer; opacity: .5; transition: opacity 150ms ease-out, box-shadow 150ms ease-out; }
+.stylepill button[aria-pressed="true"] { opacity: 1; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .12); }
+.stylepill button:focus-visible { outline: 2px solid #006d86; outline-offset: 2px; }
+.stylepill svg { width: 20px; height: 20px; display: block; }
+.stylepill .fx-badge { color: #1d9bf0; }
+.stylepill .fx-star.gold { fill: #ffe600; stroke: #e6b400; stroke-width: .8; }
+.stylepill .fx-star.silver { fill: #d8dfe8; stroke: #8fa0b4; stroke-width: .8; }
+/* open / close (Le 2026-09-26): closed = the toggle alone, grey; open = it lights up and the three styles slide out */
+.stylepill { align-items: center; gap: 0; }                 /* closed = exactly the toggle (the gap lives inside .fxopts) */
+#fxToggle svg { transition: filter 220ms ease-out, transform 260ms cubic-bezier(.2, .8, .2, 1); }
+.stylepill:not(.open) #fxToggle { opacity: .6; }
+.stylepill:not(.open) #fxToggle svg { filter: grayscale(1); }
+.stylepill.open #fxToggle svg { transform: rotate(360deg); }
+.stylepill .fxopts { display: flex; align-items: center; gap: 4px; max-width: 0; opacity: 0; overflow: hidden; transition: max-width 280ms cubic-bezier(.2, .8, .2, 1), opacity 200ms ease-out; }
+.stylepill.open .fxopts { max-width: 90px; opacity: 1; }
+.stylepill .fxopts button { flex: none; }
+.stylepill .fxsep { flex: none; width: 1px; height: 18px; margin: 0 1px 0 4px; background: var(--line); }
+@media (prefers-reduced-motion: reduce) { .stylepill button, #fxToggle svg, .stylepill .fxopts { transition: none; } }
 /* Cubes (chunk 7c): the GL canvas sits right after #stage (G4 — .pip/.hud have no z-index and paint after it by DOM
    order). touch-action: pan-y → a horizontal swipe rotates, a vertical one still scrolls the page (Le). */
 .cubes { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: pan-y; cursor: grab; }
@@ -215,6 +275,13 @@ html:has(.app:not([hidden]))::-webkit-scrollbar { width: 0; }
 .dock { margin-bottom: calc(-1 * var(--dock-fill)); }   /* the fill itself goes to the scrollable panel (.panel height, Codex) */
 
 @media (min-width: 760px) { .land, .app { max-width: 460px; margin: 0 auto; } }
+/* Desktop (Le 2026-09-26): the render +20 % (432 → 518 px) and a WIDER categories dock (720 px); the title row stays
+   with the render. The render is capped, so the wider app never grows it past 518. */
+@media (min-width: 760px) and (pointer: fine) {
+  .app { max-width: 720px; }
+  .stagewrap { --stage-s: min(100cqw, 100cqh, 518px); }
+  .app > .meta { width: 100%; max-width: 518px; margin-inline: auto; }
+}
 /* Mouse/trackpad (Le): a sideways strip with a hidden scrollbar looks like "only 5 Credits" — there, the strips wrap
    into a grid and the (fixed-height) panel scrolls vertically with the wheel. Touch keeps the swipe strip. */
 @media (pointer: fine) {
@@ -227,6 +294,9 @@ html:has(.app:not([hidden]))::-webkit-scrollbar { width: 0; }
   .app { position: relative; height: auto; min-height: 100dvh; justify-content: center; padding-top: 72px; padding-bottom: 72px; }
   .app > .bar { position: absolute; top: 12px; left: 18px; right: 18px; }
   .stagewrap { flex: 0 0 432px; height: 432px; min-height: 432px; }
+}
+@media (min-width: 1024px) and (min-height: 1050px) and (pointer: fine) {   /* the +20 % render needs 86 px more height */
+  .stagewrap { flex: 0 0 518px; height: 518px; min-height: 518px; }
 }
 .land:not([hidden]) { animation: ac-fade 320ms ease-out; }
 /* App entry (Le: "más suave, con scale"): the blocks rise in, one after another, instead of the whole screen at once.

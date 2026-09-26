@@ -3,11 +3,12 @@
 // modal, extracted VERBATIM by text anchors (itself a hand-patched copy of the landing's renderer — see its header).
 // header block sha256 (LF): 07d9d869b1415d16eca2f2baa78caa2ce0e506df04b18c108ab4a72dfe7a8415
 // extracted span sha256 (LF): 1fbece3d308c83ae7f925d3e964802b8a2d362f25e3e450b7a487dc2076d901a
-// AC-DELTA: exactly 8 declared lines — the IIFE becomes `export function create3d(opts)` (2 wrapper lines);
+// AC-DELTA: exactly 10 declared lines — the IIFE becomes `export function create3d(opts)` (2 wrapper lines);
 // opts.dpr overrides the DPR (the MP4 exporter's detached canvas: clientWidth 0 → resize()'s 720 fallback × dpr = exact size);
 // buildVoxels/setPunk take `back` → 576 back-slab voxels at z=-1 (gi 576..1151) for an animated Background, and
 // `raised` (Uint8Array 576) → a second cube at z=+1 for every cell covered by a layer above Bones (D7, same gi/colour).
-// AC calls render() with mode 'normal' (mi=0) ONLY; a back-slab build is invalid in any other mode.
+// Checks & Stars 3D: 'check' takes `fused` too (2 lines) → seal + tick only on the animated layer, plain cubes elsewhere.
+// AC calls render() with modes 'normal' / 'check' / 'gold' / 'silver' ONLY; rgb, idx and fused always cover 1152 cells.
 // Only caller in the app: cubes.js. Design: app-plan/13-chunk7-synthesis.md
 /* eslint-disable */
 export function create3d(opts) {   // AC-DELTA: the IIFE becomes a factory (one instance per canvas); opts.dpr (chunk 9c MP4)
@@ -266,7 +267,7 @@ export function create3d(opts) {   // AC-DELTA: the IIFE becomes a factory (one 
       // recenter on the actual silhouette bbox (punks are top-heavy / off-centre in the 24 grid) + report the
       // extent → the camera fits the PUNK (not the empty 24 grid) → it fills the screen + is vertically centred.
       if (raised) for (var dq = 0, dn = body.length; dq < dn; dq++) { var dv = body[dq]; if (dv.z === 0 && raised[dv.gi]) body.push({ x: dv.x, y: dv.y, z: 1, gi: dv.gi, r: dv.r, c: dv.c, canon: false, cr: 0, cg: 0, cb: 0 }); }   // AC-DELTA: D7 layers above Bones one cube forward, solid column (same gi = same colour)
-      if (back) for (var bq = 0; bq < N * N; bq++) body.push({ x: bq % N - (N - 1) / 2, y: -(((bq / N) | 0) - (N - 1) / 2), z: -1, gi: N * N + bq, r: (bq / N) | 0, c: bq % N, canon: false, cr: 0, cg: 0, cb: 0 });   // AC-DELTA: back slab one cube behind (colours from rgb[576..1151]); valid for mode 'normal' ONLY
+      if (back) for (var bq = 0; bq < N * N; bq++) body.push({ x: bq % N - (N - 1) / 2, y: -(((bq / N) | 0) - (N - 1) / 2), z: -1, gi: N * N + bq, r: (bq / N) | 0, c: bq % N, canon: false, cr: 0, cg: 0, cb: 0 });   // AC-DELTA: back slab one cube behind (colours from rgb[576..1151]); modes normal/check/gold/silver ONLY, with rgb/idx/fused of 1152 cells
       var all = body.concat(side), minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9, q;
       for (q = 0; q < all.length; q++) { var v2 = all[q]; if (v2.x < minX) minX = v2.x; if (v2.x > maxX) maxX = v2.x; if (v2.y < minY) minY = v2.y; if (v2.y > maxY) maxY = v2.y; }
       var ccx = (minX + maxX) / 2, ccy = (minY + maxY) / 2;
@@ -338,9 +339,11 @@ export function create3d(opts) {   // AC-DELTA: the IIFE becomes a factory (one 
       if (mode === 'normal') {
         fillNormal(rgb); uploadNC(); drawPerInst(MESH.cube, ncOffBuf, ncColorBuf, ncCount);
       } else if (mode === 'check') {
+        if (fused) { var nNFc = bucketColored(3, function (k) { return !fused[ncGi[k]]; }, rgb); drawPerInst(MESH.cube, bkBufs[3], ncColorBuf, nNFc); var nFc = bucketColored(4, function (k) { return !!fused[ncGi[k]]; }, rgb); drawPerInst(MESH.disc, bkBufs[4], ncColorBuf, nFc); drawFlat(MESH.tick, bkBufs[4], nFc, CHECK_BEIGE); } else {   // AC-DELTA: check only on the animated layer (fused), the rest plain cubes
         fillNormal(rgb); uploadNC();
         drawPerInst(MESH.disc, ncOffBuf, ncColorBuf, ncCount);                  // seal disc = PAL[v]
         drawFlat(MESH.tick, ncOffBuf, ncCount, CHECK_BEIGE);                    // ✓ beige relief
+        }   // AC-DELTA: end of the unscoped (Punks) check branch
       } else if (mode === 'gold' || mode === 'silver') {
         var pal = STAR_PAL[mode];
         var isFu = function (k) { return !fused || fused[ncGi[k]]; };             // modal: fx ONLY on the fused trait (punk identity kept); no mask (landing) → whole punk gold

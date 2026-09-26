@@ -9,8 +9,11 @@
 // that wants frames — spin/drag). With a view, the 2D canvas becomes the flat backdrop (the Background layer, or the
 // page grey while the engine animates the Background = back slab), and a view failure never reaches onError (G2).
 import { makeAcEngine } from './engine-ac.js?v=8410dea0c1';
-import { prepareLayers, composeFrame, OUT, OUT_PX } from './compose.js?v=766f38cb60';
-import { backgroundLayers, wantsBackSlab } from './cubes-feed.js?v=82c8e3bab5';
+import { prepareLayers, composeFrame, OUT, OUT_PX } from './compose.js?v=607ac14ea1';
+import { backgroundLayers, wantsBackSlab } from './cubes-feed.js?v=bd03909fc1';
+import { createFxPainter, starAngle } from './fx.js?v=abd4dbc130';
+
+export const FX_LIVE = 720;                                  // live Checks/Stars canvas: 30 px per cell (Punks' PD)
 
 export const STEP_MS = 1000 / 60;                            // one engine step = 1/60 s, live AND in the MP4 (chunk 9a, Le: same speed on every screen)
 const BACKDROP_GREY = [0xf4, 0xf5, 0xf6];                    // --bg: behind the back slab (Le 2026-09-24)
@@ -27,7 +30,7 @@ export function stepPaintCompose(engine, n, target, cap, layers, marks, slot, fr
   return cap.last.data;
 }
 
-export function createStage(display, { onError = null, onViewError = null } = {}) {
+export function createStage(display, { onError = null, onViewError = null, onFxError = null } = {}) {
   display.width = OUT; display.height = OUT;                 // intrinsic 144×144; size it with CSS + image-rendering:pixelated
   const dctx = display.getContext('2d');
   const target = { width: OUT, height: OUT };                // paintTo only reads width/height from its target
@@ -43,12 +46,18 @@ export function createStage(display, { onError = null, onViewError = null } = {}
 
   let layers = null, bgLayers = [], marks = [], slot = null, engine = null, raf = 0, frames = 0, t0 = 0, destroyed = false;
   let view = null, lastTs = 0, acc = 0, held = false;
+  // Checks & Stars (Le 2026-09-26): {name, painter, reduced, t0} — painted on its own canvas over the 2D one after
+  // every composed frame; exclusive with the Cubes view (the UI never sets both). A paint failure drops the fx (the 2D
+  // frame under it is always current) and reports through onFxError — it never reaches the engine's try.
+  let fx = null;
   let engIn = null;                                          // {comp, credit, slot} of the engine that is RUNNING (N2: the MP4 snapshot's one source)
-  const noEngine = () => { engine = null; engIn = null; acc = 0; };
+  let pal = null;                                            // the running engine's Credit palette (set before its first frame)
+  const noEngine = () => { engine = null; engIn = null; pal = null; acc = 0; };
 
   const put = () => dctx.putImageData(img, 0, 0);
   /** the sink: 2D → the frame; with a view → backdrop on the 2D canvas + the view draws its own canvas.
-   *  VIEW CONTRACT: draw(frame, bgFrame, back, dtMs) samples both buffers synchronously (never keeps them), never calls
+   *  VIEW CONTRACT: draw(frame, bgFrame, back, dtMs, eng) samples the buffers synchronously (never keeps them; eng =
+   *  {rgb: the engine's 144×144 paint, pal, slot, marks} or null when static), never calls
    *  back into the stage except kick(), and signals failure ONLY by returning false (it already handled its own
    *  fallback + UI) or by throwing (→ onViewError). Either way the stage drops the view and puts the full frame (G3). */
   function out(engineRGB, dtMs) {
@@ -58,7 +67,8 @@ export function createStage(display, { onError = null, onViewError = null } = {}
       let ok = false, err = null;
       try {                                                  // G2: nothing view-side ever throws into the engine's try (7b GO sonnet P3-1)
         composeFrame(bgLayers, null, engineRGB ? slot : null, engineRGB, bgFrame);
-        ok = v.draw(frame, bgFrame, back, dtMs) !== false;
+        // Checks & Stars 3D: the engine's own paint + the palette it runs on (the view reads the star bits from it)
+        ok = v.draw(frame, bgFrame, back, dtMs, engineRGB && pal ? { rgb: engineRGB, pal, slot, marks } : null) !== false;
       } catch (e) { err = e; }
       if (view !== v) return;                                // 7b GO opus P2-1: draw() re-entered setView → that call already painted
       if (ok) { dctx.putImageData(back ? greyImg : bgImg, 0, 0); return; }
@@ -68,6 +78,14 @@ export function createStage(display, { onError = null, onViewError = null } = {}
       return;
     }
     put();
+    if (fx) paintFx();
+  }
+  function paintFx() {
+    if (!layers) return;
+    // the star spin follows wall time (a >60 Hz display skips painting on step-less ticks; the spin must not slow down)
+    const angle = fx.name === 'check' || (fx.reduced && fx.reduced.matches) ? 0 : starAngle(performance.now() - fx.t0);
+    try { fx.painter.paint(engine, layers, marks, engine ? slot : null, fx.name, angle); }
+    catch (e) { fx = null; if (onFxError) onFxError(e); }     // the 2D frame underneath is current; the UI goes back to 2D
   }
   function drawStatic(dtMs = 0) { if (layers) { composeFrame(layers, marks, null, null, frame); out(null, dtMs); } }
   function stepAndDraw(n, dtMs) { out(stepPaintCompose(engine, n, target, cap, layers, marks, slot, frame), dtMs); }
@@ -120,14 +138,17 @@ export function createStage(display, { onError = null, onViewError = null } = {}
       if (!layers) throw new Error('setArgonaut first');
       try { engine = makeAcEngine(engCanvas, comp, credit); }
       catch (e) { noEngine(); drawStatic(); schedule(); throw e; }
-      slot = animSlot; frames = 0; t0 = performance.now();
+      slot = animSlot; pal = credit.pal; frames = 0; t0 = performance.now();
       try { stepAndDraw(1, 0); } catch (e) { stop(); noEngine(); drawStatic(); schedule(); throw e; }   // first frame now (even hidden); a failure is THROWN to the caller (not also sent to onError)
       engIn = { comp, credit, slot: animSlot };             // only once the engine really produced its first frame
       schedule();
     },
     clearEngine() { stop(); noEngine(); drawStatic(); schedule(); },
     /** forget the Argonaut and blank the canvas (chunk-6 GO: the canvas/PNG must never show a previous Argonaut) */
-    reset() { stop(); noEngine(); layers = null; bgLayers = []; marks = []; slot = null; if (view && view.onReset) view.onReset(); dctx.clearRect(0, 0, OUT, OUT); },
+    reset() {
+      stop(); noEngine(); layers = null; bgLayers = []; marks = []; slot = null; if (view && view.onReset) view.onReset(); dctx.clearRect(0, 0, OUT, OUT);
+      if (fx) { const c = fx.painter.canvas; c.getContext('2d').clearRect(0, 0, c.width, c.height); }   // the fx canvas never keeps a previous Argonaut either
+    },
     /** N6: pause the live loop (an MP4 export runs); hold(false) re-arms it — never leaves the stage frozen */
     hold(on) { held = !!on; if (held) stop(); else schedule(); },
     /** N2: everything that produced the pixels NOW, for the MP4 exporter's own instance (null without an Argonaut).
@@ -140,6 +161,23 @@ export function createStage(display, { onError = null, onViewError = null } = {}
       if (view && layers && view.onArgonaut) view.onArgonaut(layers);   // 7c: a view attached AFTER setArgonaut learns the current Argonaut
       redraw(); schedule();
     },
+    /** Checks & Stars: `name` ∈ FX ('check' | 'gold' | 'silver') painted into the `canvas` element (FX_LIVE px), or
+     *  null for plain 2D. Exclusive with setView (the UI detaches Cubes first). Redraws synchronously. */
+    setFx(name, canvas, { reduced = null } = {}) {
+      if (!name) { fx = null; return; }
+      const painter = fx && fx.painter.canvas === canvas ? fx.painter : createFxPainter(FX_LIVE, undefined, canvas);
+      fx = { name, painter, reduced, t0: fx ? fx.t0 : performance.now() };
+      redraw(); schedule();
+    },
+    /** the Checks/Stars frame NOW at `size` (PNG; 2016 = 14 × 144): the live engine's current state, never stepped */
+    fxSnapshot(size) {
+      if (!fx || !layers) return null;
+      const p = createFxPainter(size);
+      const angle = fx.name === 'check' || (fx.reduced && fx.reduced.matches) ? 0 : starAngle(performance.now() - fx.t0);   // = the screen (GO opus P3-3)
+      return p.paint(engine, layers, marks, engine ? slot : null, fx.name, angle).toDataURL('image/png');
+    },
+    /** the active Checks/Stars name, or null */
+    fxName() { return fx ? fx.name : null; },
     /** the view started wanting frames (drag start / spin resumed) → arm the loop if it is idle */
     kick() { schedule(); },
     /** true while an Argonaut is on the canvas (PNG is only offered then) */

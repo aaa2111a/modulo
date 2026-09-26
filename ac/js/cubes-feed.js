@@ -2,7 +2,8 @@
 // cells become voxels, which colour each voxel takes each frame, and what the flat backdrop shows. No DOM, no GL —
 // everything here is testable in Node.
 import { LAYER } from './argonaut.js?v=daf77ad712';
-import { SIZE, PX, SCALE, OUT } from './compose.js?v=766f38cb60';
+import { SIZE, PX, SCALE, OUT } from './compose.js?v=607ac14ea1';
+import { overlay } from './fx.js?v=abd4dbc130';
 
 export const CELLS = PX;                  // 576
 export const RGB_CELLS = PX * 2;          // G17: the rgb fed to the core ALWAYS has 1152 cells (576..1151 = back slab)
@@ -45,3 +46,58 @@ export function sampleCells(frame, rgb, off = 0) {
 
 /** D2': the back slab exists only while an engine really runs on the BACKGROUND slot */
 export const wantsBackSlab = (engineOn, slot) => !!engineOn && slot === LAYER.BACKGROUND;
+
+// ── MP4 turn (Le 2026-09-26): one full turn over the clip, but at the live spin's CURVE — slow facing the camera, faster
+// edge-on where there is little to see (cubes.js spin(): 0.0015 + 0.004·(1 − |cos yaw|), ~3.7× on the sides). Exact:
+// yaw(0) = start, yaw(1) = start + 2π, so the clip still loops seamlessly (the speed is periodic too). ──
+const SPIN_SLOW = 0.0015, SPIN_EDGE = 0.004, SPIN_STEPS = 4096;
+const spinTables = new Map();
+function spinTable(start) {
+  let t = spinTables.get(start);
+  if (t) return t;
+  const speed = y => SPIN_SLOW + SPIN_EDGE * (1 - Math.abs(Math.cos(y)));
+  t = new Float64Array(SPIN_STEPS + 1);                    // t[i] = time to reach start + 2π·i/STEPS (trapezoid of 1/speed)
+  const dy = 2 * Math.PI / SPIN_STEPS;
+  for (let i = 1; i <= SPIN_STEPS; i++) t[i] = t[i - 1] + dy * (1 / speed(start + (i - 1) * dy) + 1 / speed(start + i * dy)) / 2;
+  spinTables.set(start, t);
+  return t;
+}
+/** the yaw at clip fraction u ∈ [0, 1] of one full turn starting at `start` */
+export function spinYaw(u, start) {
+  const t = spinTable(start), want = Math.min(1, Math.max(0, u)) * t[SPIN_STEPS];
+  let lo = 0, hi = SPIN_STEPS;
+  while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (t[mid] <= want) lo = mid; else hi = mid; }
+  const f = t[hi] > t[lo] ? (want - t[lo]) / (t[hi] - t[lo]) : 0;
+  return start + (lo + f) * 2 * Math.PI / SPIN_STEPS;
+}
+
+// ── Checks & Stars in 3D (Le 2026-09-26): the core's check / gold / silver modes, scoped to the animated layer ──
+/**
+ * `fused` for the core (RGB_CELLS entries): which voxels become a seal / star tile. Background animated → the back slab
+ * (gi 576..1151) wherever the Background has a cell; the figure in front stays plain cubes. Any other layer → its own
+ * cells (the stage's mask) that are still visible, i.e. not fully covered by what is drawn after it (fx.js overlay
+ * alpha < 255: a 50 % lens / smoke lets the glyph through, like the 2D Checks view). Slot absent → all zero.
+ */
+export function fusedMask(layers, marks, slot, back) {
+  const m = new Uint8Array(RGB_CELLS), L = layers.find(x => x.slot === slot);
+  if (!L) return m;
+  if (slot === LAYER.BACKGROUND) { if (back) for (let i = 0; i < PX; i++) m[CELLS + i] = L.mask[i] ? 1 : 0; return m; }
+  const top = overlay(layers, marks, slot);
+  for (let i = 0; i < PX; i++) m[i] = L.mask[i] && top[i * 4 + 3] < 255 ? 1 : 0;
+  return m;
+}
+/**
+ * `idx` for the core (RGB_CELLS entries): the engine's palette index of every window cell — the value whose bits pick
+ * lit / shadow tile and star (the 2D paintToStars reads the same bits from the engine grid). Read like Punks' 3D does
+ * (nearest palette colour of the cell's centre pixel), here from the ENGINE's own 144×144 paint (never the composed
+ * frame, where an upper layer could tint it) and the Credit palette it runs on. The slab half repeats the front half.
+ */
+export function paletteIndex(engineRGB, pal, idx) {
+  for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) {
+    const s = ((r * SCALE + MID) * OUT + c * SCALE + MID) * 4, R = engineRGB[s], G = engineRGB[s + 1], B = engineRGB[s + 2];
+    let bi = 0, bd = Infinity;
+    for (let k = 0; k < pal.length; k++) { const p = pal[k], d = (R - p[0]) ** 2 + (G - p[1]) ** 2 + (B - p[2]) ** 2; if (d < bd) { bd = d; bi = k; } }
+    idx[r * SIZE + c] = bi; idx[CELLS + r * SIZE + c] = bi;
+  }
+  return idx;
+}

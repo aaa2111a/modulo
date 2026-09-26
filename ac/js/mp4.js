@@ -11,9 +11,10 @@
 //    at most ≈60 MB (2016 at 24 Mb/s × 20 s; ≈30 MB at 1440), far from the ArrayBufferTarget OOM zone.
 // Everything the browser provides is injectable (env) so tests/test-mp4.mjs runs the real loop in Node.
 import { makeAcEngine } from './engine-ac.js?v=8410dea0c1';
-import { stepPaintCompose } from './stage.js?v=a55f29af1f';
-import { OUT, OUT_PX, composeFrame } from './compose.js?v=766f38cb60';
-import { wantsBackSlab } from './cubes-feed.js?v=82c8e3bab5';
+import { stepPaintCompose } from './stage.js?v=871ea22760';
+import { OUT, OUT_PX, composeFrame } from './compose.js?v=607ac14ea1';
+import { wantsBackSlab } from './cubes-feed.js?v=bd03909fc1';
+import { createFxPainter, starAngle, FX } from './fx.js?v=abd4dbc130';
 
 export const MUXER_SRC = 'js/vendor/mp4-muxer-5.1.3.js?v=5.1.3';                   // document-relative (N10)
 export const MUXER_SRI = 'sha256-u6iAggU1EbiYySHnGoZUeIIaZ013m6DHAox4ySH+yvY=';   // = sha256 bba88082… (tests/test-mp4.mjs)
@@ -85,7 +86,8 @@ function frameSource(inputs, env) {
   const frame = new Uint8ClampedArray(OUT_PX * 4), bgFrame = new Uint8ClampedArray(OUT_PX * 4);
   if (!eng) { composeFrame(layers, marks, null, null, frame); composeFrame(bgLayers, null, null, null, bgFrame); }   // static: once
   return {
-    frame, bgFrame, back: wantsBackSlab(eng, slot),
+    frame, bgFrame, back: wantsBackSlab(eng, slot), eng,
+    engRGB: () => (eng && cap.last ? cap.last.data : null),   // the export engine's own 144×144 paint (Checks & Stars 3D)
     step(f, spf, withBg) {
       if (!eng) return;
       const rgb = stepPaintCompose(eng, f === 0 ? 1 : spf, target, cap, layers, marks, slot, frame);
@@ -95,6 +97,27 @@ function frameSource(inputs, env) {
 }
 
 /** 2D job — call SYNCHRONOUSLY in the click handler (N2): its own engine from what the stage applied */
+/** Checks & Stars job (Le 2026-09-26) — SYNCHRONOUS now (its own engine, N2). Each frame: the engine steps exactly like
+ *  the 2D job, then fx.js paints the engine's glyphs at the export size (2016 → 84 px per cell). The star spin comes
+ *  from the frame index (one turn per STAR_SPIN_MS), so the clip is deterministic. Needs a running engine, like 2D. */
+export function prepareFx(inputs, fx, env = G) {
+  if (!inputs || !inputs.engine) throw new ExportError('no-engine', 'MP4 needs a running engine');
+  if (!FX.includes(fx)) throw new ExportError('unsupported', 'unknown style ' + fx);
+  const src = frameSource(inputs, env);
+  const mk = (w, h) => { const c = env.document.createElement('canvas'); c.width = w; c.height = h; return c; };
+  let painter = null;
+  return {
+    kind: 'fx',
+    setup(size) { painter = createFxPainter(size, mk); },
+    render(f, spf) { src.step(f, spf, false); },
+    draw(ctx, img, size, f, N, fps) {
+      const c = painter.paint(src.eng, inputs.layers, inputs.marks, inputs.engine.slot, fx, fx === 'check' ? 0 : starAngle(f * 1000 / fps));
+      ctx.drawImage(c, 0, 0, size, size);
+    },
+    dispose() { painter = null; },
+  };
+}
+
 export function prepare2D(inputs, env = G) {
   if (!inputs || !inputs.engine) throw new ExportError('no-engine', 'MP4 needs a running engine');
   const src = frameSource(inputs, env);
@@ -112,8 +135,9 @@ export function prepare2D(inputs, env = G) {
 const SETUP_TEXT = {
   empty: 'this Argonaut has nothing to build in cubes', size: 'this device cannot draw cubes that large', webgl: 'Cubes need WebGL2 to export',
 };
-export function prepareCubes(inputs, makeGL, env = G) {
+export function prepareCubes(inputs, makeGL, env = G, fx = null) {   // fx: the checks / stars style (Le 2026-09-26), null = plain
   if (!inputs) throw new ExportError('no-argonaut', 'no Argonaut on the stage');
+  if (fx !== null && !FX.includes(fx)) throw new ExportError('unsupported', 'unknown style ' + fx);
   const src = frameSource(inputs, env);
   const grey = new Uint8ClampedArray(OUT_PX * 4);
   for (let i = 0; i < OUT_PX; i++) { grey[i * 4] = 0xf4; grey[i * 4 + 1] = 0xf5; grey[i * 4 + 2] = 0xf6; grey[i * 4 + 3] = 255; }
@@ -121,7 +145,9 @@ export function prepareCubes(inputs, makeGL, env = G) {
   return {
     kind: 'cubes',
     setup(size) {
-      try { gl = makeGL({ layers: inputs.layers, back: src.back }, size, env); }
+      const run = inputs.engine;                                // the style only means something with a running engine (else plain)
+      const style = fx && run ? { fx, marks: inputs.marks, slot: run.slot, pal: run.credit.pal } : {};
+      try { gl = makeGL({ layers: inputs.layers, back: src.back, animSlot: run ? run.slot : null, ...style }, size, env); }   // animSlot: the Palette zoom
       catch (e) {                                              // 9c GO sonnet P3: an unexpected throw keeps its own text (console), never only "WebGL2"
         const code = e.message === 'empty' ? 'empty' : e.message === 'size' ? 'size' : 'webgl';
         if (code === 'webgl' && e.message !== 'webgl' && env.console) env.console.error('[mp4] cubes setup', e);
@@ -131,7 +157,7 @@ export function prepareCubes(inputs, makeGL, env = G) {
     render(f, spf) { src.step(f, spf, true); },
     draw(ctx, img, size, f, N, fps) {
       upscale(src.back ? grey : src.bgFrame, img.data, size); ctx.putImageData(img, 0, 0);   // the flat backdrop (or the page grey)
-      gl.render(src.frame, src.bgFrame, f, N, fps);
+      gl.render(src.frame, src.bgFrame, f, N, fps, src.engRGB());
       if (gl.lost()) throw new ExportError('lost', 'the graphics context was lost');
       ctx.drawImage(gl.canvas, 0, 0, size, size);
     },

@@ -11,21 +11,40 @@
 //  - spin = Punks' curve (faster edge-on), scaled by dt so it is frame-rate independent; reduced motion: no idle spin
 //    and no inertia, drag only (the single reduced-motion source for the loop gate, 7b G8 deviation).
 // Contract with the stage: draw() never calls back into the stage (it may only request kick() OUTSIDE draw).
-import { create3d } from './cubes-core.js?v=f3f5934deb';
-import { figureMask, raisedMask, countCells, silhouettePixels, sampleCells, RGB_CELLS, CELLS } from './cubes-feed.js?v=82c8e3bab5';
+import { create3d } from './cubes-core.js?v=ccbe87f600';
+import { figureMask, raisedMask, countCells, silhouettePixels, sampleCells, fusedMask, paletteIndex, spinYaw, RGB_CELLS, CELLS } from './cubes-feed.js?v=bd03909fc1';
+import { FX } from './fx.js?v=abd4dbc130';
+import { LAYER } from './argonaut.js?v=daf77ad712';
+
+/** Checks & Stars 3D (Le 2026-09-26): the core mode + its inputs for style `fx` over the engine `eng` ({rgb, pal, slot,
+ *  marks} or null = static). Without both → mode 'normal' (0), fused null. `cache` keeps the fused mask per
+ *  (layers, marks, slot, back); idx (1152) is refilled from the engine's paint every frame (the star bits move with it). */
+function fxArgs(core, fx, eng, layers, back, idx, cache) {
+  if (!fx || !eng || !layers || !FX.includes(fx)) return { mi: 0, fused: null };
+  let f = cache.f;
+  if (!f || f.layers !== layers || f.marks !== eng.marks || f.slot !== eng.slot || f.back !== back) {
+    f = cache.f = { layers, marks: eng.marks, slot: eng.slot, back, m: fusedMask(layers, eng.marks, eng.slot, back) };
+  }
+  if (fx !== 'check') paletteIndex(eng.rgb, eng.pal, idx);   // check colours come from rgb; only the stars read idx
+  return { mi: core.modeIndex(fx), fused: f.m };
+}
 
 const MARGIN = 1.15, MARGIN_SLAB = 1.5;                        // Punks modal fit; wider with the back slab (G18)
 const START_PITCH = -0.10, START_YAW = -0.52;                   // Punks _td initial pose
 const FRAME_MS = 1000 / 60;
+// MP4 only (Le 2026-09-26): the camera 10 % closer than live — ONLY while the engine animates Palette (the Background:
+// the wide back-slab framing has room; on the other layers the head would touch the top edge at 10 %)
+const EXPORT_ZOOM = 1.1;
 
 /**
  * MP4 (chunk 9c, app-plan/18-… M4 + N8): a DISPOSABLE second core instance on a DETACHED canvas, exactly size² — its
  * clientWidth is 0, so resize() takes the 720 fallback × opts.dpr (delta 8); asserted, never assumed. Same build as the
- * live view (figure mask, raised relief, back slab, margins), but the pose is a pure function of the frame index:
- * one full turn over the clip (yaw = START_YAW + 2π·f/N), pitch fixed. Lives here so cubes.js stays the ONLY importer of
+ * live view (figure mask, raised relief, back slab), the camera 10 % closer when Palette animates (EXPORT_ZOOM), and the pose
+ * is a pure function of the frame index: one full turn over the clip at the live spin's curve (cubes-feed spinYaw —
+ * slower facing the camera, faster edge-on), pitch fixed. Lives here so cubes.js stays the ONLY importer of
  * the core (CC4). Throws Error('empty' | 'webgl' | 'size') — the exporter maps them to messages.
  */
-export function createCubesExport({ layers, back }, size, env = globalThis) {
+export function createCubesExport({ layers, back, fx = null, marks = null, slot = null, pal = null, animSlot = null }, size, env = globalThis) {
   const mask = figureMask(layers);
   if (!countCells(mask)) throw new Error('empty');
   const canvas = env.document.createElement('canvas');
@@ -39,19 +58,21 @@ export function createCubesExport({ layers, back }, size, env = globalThis) {
   // failure, or retries pile up contexts until the browser drops the oldest (maybe the live #cubes one). setPunk's false
   // = no context at all. Size: the DRAWING BUFFER, not canvas.width (always = size) — a GPU may clamp it (opus P3-2).
   try {
-    core.init(canvas, back ? MARGIN_SLAB : MARGIN);
+    core.init(canvas, (back ? MARGIN_SLAB : MARGIN) / (animSlot === LAYER.BACKGROUND ? EXPORT_ZOOM : 1));
     if (!core.setPunk(silhouettePixels(mask), 0, back, raisedMask(layers))) throw new Error('webgl');
     const g = gl();
     if (!g || g.drawingBufferWidth !== size || g.drawingBufferHeight !== size) throw new Error('size');
   } catch (e) { release(); throw e; }
-  const rgb = new Uint8ClampedArray(RGB_CELLS * 4), idx = new Uint8Array(CELLS);
+  const rgb = new Uint8ClampedArray(RGB_CELLS * 4), idx = new Uint8Array(RGB_CELLS), cache = {};
   return {
     canvas,
-    /** frame f of N: colours from the composed frame (+ the Background frame for the slab), pose from the index */
-    render(frame, bgFrame, f, N, fps) {
+    /** frame f of N: colours from the composed frame (+ the Background frame for the slab), pose from the index;
+     *  engRGB = the export engine's own 144×144 paint (null = static) → the checks / stars style, as live */
+    render(frame, bgFrame, f, N, fps, engRGB = null) {
       sampleCells(frame, rgb, 0);
       if (back) sampleCells(bgFrame, rgb, CELLS);
-      core.render(rgb, idx, 0, START_PITCH, START_YAW + 2 * Math.PI * f / N, f * 1000 / fps, null);   // G21: mode 'normal'
+      const a = fxArgs(core, fx, engRGB && pal ? { rgb: engRGB, pal, slot, marks } : null, layers, back, idx, cache);
+      core.render(rgb, idx, a.mi, START_PITCH, spinYaw(f / N, START_YAW), f * 1000 / fps, a.fused);   // one turn, faster edge-on
     },
     lost() { const g = gl(); return !g || g.isContextLost(); },
     dispose: release,
@@ -66,9 +87,11 @@ export function createCubesExport({ layers, back }, size, env = globalThis) {
 export function createCubes(canvas, { reduced, kick, onFail, onChange, onRestored }) {
   const core = create3d();
   const rgb = new Uint8ClampedArray(RGB_CELLS * 4);
-  const idx = new Uint8Array(CELLS);                           // unused by mode 'normal' (L3374-3376), required by the signature
+  const idx = new Uint8Array(RGB_CELLS);                       // the engine's palette index per cell (gold / silver only)
   let inited = false, active = false, lost = false, unavailable = false;
   let mask = null, raised = null, cells = 0, builtBack = null;                // builtBack: null = must rebuild; else the `back` it was built with
+  let layersNow = null, fx = null, last = { mi: 0, fused: null };            // Checks & Stars 3D: the style + the mode last drawn (PNG)
+  const fxCache = {};
   let pitch = START_PITCH, yaw = START_YAW, vYaw = 0, vPitch = 0, dragging = false, px = 0, py = 0, clock = 0;
 
   function fail(reason, err) {
@@ -133,7 +156,7 @@ export function createCubes(canvas, { reduced, kick, onFail, onChange, onRestore
     leave() { active = false; dragging = false; vYaw = vPitch = 0; canvas.hidden = true; },
 
     // ── the stage's view contract ──
-    draw(frame, bgFrame, back, dtMs) {
+    draw(frame, bgFrame, back, dtMs, eng = null) {
       if (!active) return false;
       if (lost) return fail('lost');
       try {
@@ -147,7 +170,9 @@ export function createCubes(canvas, { reduced, kick, onFail, onChange, onRestore
         sampleCells(frame, rgb, 0);
         if (back) sampleCells(bgFrame, rgb, CELLS);
         spin(dtMs); clock += dtMs;
-        core.render(rgb, idx, 0, pitch, yaw, clock, null);      // G21: mode 'normal' only
+        last = fxArgs(core, fx, eng, layersNow, back, idx, fxCache);   // 'normal' unless a style is on AND an engine runs
+        last.fx = last.mi ? fx : null;                          // what the canvas really shows (the PNG is named after it, GO opus P3-1)
+        core.render(rgb, idx, last.mi, pitch, yaw, clock, last.fused);
         return true;
       } catch (e) {                                               // 7c GO opus P3-1: a throw on a context lost before its event arrived is 'lost' (recoverable)
         let gone = false; try { gone = !!canvas.getContext('webgl2')?.isContextLost(); } catch { /* treat as a real error */ }
@@ -157,9 +182,13 @@ export function createCubes(canvas, { reduced, kick, onFail, onChange, onRestore
     wantsFrame: () => active && !lost && (dragging || !reduced.matches),
     // mask/raised/cells change ONLY together with `builtBack = null` — that is what forces the next draw() to rebuild
     // (the rebuild guard compares builtBack with `back`, not the masks). Keep them in one place (D7 GO sonnet P2).
-    onArgonaut(layers) { mask = figureMask(layers); raised = raisedMask(layers); cells = countCells(mask); builtBack = null; },
+    onArgonaut(layers) { mask = figureMask(layers); raised = raisedMask(layers); cells = countCells(mask); builtBack = null; layersNow = layers; },
+    /** the checks / stars style (null = plain cubes); applies from the next draw */
+    setFx(name) { fx = FX.includes(name) ? name : null; },
+    /** the style of the LAST frame drawn (null = plain): a style tapped while the stage is held shows from the next draw */
+    drawnFx: () => last.fx || null,
     onReset() {
-      mask = null; raised = null; cells = 0; builtBack = null; dragging = false;
+      mask = null; raised = null; cells = 0; builtBack = null; dragging = false; layersNow = null; last = { mi: 0, fused: null };
       // 7c GO opus P3-3: only clear a context the core already created (never create a default-attribute one here)
       if (inited && !lost && core.isReady()) { try { const gl = canvas.getContext('webgl2'); if (gl) gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT); } catch { /* nothing to clear */ } }
       canvas.hidden = true;                                     // pDB: never show the previous Argonaut (G6, chunk-6 invariant)
@@ -173,7 +202,7 @@ export function createCubes(canvas, { reduced, kick, onFail, onChange, onRestore
     /** PNG of the cubes view: the 2D backdrop (nearest, 144 → size) + the GL image (smoothed), centre square. null if not ready. */
     png(backdrop, size = 1152) {
       if (!active || lost || !core.isReady() || builtBack === null) return null;
-      core.render(rgb, idx, 0, pitch, yaw, clock, null);        // a fresh frame in the same task (render-then-read)
+      core.render(rgb, idx, last.mi, pitch, yaw, clock, last.fused);   // a fresh frame in the same task (render-then-read), same style as on screen
       const c = document.createElement('canvas'); c.width = c.height = size;
       const x = c.getContext('2d');
       x.imageSmoothingEnabled = false; x.drawImage(backdrop, 0, 0, size, size);

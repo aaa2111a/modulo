@@ -11,13 +11,14 @@ import { normalizeAddress, toChecksumAddress, ADDR } from './abi.js?v=0e6f5624d9
 import { looksLikeEns, resolveEns, EnsError } from './ens.js?v=09e749d09f';
 import { readArgonauts, readCredits, readCreditData, readArgonautTraits } from './holdings.js?v=603cbc0ecb';
 import { loadRendererConfig, createBlobStore, renderVerified, collectionTraits, drawList, LAYER, LAYER_LABEL, ArgonautError } from './argonaut.js?v=daf77ad712';
-import { prepareLayers, composeFrame, downsample, offeredLayers, OUT } from './compose.js?v=766f38cb60';
+import { prepareLayers, composeFrame, downsample, offeredLayers, OUT } from './compose.js?v=607ac14ea1';
 import { creditEngineInput, creditSvg } from './credit.js?v=0a4863eedb';
 import { readTotalArtifacts, readArtifactComposition } from './artifacts.js?v=8b62b12a0e';
 import { makeAcEngine } from './engine-ac.js?v=8410dea0c1';
-import { createStage } from './stage.js?v=a55f29af1f';
-import { createCubes, createCubesExport } from './cubes.js?v=a98eac76bd';
-import { supported as mp4Supported, prepare2D, prepareCubes, runExport, probeSizes } from './mp4.js?v=aa57349405';
+import { createStage } from './stage.js?v=871ea22760';
+import { createCubes, createCubesExport } from './cubes.js?v=35624bc995';
+import { FX } from './fx.js?v=abd4dbc130';
+import { supported as mp4Supported, prepare2D, prepareCubes, prepareFx, runExport, probeSizes } from './mp4.js?v=bf17af48e0';
 import { el, $, svgDataUrl, shortAddr } from './dom.js?v=cc96e51d51';
 import './metal.js?v=7488ca6bd5';                                          // tilt + light of the metal buttons (wallet arrow, 2D)
 import './dock-space.js?v=3b537f7f7b';
@@ -30,6 +31,7 @@ const blobs = createBlobStore(rpc, { storage });
 const stage = createStage($('stage'), {
   onError: e => { S.engineOn = null; appliedEngine = null; markOn($('engineStrip'), null); syncEngineLabel(); note('Engine stopped · ' + msg(e), true); },
   onViewError: e => cubesFailed('error', e),                  // a throw that escaped the Cubes view (the stage already fell back to 2D)
+  onFxError: e => fxFailed(e),                                // Checks/Stars could not paint (the 2D frame underneath is current)
 });
 
 const CREDIT_PAGE = 24, THUMB_BATCH = 24, BOOT_DEADLINE_MS = 6000;
@@ -41,6 +43,7 @@ const S = {
   artifactId: 1, engineOn: null, total: 0, comps: new Map(), slot: LAYER.BODY,
   loadingArgo: false, loadingEngine: false, booting: false,
   view: '2d',                                                 // '2d' | 'cubes' — a UI preference; survives Argonaut/Credit/engine changes, not a wallet change
+  fx: null,                                                   // Checks & Stars over 2D or Cubes: null | 'check' | 'gold' | 'silver' (Le 2026-09-26); same lifetime as view
 };
 const msg = e => (e && e.message) || String(e);
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
@@ -89,21 +92,44 @@ function cubesFailed(reason, e) {
   S.view = '2d'; syncViewUI();
   cubesNote = FAIL_TEXT[reason] + (reason === 'error' && e ? ' · ' + msg(e) : '');
   note(cubesNote, reason !== 'empty');
-  queueMicrotask(() => stage.setView(null));                  // never re-enter the stage from inside its sink (view contract)
+  // never re-enter the stage from inside its sink (view contract); the style carries over to the 2D after the detach
+  queueMicrotask(() => { stage.setView(null); applyFx(); });
+}
+// ── Checks & Stars (Le 2026-09-26): a STYLE over the 2D or the Cubes view, chosen in the pill inside the render (tap the
+// active one again = off). 2D → the stage paints the engine's check / star glyphs on #fx; Cubes → the voxel core's own
+// check / gold / silver modes, on the animated layer only (cubes.js). Only one of the two canvases ever carries it.
+function applyFx() {
+  const on2d = !!S.fx && S.view === '2d';
+  if (on2d) stage.setFx(S.fx, $('fx'), { reduced: reducedMotion }); else stage.setFx(null);
+  cubes.setFx(S.view === 'cubes' ? S.fx : null);
+  syncViewUI();
+}
+function fxFailed(e) {                                        // the stage already dropped the fx; the 2D frame is current
+  S.fx = null; cubes.setFx(null); syncViewUI();
+  note('Checks unavailable · ' + msg(e), true);
 }
 function setViewMode(mode) {
   if (mode === S.view) return;
   if (mode === 'cubes') {
     if (!S.argo) { syncViewUI(); return; }
     if (!cubes.available()) { syncViewUI(); cubesNote = cubes.lost ? FAIL_TEXT.lost : FAIL_TEXT.webgl; note(cubesNote, true); return; }   // 7c GO fable P2: a refused entry says why
-    if (!cubes.enter()) return;                               // enter() failing already went through fail() → cubesFailed (note + UI)
+    stage.setFx(null);                                        // the 2D style canvas never runs under the Cubes view
+    if (!cubes.enter()) { applyFx(); return; }                // enter() failing already went through fail() → cubesFailed (note + UI)
     if (cubesNote && $('stageNote').textContent === cubesNote) note('');   // a previous Cubes failure note goes away on a good re-entry
     cubesNote = '';
-    S.view = 'cubes'; stage.setView(cubes);
+    S.view = 'cubes'; cubes.setFx(S.fx); stage.setView(cubes);
   } else {
     S.view = '2d'; cubes.leave(); stage.setView(null);
   }
-  syncViewUI();
+  applyFx();
+}
+/** the pill (Le 2026-09-26): its first button IS the check — closed it is grey and alone; a tap turns checks on and opens
+ *  gold / silver beside it. Tapping another style switches; tapping the ACTIVE one = off (the pill folds, plain render). */
+function setFxStyle(name) {
+  if (!FX.includes(name)) return;
+  S.fx = S.fx === name ? null : name;
+  applyFx();
+  syncMp4UI();                                                // (the kept-clip key ignores the view/style, like Cubes: the file name says which)
 }
 // ── MP4 (chunk 9b, app-plan/18-…) ── idle "MP4 ↓" → busy "Cancel · NN%" → done "Save MP4" (a fresh tap = a fresh user
 // gesture for share/download, N5). The export reads ONLY its click-time snapshot (own engine), so the UI stays live;
@@ -116,7 +142,11 @@ function mp4State(state) { MP4.state = state; MP4.at = performance.now(); }   //
  *  (Argonaut / engine / layer — the key is taken at the CLICK, with the same applied state as the file name). Otherwise the
  *  button is a plain "MP4 ↓" but the clip is KEPT: back on that content, "Save MP4" returns; a new export replaces it.
  *  The 2D/Cubes view is not part of the key (peeking at the other view keeps it; the name already says -cubes). */
-const mp4Key = () => S.argo ? pngName(S.argo, appliedEngine, false) + '@' + (appliedEngine ? appliedEngine.slot : '') : '';
+const mp4Key = () => S.argo ? pngName(S.argo, appliedEngine, '') + '@' + (appliedEngine ? appliedEngine.slot : '') : '';
+/** the file-name variant of what is on screen: the view ('' 2D · 'cubes') and the style when it shows (an engine runs):
+ *  '' · 'cubes' · 'check' · 'cubes-gold' … (pngName spells 'check' as '-checks') */
+const fxShows = () => !!S.fx && S.engineOn !== null;
+const viewVariant = () => [S.view === 'cubes' ? 'cubes' : '', fxShows() ? S.fx : ''].filter(Boolean).join('-');
 const mp4Ready = () => MP4.state === 'done' && !!MP4.file && (MP4.saving || MP4.key === mp4Key());
 function syncMp4UI() {
   const b = $('mp4Btn'); if (!b) return;                      // H10: an old cached index.html has no MP4 button
@@ -128,7 +158,7 @@ function syncMp4UI() {
   }
   b.removeAttribute('aria-label');
   if (mp4Ready()) { label.textContent = 'Save MP4'; b.disabled = false; b.title = MP4.file ? MP4.file.name : ''; return; }
-  label.textContent = 'MP4 ↓';
+  label.textContent = 'MP4';                                  // no arrow (Le 2026-09-26: the three-position row must fit a phone)
   const inp = S.argo ? stage.exportInputs() : null, cubed = S.view === 'cubes';
   const why = !mp4Supported() ? 'MP4 needs Chrome, Edge or Safari 16.4+' : IN_WEBVIEW ? 'Open this page in Chrome to make the MP4' : !inp ? ''
     : cubed ? (cubes.available() ? '' : 'Cubes are unavailable on this device') : !inp.engine ? 'MP4 needs a running engine' : '';
@@ -153,12 +183,12 @@ function syncMp4Sizes() {
   });
 }
 function startMp4(size) {
-  const inp = S.argo ? stage.exportInputs() : null, cubed = S.view === 'cubes';
+  const inp = S.argo ? stage.exportInputs() : null, cubed = S.view === 'cubes', fx = S.fx;
   if (!inp || (cubed ? !cubes.available() : !inp.engine)) return;
   let job;
-  try { job = cubed ? prepareCubes(inp, createCubesExport) : prepare2D(inp); }   // N2: the export's own engine, built NOW (before any await)
+  try { job = cubed ? prepareCubes(inp, createCubesExport, undefined, fx) : fx ? prepareFx(inp, fx) : prepare2D(inp); }   // N2: the export's own engine, built NOW (before any await)
   catch (e) { mp4Note('MP4 unavailable · ' + msg(e), true); return; }
-  const name = pngName(S.argo, appliedEngine, cubed).replace(/\.png$/, '.mp4');   // named from the same applied state (+ -cubes)
+  const name = pngName(S.argo, appliedEngine, viewVariant()).replace(/\.png$/, '.mp4');   // named from the same applied state (+ -cubes and/or -checks / -gold / -silver)
   const gen = S.gen, key = mp4Key();                           // both from THIS tap (the picker may stay open a while)
   // Desktop = the Modulo Punks way (Le 2026-09-24: "tap MP4, it finishes, nothing happens" is not intuitive): "Save as"
   // opens IN this tap — before any await, it needs the tap's activation — and the video is written straight into the
@@ -255,14 +285,23 @@ function saveMp4() {
 function syncViewUI() {
   // D4 + 7c GO sonnet P3: no verified Argonaut (chain image only / none) → the control shows 2D and is disabled; the
   // 'cubes' preference itself is kept and resumes with the next verified Argonaut (G6)
-  const on = S.view === 'cubes' && !!S.argo, can = !!S.argo && (on || cubes.available());
-  const b = $('viewBtn'), alt = $('viewAlt');
-  b.textContent = on ? 'Cubes' : '2D';
-  b.setAttribute('aria-pressed', String(on));
-  b.setAttribute('aria-label', on ? 'View: cubes. Switch to 2D' : 'View: 2D. Switch to cubes');
-  b.disabled = !can;
-  alt.replaceChildren(el('b', { text: on ? '2D' : 'Cubes' }));
-  alt.disabled = !can;
+  const shown = S.argo ? S.view : '2d';
+  const LABEL = { '2d': '2D', cubes: 'Cubes' };
+  document.querySelectorAll('.seg.views [data-view]').forEach(b => {
+    const v = b.dataset.view, on = v === shown;
+    b.setAttribute('aria-pressed', String(on));
+    b.disabled = !S.argo || (v === 'cubes' && !on && !cubes.available());
+  });
+  const knob = $('viewKnob'); if (knob) knob.textContent = LABEL[shown];
+  // Checks & Stars: the pill shows while an engine runs on a verified Argonaut (the style means nothing on a static one);
+  // the preference itself is kept meanwhile. #fx = the 2D style canvas: only over the 2D (Checks GO sonnet P2: an
+  // unverified Argonaut / reset hides it too, not only blanks it)
+  $('fxStyles').hidden = !(S.argo && S.engineOn !== null);
+  $('fxStyles').classList.toggle('open', !!S.fx);             // open ⇔ a style is on (closed = plain render)
+  $('fxToggle').setAttribute('aria-expanded', String(!!S.fx));
+  $('fxOpts').inert = !S.fx;                                  // the folded styles are neither tappable nor focusable
+  document.querySelectorAll('#fxStyles [data-fx]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.fx === S.fx)));
+  $('fx').hidden = !(S.argo && fxShows() && shown === '2d');   // GO fable P2: same rule as the file name (the style needs an engine)
   syncMp4UI();
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden) finishScreen?.(); });
@@ -686,8 +725,10 @@ async function startEngine() {
 
 /** PNG filename from what PRODUCED the pixels (Codex review P2): the APPLIED engine, never the requested Credit /
  *  artifact of a switch still pending. No engine running → the static Argonaut → credit-x / engine-x. */
-function pngName(argo, applied, cubed) {
-  return `ac-argonaut-${argo.tokenId}-credit-${applied ? applied.credit : 'x'}-engine-${applied ? applied.artifactId : 'x'}${cubed ? '-cubes' : ''}.png`;
+/** variant: '' (2D) · 'cubes' · 'check' → "-checks" · 'gold' · 'silver' (the view the pixels came from) */
+function pngName(argo, applied, variant) {
+  const suffix = !variant ? '' : '-' + variant.split('-').map(p => (p === 'check' ? 'checks' : p)).join('-');
+  return `ac-argonaut-${argo.tokenId}-credit-${applied ? applied.credit : 'x'}-engine-${applied ? applied.artifactId : 'x'}${suffix}.png`;
 }
 
 // ── wiring ──
@@ -699,7 +740,7 @@ function changeWallet(from) {
   S.booting = false;
   MP4.abort = true; if (MP4.state === 'done') { mp4State('idle'); MP4.file = null; }   // a running export stops (S.gen); a finished one is dropped
   stage.hold(false);                                          // 9b GO P3: never wait on the export's own finally to un-hold
-  setViewMode('2d');                                          // the Cubes preference does not carry over to another wallet
+  S.fx = null; setViewMode('2d'); applyFx();                  // neither the Cubes nor the style preference carries over to another wallet
   appliedEngine = null; ++pipRevision; S.argo = null; S.shown = null; S.engineOn = null; S.loadingArgo = S.loadingEngine = false; syncLoader(true);
   argoLazy?.disconnect(); engineLazy?.disconnect();
   changeScreen(from, $('landing'), $('walletInput'), () => stage.reset());
@@ -715,10 +756,12 @@ document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click
 }));
 $('pngBtn').addEventListener('click', () => {
   if (!S.argo || !stage.hasArgonaut()) return;
-  const cubed = S.view === 'cubes';
-  const href = cubed ? cubes.png($('stage'), 2016) : stage.snapshot(14);   // 2016² = 14 × 144 (Le 2026-09-24); Cubes: render-then-read (D6/G10)
-  if (!href) { note('Cubes PNG unavailable right now · try again', true); return; }
-  const a = el('a', { href, download: pngName(S.argo, appliedEngine, cubed) });
+  const cubed = S.view === 'cubes', fx = !cubed && fxShows() && !!stage.fxName();   // = #fx on screen (GO fable P2); Cubes carries its style itself
+  // 2016² = 14 × 144 (Le 2026-09-24); Cubes: render-then-read (D6/G10); Checks/Stars: the glyphs re-painted at 2016 (84 px per cell)
+  const href = cubed ? cubes.png($('stage'), 2016) : fx ? stage.fxSnapshot(2016) : stage.snapshot(14);
+  if (!href) { note((cubed ? 'Cubes' : 'Checks') + ' PNG unavailable right now · try again', true); return; }
+  const variant = cubed ? ['cubes', cubes.drawnFx()].filter(Boolean).join('-') : viewVariant();   // Cubes: the style actually drawn (GO opus P3-1)
+  const a = el('a', { href, download: pngName(S.argo, appliedEngine, variant) });
   document.body.append(a); a.click(); a.remove();
 });
 $('mp4Btn')?.addEventListener('click', () => {
@@ -729,9 +772,8 @@ $('mp4Btn')?.addEventListener('click', () => {
   // Also from 'done' on OTHER content: the new clip replaces the kept one.
   checkMp4Sizes(); syncMp4Sizes(); openSheet('mp4Dlg');
 });
-$('viewBtn').addEventListener('click', () => setViewMode(S.view === 'cubes' ? '2d' : 'cubes'));
-$('viewAlt').addEventListener('click', () => setViewMode(S.view === 'cubes' ? '2d' : 'cubes'));
-$('pip').addEventListener('click', () => document.querySelector('.tabs button[data-p="credit"]').click());
+document.querySelectorAll('.seg.views [data-view]').forEach(b => b.addEventListener('click', () => setViewMode(b.dataset.view)));
+document.querySelectorAll('#fxStyles [data-fx]').forEach(b => b.addEventListener('click', () => setFxStyle(b.dataset.fx)));$('pip').addEventListener('click', () => document.querySelector('.tabs button[data-p="credit"]').click());
 // sheets (chunk 8): native modal <dialog> — Esc and focus trapping come with showModal(); the close button and a click on
 // the backdrop close it. H3: the dialog has no padding (the content sits in .sheet-in), and a click only counts as
 // "backdrop" when BOTH its pointerdown and the click landed on the <dialog> itself (a drag-select from inside doesn't).

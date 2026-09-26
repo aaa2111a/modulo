@@ -10,8 +10,8 @@
 import { LAYER, SMOKE_SLOT, layerPixels, blobHasSemi } from './argonaut.js?v=daf77ad712';
 
 export const SIZE = 24, PX = SIZE * SIZE, SCALE = 6, OUT = SIZE * SCALE, OUT_PX = OUT * OUT;   // 144×144
-const MARK_A = [Math.round(0.14 * 255), Math.round(0.14 * 255), Math.round(0.11 * 255)];   // 36, 36, 28
-const MARK_RGB = [[0, 0, 0], [0, 0, 0], [255, 255, 255]];
+export const MARK_A = [Math.round(0.14 * 255), Math.round(0.14 * 255), Math.round(0.11 * 255)];   // 36, 36, 28 (exported: fx.js re-blends the marks over the glyphs)
+export const MARK_RGB = [[0, 0, 0], [0, 0, 0], [255, 255, 255]];
 const over = (s, d, a) => Math.floor((s * a + d * (255 - a) + 127) / 255);   // RendererV5._over
 
 /** Offerable animated layers (Le): Bones, Cloak, Crown, Sight, Background. A slot whose drawn blob has semi-transparent
