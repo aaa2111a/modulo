@@ -14,7 +14,6 @@
 import { create3d } from './cubes-core.js?v=ccbe87f600';
 import { figureMask, raisedMask, countCells, silhouettePixels, sampleCells, fusedMask, paletteIndex, spinYaw, RGB_CELLS, CELLS } from './cubes-feed.js?v=bd03909fc1';
 import { FX } from './fx.js?v=abd4dbc130';
-import { LAYER } from './argonaut.js?v=daf77ad712';
 
 /** Checks & Stars 3D (Le 2026-09-26): the core mode + its inputs for style `fx` over the engine `eng` ({rgb, pal, slot,
  *  marks} or null = static). Without both → mode 'normal' (0), fused null. `cache` keeps the fused mask per
@@ -29,22 +28,22 @@ function fxArgs(core, fx, eng, layers, back, idx, cache) {
   return { mi: core.modeIndex(fx), fused: f.m };
 }
 
-const MARGIN = 1.15, MARGIN_SLAB = 1.5;                        // Punks modal fit; wider with the back slab (G18)
+// Punks modal fit; wider with the back slab (G18). Le 2026-09-26: with Palette animated (= the back slab) the camera is
+// 10 % closer — live, PNG and MP4 alike; the other layers keep 1.15 (at 10 % closer the head touched the top edge)
+const PALETTE_ZOOM = 1.1;
+const MARGIN = 1.15, MARGIN_SLAB = 1.5 / PALETTE_ZOOM;
 const START_PITCH = -0.10, START_YAW = -0.52;                   // Punks _td initial pose
 const FRAME_MS = 1000 / 60;
-// MP4 only (Le 2026-09-26): the camera 10 % closer than live — ONLY while the engine animates Palette (the Background:
-// the wide back-slab framing has room; on the other layers the head would touch the top edge at 10 %)
-const EXPORT_ZOOM = 1.1;
 
 /**
  * MP4 (chunk 9c, app-plan/18-… M4 + N8): a DISPOSABLE second core instance on a DETACHED canvas, exactly size² — its
  * clientWidth is 0, so resize() takes the 720 fallback × opts.dpr (delta 8); asserted, never assumed. Same build as the
- * live view (figure mask, raised relief, back slab), the camera 10 % closer when Palette animates (EXPORT_ZOOM), and the pose
+ * live view (figure mask, raised relief, back slab, margins — Palette's 10 % closer included), and the pose
  * is a pure function of the frame index: one full turn over the clip at the live spin's curve (cubes-feed spinYaw —
  * slower facing the camera, faster edge-on), pitch fixed. Lives here so cubes.js stays the ONLY importer of
  * the core (CC4). Throws Error('empty' | 'webgl' | 'size') — the exporter maps them to messages.
  */
-export function createCubesExport({ layers, back, fx = null, marks = null, slot = null, pal = null, animSlot = null }, size, env = globalThis) {
+export function createCubesExport({ layers, back, fx = null, marks = null, slot = null, pal = null }, size, env = globalThis) {
   const mask = figureMask(layers);
   if (!countCells(mask)) throw new Error('empty');
   const canvas = env.document.createElement('canvas');
@@ -58,7 +57,7 @@ export function createCubesExport({ layers, back, fx = null, marks = null, slot 
   // failure, or retries pile up contexts until the browser drops the oldest (maybe the live #cubes one). setPunk's false
   // = no context at all. Size: the DRAWING BUFFER, not canvas.width (always = size) — a GPU may clamp it (opus P3-2).
   try {
-    core.init(canvas, (back ? MARGIN_SLAB : MARGIN) / (animSlot === LAYER.BACKGROUND ? EXPORT_ZOOM : 1));
+    core.init(canvas, back ? MARGIN_SLAB : MARGIN);
     if (!core.setPunk(silhouettePixels(mask), 0, back, raisedMask(layers))) throw new Error('webgl');
     const g = gl();
     if (!g || g.drawingBufferWidth !== size || g.drawingBufferHeight !== size) throw new Error('size');

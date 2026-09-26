@@ -147,7 +147,7 @@ export function prepareCubes(inputs, makeGL, env = G, fx = null) {   // fx: the 
     setup(size) {
       const run = inputs.engine;                                // the style only means something with a running engine (else plain)
       const style = fx && run ? { fx, marks: inputs.marks, slot: run.slot, pal: run.credit.pal } : {};
-      try { gl = makeGL({ layers: inputs.layers, back: src.back, animSlot: run ? run.slot : null, ...style }, size, env); }   // animSlot: the Palette zoom
+      try { gl = makeGL({ layers: inputs.layers, back: src.back, ...style }, size, env); }
       catch (e) {                                              // 9c GO sonnet P3: an unexpected throw keeps its own text (console), never only "WebGL2"
         const code = e.message === 'empty' ? 'empty' : e.message === 'size' ? 'size' : 'webgl';
         if (code === 'webgl' && e.message !== 'webgl' && env.console) env.console.error('[mp4] cubes setup', e);

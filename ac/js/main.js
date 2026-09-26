@@ -16,9 +16,9 @@ import { creditEngineInput, creditSvg } from './credit.js?v=0a4863eedb';
 import { readTotalArtifacts, readArtifactComposition } from './artifacts.js?v=8b62b12a0e';
 import { makeAcEngine } from './engine-ac.js?v=8410dea0c1';
 import { createStage } from './stage.js?v=871ea22760';
-import { createCubes, createCubesExport } from './cubes.js?v=35624bc995';
+import { createCubes, createCubesExport } from './cubes.js?v=9f39bcc25d';
 import { FX } from './fx.js?v=abd4dbc130';
-import { supported as mp4Supported, prepare2D, prepareCubes, prepareFx, runExport, probeSizes } from './mp4.js?v=bf17af48e0';
+import { supported as mp4Supported, prepare2D, prepareCubes, prepareFx, runExport, probeSizes } from './mp4.js?v=44a53e559c';
 import { el, $, svgDataUrl, shortAddr } from './dom.js?v=cc96e51d51';
 import './metal.js?v=7488ca6bd5';                                          // tilt + light of the metal buttons (wallet arrow, 2D)
 import './dock-space.js?v=3b537f7f7b';
@@ -754,6 +754,24 @@ document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click
   if (b.dataset.p === 'argo') argoLazy?.refresh([...document.querySelectorAll('#argoStrip .tile')]);
   if (b.dataset.p === 'engine') engineLazy?.refresh([...document.querySelectorAll('#engineStrip .tile')]);
 }));
+// ── Full screen (Le 2026-09-26; on phones the overlays go and only the exit button stays, top-right): the render window (.stage: the canvases, the style pill, the Credit pip)
+// fills the screen; the Cubes GL canvas resizes itself on the next draw (the core re-measures clientWidth). Esc or the
+// #fsExit button inside the render leaves (#fsBtn itself is outside the full-screen element, so it is not shown there);
+// the buttons follow the real state (fullscreenchange), not their own guess.
+{
+  const fs = $('fsBtn'), win = document.querySelector('.stage');
+  fs.hidden = !(document.fullscreenEnabled && win);             // phones too (Le); iPhone Safari has no element full screen → hidden
+  fs.addEventListener('click', () => {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    else win.requestFullscreen().catch(e => note('Full screen unavailable · ' + msg(e), true));
+  });
+  $('fsExit').addEventListener('click', () => { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); });
+  document.addEventListener('fullscreenchange', () => {
+    const on = document.fullscreenElement === win;
+    fs.setAttribute('aria-pressed', String(on)); fs.setAttribute('aria-label', on ? 'Exit full screen' : 'Full screen');
+    stage.kick();                                             // a static / reduced-motion Cubes view redraws at the new size
+  });
+}
 $('pngBtn').addEventListener('click', () => {
   if (!S.argo || !stage.hasArgonaut()) return;
   const cubed = S.view === 'cubes', fx = !cubed && fxShows() && !!stage.fxName();   // = #fx on screen (GO fable P2); Cubes carries its style itself
