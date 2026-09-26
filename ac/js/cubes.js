@@ -12,7 +12,7 @@
 //    and no inertia, drag only (the single reduced-motion source for the loop gate, 7b G8 deviation).
 // Contract with the stage: draw() never calls back into the stage (it may only request kick() OUTSIDE draw).
 import { create3d } from './cubes-core.js?v=f3f5934deb';
-import { figureMask, raisedMask, countCells, silhouettePixels, sampleCells, RGB_CELLS, CELLS } from './cubes-feed.js?v=d93f8f08b3';
+import { figureMask, raisedMask, countCells, silhouettePixels, sampleCells, RGB_CELLS, CELLS } from './cubes-feed.js?v=82c8e3bab5';
 
 const MARGIN = 1.15, MARGIN_SLAB = 1.5;                        // Punks modal fit; wider with the back slab (G18)
 const START_PITCH = -0.10, START_YAW = -0.52;                   // Punks _td initial pose

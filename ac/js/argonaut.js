@@ -7,7 +7,7 @@
 // The per-id variance marks come from the oracle: the ONLY allowed difference between our string and
 // `renderSeeded` is ONE insertion right after the BODY rects, made of 0 or 3 1×1 rects with the exact
 // literals of RendererV5.sol:297-298 (unmistakable: `_opacity` always prints 3 digits, the marks 2).
-import { ADDR, selectorOf, word, strip, decString, decBytes, decAddress, decSmallUint, decUint8x7 } from './abi.js?v=37c56b03cf';
+import { ADDR, selectorOf, word, strip, decString, decBytes, decAddress, decSmallUint, decUint8x7 } from './abi.js?v=0e6f5624d9';
 
 export class ArgonautError extends Error {
   constructor(code, message, cause) { super(message); this.name = 'ArgonautError'; this.code = code; if (cause) this.cause = cause; }
@@ -28,6 +28,7 @@ const SEL = {
   bandHeadIndex: S('bandHeadIndex()'), crownHeadIndex: S('crownHeadIndex()'), crownClipBlob: S('crownClipBlob(uint8)'),
   smokerMouth: S('smokerMouth(uint8)'), smokeTone: S('smokeTone(uint8)'), isDragonsBreath: S('isDragonsBreath(uint256)'),
   renderSeeded: S('renderSeeded(uint8[7],uint256)'), traitsOf: S('traitsOf(uint256)'), base: S('base()'),
+  traitsFor: S('traitsFor(uint256,uint8[7])'),
 };
 const call = (to, data, block) => ({ method: 'eth_call', params: [{ to, data }, block] });
 const u8 = h => decSmallUint(h, 255);
@@ -55,18 +56,23 @@ export function parseLayout(bytes) {
  *    base.tokenURI with an animation_url spliced in on the owner-chosen token(s); `base` is immutable → checked once
  *    per page. Its "the image never changes" is a comment, not a guarantee (the payload is spliced unescaped, so the
  *    owner could shadow `image` on one token — GO opus P3); AC never reads art from the wrapper, it draws from the V5;
+ *  - ArgonautsRendererV6 (ADDR.ARGO_V6, verified source, 2026-09-26) → the same, IF its base() is the V5; it also
+ *    lets its owner re-assign a token's traits (setTraits): renderVerified then draws + verifies the V6's traits;
  *  - anything else → ArgonautError('renderer-changed'): the art may have changed, fail closed as before.
  */
-const breathOk = new WeakMap();                               // rpc → memo of the (immutable) base() check: once per page
+const WRAPPERS = [ADDR.ARGO_BREATH, ADDR.ARGO_V6];
+const baseOk = new WeakMap();                                 // rpc → Map(wrapper → memo of its (immutable) base() check): once per page
 async function acceptRenderer(rpc, renderer, block) {
   if (renderer === PINNED_RENDERER) return;
-  if (renderer === ADDR.ARGO_BREATH) {
-    if (!breathOk.has(rpc)) breathOk.set(rpc, rpc.batchAll([call(ADDR.ARGO_BREATH, SEL.base, block)])
+  if (WRAPPERS.includes(renderer)) {
+    if (!baseOk.has(rpc)) baseOk.set(rpc, new Map());
+    const memo = baseOk.get(rpc);
+    if (!memo.has(renderer)) memo.set(renderer, rpc.batchAll([call(renderer, SEL.base, block)])
       .then(([b]) => decAddress(b) === PINNED_RENDERER)
-      .catch(e => { breathOk.delete(rpc); throw e; }));        // a failed read OR an empty/odd answer is retried next time (GO opus P2)
-    if (await breathOk.get(rpc).catch(fail('rpc', 'could not read the renderer'))) return;
+      .catch(e => { memo.delete(renderer); throw e; }));      // a failed read OR an empty/odd answer is retried next time (GO opus P2)
+    if (await memo.get(renderer).catch(fail('rpc', 'could not read the renderer'))) return;
   }
-  throw new ArgonautError('renderer-changed', `Argonauts.renderer() is ${renderer}, expected the pinned V5 or its Breath wrapper`);
+  throw new ArgonautError('renderer-changed', `Argonauts.renderer() is ${renderer}, expected the pinned V5 or a known wrapper of it`);
 }
 
 /**
@@ -238,12 +244,30 @@ export function matchOracle(mine, chain) {
 }
 
 /**
+ * The traits the COLLECTION shows for these tokens (thumbnails; V6 GO opus P2): under ArgonautsRendererV6 a "ruled"
+ * token is drawn with the V6's traits, not its original traitsOf. Any other renderer → the input, unchanged
+ * (thumbnails are cosmetic; the stage's renderVerified is the gate). items: [{id, traits}] as readArgonautTraits returns.
+ */
+export async function collectionTraits(rpc, items, block = 'latest') {
+  if (!items.length) return items;
+  const [r] = await rpc.batchAll([call(ADDR.ARGONAUTS, SEL.renderer, block)]).catch(fail('rpc', 'could not read the renderer'));
+  if (dec('renderer()', () => decAddress(r)) !== ADDR.ARGO_V6) return items;
+  await acceptRenderer(rpc, ADDR.ARGO_V6, block);
+  const got = await rpc.batchAll(items.map(x => call(ADDR.ARGO_V6, SEL.traitsFor + word(x.id) + x.traits.map(word).join(''), block)))
+    .catch(fail('rpc', 'could not read the traits'));
+  return items.map((x, i) => ({ id: x.id, traits: dec('traitsFor()', () => decUint8x7(got[i])) }));
+}
+
+/**
  * Per-token check. Traits are read FROM THE CHAIN in the same batch as renderer() + isDragonsBreath +
  * renderSeeded (chunk-2 GO: never trust caller-supplied/cached traits; re-check the pin every time).
  * `svg` is the CHAIN's string — UI must show it ONLY via <img src="data:image/svg+xml…">, never innerHTML.
  * @returns {{tokenId, traits, dragons, svg, marks, drawList, verified:boolean, reason?:string}}
  */
 export async function renderVerified(rpc, cfg, blobs, tokenId, { block = 'latest' } = {}) {
+  // one block for every read of this token (V6 GO fable P2): an owner's setRenderer/setTraits landing between two
+  // 'latest' reads can no longer mix traits from one state with a render from another
+  if (block === 'latest') block = await rpc.request('eth_blockNumber', []).catch(fail('rpc', 'could not read the block number'));
   const pre = await rpc.batchAll([
     call(ADDR.ARGONAUTS, SEL.renderer, block),
     call(ADDR.ARGONAUTS, SEL.traitsOf + word(tokenId), block),
@@ -251,7 +275,12 @@ export async function renderVerified(rpc, cfg, blobs, tokenId, { block = 'latest
   ]).catch(fail('rpc', 'could not read the token'));
   const renderer = dec('renderer()', () => decAddress(pre[0]));
   await acceptRenderer(rpc, renderer, block);
-  const traits = dec('traitsOf()', () => decUint8x7(pre[1]));
+  let traits = dec('traitsOf()', () => decUint8x7(pre[1]));
+  if (renderer === ADDR.ARGO_V6) {                             // V6 may re-assign a token's traits: draw + verify what the collection shows
+    const [ov] = await rpc.batchAll([call(ADDR.ARGO_V6, SEL.traitsFor + word(tokenId) + traits.map(word).join(''), block)])
+      .catch(fail('rpc', 'could not read the token'));
+    traits = dec('traitsFor()', () => decUint8x7(ov));        // unchanged for a token the V6 does not rule
+  }
   const dragons = dec('isDragonsBreath()', () => bool(pre[2]));
   const [raw] = await rpc.batchAll([call(PINNED_RENDERER, SEL.renderSeeded + traits.map(word).join('') + word(tokenId), block)])
     .catch(fail('rpc', 'could not read the on-chain render'));

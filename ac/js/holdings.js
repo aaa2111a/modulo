@@ -8,7 +8,7 @@
 //  - Every failure (transport, revert, malformed/empty returndata, mismatch) → HoldingsError.
 //    NEVER "you own nothing" from a failed read.
 //  - Dead/burned Argonauts are not available: pasting 0x…dEaD is refused up front (Le 2026-09-24).
-import { ADDR, enc, decSmallUint, decUintArray, decBytes21, decUint8x7, normalizeAddress, strip, word, addrWord } from './abi.js?v=37c56b03cf';
+import { ADDR, enc, decSmallUint, decUintArray, decBytes21, decUint8x7, normalizeAddress, strip, word, addrWord } from './abi.js?v=0e6f5624d9';
 import { SCANNER_BYTECODE } from './scanner-bytecode.js?v=0738094b3d';
 
 export class HoldingsError extends Error {

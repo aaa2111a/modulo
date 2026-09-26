@@ -1,8 +1,8 @@
 // The pure data side of the Cubes view (chunk 7b, design app-plan/13-chunk7-synthesis.md D2/D2'/G17/G19): which
 // cells become voxels, which colour each voxel takes each frame, and what the flat backdrop shows. No DOM, no GL —
 // everything here is testable in Node.
-import { LAYER } from './argonaut.js?v=29531b221c';
-import { SIZE, PX, SCALE, OUT } from './compose.js?v=329af6516e';
+import { LAYER } from './argonaut.js?v=daf77ad712';
+import { SIZE, PX, SCALE, OUT } from './compose.js?v=766f38cb60';
 
 export const CELLS = PX;                  // 576
 export const RGB_CELLS = PX * 2;          // G17: the rgb fed to the core ALWAYS has 1152 cells (576..1151 = back slab)

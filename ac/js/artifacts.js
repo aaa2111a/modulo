@@ -2,7 +2,7 @@
 // instead of the 88 KB `animationURI`, rebuilding exactly what HTMLBuilder._slotToJson writes into the
 // COMPOSITION literal (mainnet/src/libs/HTMLBuilder.sol:762-816), then Punks' own _normalizeComposition.
 // G5 (tests/test-artifacts.mjs): adapter(getArtifact) deep-equals extractComposition(animationURI), every id.
-import { ADDR, selectorOf, word, strip, decSmallUint } from './abi.js?v=37c56b03cf';
+import { ADDR, selectorOf, word, strip, decSmallUint } from './abi.js?v=0e6f5624d9';
 import { normalizeComposition } from './engine-ac.js?v=8410dea0c1';
 
 export class ArtifactError extends Error {

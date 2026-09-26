@@ -9,8 +9,8 @@
 // that wants frames — spin/drag). With a view, the 2D canvas becomes the flat backdrop (the Background layer, or the
 // page grey while the engine animates the Background = back slab), and a view failure never reaches onError (G2).
 import { makeAcEngine } from './engine-ac.js?v=8410dea0c1';
-import { prepareLayers, composeFrame, OUT, OUT_PX } from './compose.js?v=329af6516e';
-import { backgroundLayers, wantsBackSlab } from './cubes-feed.js?v=d93f8f08b3';
+import { prepareLayers, composeFrame, OUT, OUT_PX } from './compose.js?v=766f38cb60';
+import { backgroundLayers, wantsBackSlab } from './cubes-feed.js?v=82c8e3bab5';
 
 export const STEP_MS = 1000 / 60;                            // one engine step = 1/60 s, live AND in the MP4 (chunk 9a, Le: same speed on every screen)
 const BACKDROP_GREY = [0xf4, 0xf5, 0xf6];                    // --bg: behind the back slab (Le 2026-09-24)

@@ -7,17 +7,17 @@
 // <img src="data:…">; DOM only through el()/textContent; engines only via makeAcEngine (A4).
 import { createRpc } from './rpc.js?v=3037fe4613';
 import { RPC_URL, MAX_BATCH } from './config.js?v=761d2a9845';
-import { normalizeAddress, toChecksumAddress, ADDR } from './abi.js?v=37c56b03cf';
-import { looksLikeEns, resolveEns, EnsError } from './ens.js?v=bd3e5f7b33';
-import { readArgonauts, readCredits, readCreditData, readArgonautTraits } from './holdings.js?v=6faf573461';
-import { loadRendererConfig, createBlobStore, renderVerified, drawList, LAYER, LAYER_LABEL, ArgonautError } from './argonaut.js?v=29531b221c';
-import { prepareLayers, composeFrame, downsample, offeredLayers, OUT } from './compose.js?v=329af6516e';
+import { normalizeAddress, toChecksumAddress, ADDR } from './abi.js?v=0e6f5624d9';
+import { looksLikeEns, resolveEns, EnsError } from './ens.js?v=09e749d09f';
+import { readArgonauts, readCredits, readCreditData, readArgonautTraits } from './holdings.js?v=603cbc0ecb';
+import { loadRendererConfig, createBlobStore, renderVerified, collectionTraits, drawList, LAYER, LAYER_LABEL, ArgonautError } from './argonaut.js?v=daf77ad712';
+import { prepareLayers, composeFrame, downsample, offeredLayers, OUT } from './compose.js?v=766f38cb60';
 import { creditEngineInput, creditSvg } from './credit.js?v=0a4863eedb';
-import { readTotalArtifacts, readArtifactComposition } from './artifacts.js?v=90642bdfe0';
+import { readTotalArtifacts, readArtifactComposition } from './artifacts.js?v=8b62b12a0e';
 import { makeAcEngine } from './engine-ac.js?v=8410dea0c1';
-import { createStage } from './stage.js?v=3f7c249e59';
-import { createCubes, createCubesExport } from './cubes.js?v=863e601e83';
-import { supported as mp4Supported, prepare2D, prepareCubes, runExport, probeSizes } from './mp4.js?v=3399e50902';
+import { createStage } from './stage.js?v=a55f29af1f';
+import { createCubes, createCubesExport } from './cubes.js?v=a98eac76bd';
+import { supported as mp4Supported, prepare2D, prepareCubes, runExport, probeSizes } from './mp4.js?v=aa57349405';
 import { el, $, svgDataUrl, shortAddr } from './dom.js?v=cc96e51d51';
 import './metal.js?v=7488ca6bd5';                                          // tilt + light of the metal buttons (wallet arrow, 2D)
 import './dock-space.js?v=3b537f7f7b';
@@ -452,7 +452,7 @@ function renderArgoStrip() {
   strip.replaceChildren(...tiles);
   argoLazy = lazy(strip, async (batch, alive) => {           // static thumbnails (no marks, no dragons variant — cosmetic)
     const cfg = await getCfg();
-    const traits = await readArgonautTraits(rpc, batch.map(t => Number(t.dataset.id)));
+    const traits = await collectionTraits(rpc, await readArgonautTraits(rpc, batch.map(t => Number(t.dataset.id))));   // V6 re-assigned traits (GO opus P2)
     const lists = traits.map(x => drawList(cfg, x.traits, false));
     const blobOf = await blobOfFor(lists.flatMap(l => l.map(d => d.blobId)));
     if (!alive()) return;

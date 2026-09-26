@@ -12,6 +12,9 @@ export const ADDR = Object.freeze({
   // ArgonautsBreathRenderer (set 2026-09-25 04:37 UTC, tx 0xed48f675…fc44; verified): a wrapper over ARGO_RENDERER
   // (immutable base) that splices an animation_url into the base's JSON; AC keeps drawing from ARGO_RENDERER (argonaut.js acceptRenderer)
   ARGO_BREATH: '0xf44614e87ac9e23951f309caeae7978186b99539',
+  // ArgonautsRendererV6 (seen 2026-09-26; verified): same wrapper shape over ARGO_RENDERER (immutable base) PLUS a
+  // per-token trait override (setTraits → traitsFor): the image of a "ruled" token is the V5 render of its NEW traits
+  ARGO_V6: '0xa9b4805c34ff7695d94cc177e9c2fb71d3e3a8d9',
   CREDITS: '0x97630aa70ab14ed9883b41dafccbc11349723043',
   SETTLE_ARTIFACT: '0xbfb21e5b736e85160a2fa2056764a7d5f4ab2cd9',
   DEAD: '0x000000000000000000000000000000000000dead',
